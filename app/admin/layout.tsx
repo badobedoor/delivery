@@ -45,31 +45,77 @@ function HamburgerIcon({ color }: { color: string }) {
   );
 }
 
-function SidebarContent({ onClose }: { onClose?: () => void }) {
+function SidebarContent({
+  collapsed = false,
+  onClose,
+}: {
+  collapsed?: boolean;
+  onClose?: () => void;
+}) {
   const pathname = usePathname();
+
   return (
-    <aside className="flex flex-col h-full w-[260px]" style={{ background: C.card }}>
-      <div className="px-6 py-6 border-b" style={{ borderColor: C.border }}>
-        <p className="text-xl font-black" style={{ color: C.teal }}>حالا</p>
-        <p className="text-xs mt-0.5" style={{ color: C.muted }}>لوحة التحكم</p>
+    <aside
+      className="flex flex-col h-full overflow-hidden transition-all duration-300"
+      style={{ width: collapsed ? "64px" : "260px", background: C.card }}
+    >
+      {/* ── Logo ── */}
+      <div
+        className="flex items-center gap-3 py-6 border-b overflow-hidden"
+        style={{
+          padding: collapsed ? "24px 0" : "24px 24px",
+          justifyContent: collapsed ? "center" : "flex-start",
+          borderColor: C.border,
+        }}
+      >
+        <span className="text-xl flex-shrink-0" style={{ color: C.teal }}>⚡</span>
+        {!collapsed && (
+          <div className="overflow-hidden">
+            <p className="text-xl font-black whitespace-nowrap" style={{ color: C.teal }}>حالا</p>
+            <p className="text-xs mt-0.5 whitespace-nowrap" style={{ color: C.muted }}>لوحة التحكم</p>
+          </div>
+        )}
       </div>
-      <nav className="flex-1 px-3 py-4 overflow-y-auto flex flex-col gap-1">
+
+      {/* ── Nav ── */}
+      <nav className="flex-1 py-4 overflow-y-auto flex flex-col gap-1" style={{ padding: collapsed ? "16px 8px" : "16px 12px" }}>
         {navLinks.map((link) => {
           const active = pathname.startsWith(link.href);
           return (
-            <Link key={link.href} href={link.href} onClick={onClose}
-              className="flex items-center gap-3 px-4 py-2.5 rounded-xl text-sm font-semibold transition-colors"
-              style={{ background: active ? C.teal : "transparent", color: active ? "#fff" : C.muted }}>
-              <span className="text-base">{link.emoji}</span>
-              {link.label}
+            <Link
+              key={link.href}
+              href={link.href}
+              onClick={onClose}
+              title={collapsed ? link.label : undefined}
+              className="flex items-center rounded-xl text-sm font-semibold transition-colors whitespace-nowrap overflow-hidden"
+              style={{
+                gap: collapsed ? 0 : "12px",
+                padding: collapsed ? "10px 0" : "10px 16px",
+                justifyContent: collapsed ? "center" : "flex-start",
+                background: active ? C.teal : "transparent",
+                color: active ? "#fff" : C.muted,
+              }}
+            >
+              <span className="text-base flex-shrink-0">{link.emoji}</span>
+              {!collapsed && link.label}
             </Link>
           );
         })}
       </nav>
-      <div className="px-3 py-4 border-t" style={{ borderColor: C.border }}>
-        <button className="flex items-center gap-3 px-4 py-2.5 rounded-xl text-sm font-semibold w-full hover:bg-red-500/10 transition-colors"
-          style={{ color: "#EF4444" }}>
-          <span>🚪</span>تسجيل الخروج
+
+      {/* ── Logout ── */}
+      <div className="py-4 border-t" style={{ padding: collapsed ? "16px 8px" : "16px 12px", borderColor: C.border }}>
+        <button
+          className="flex items-center rounded-xl text-sm font-semibold w-full hover:bg-red-500/10 transition-colors whitespace-nowrap overflow-hidden"
+          style={{
+            gap: collapsed ? 0 : "12px",
+            padding: collapsed ? "10px 0" : "10px 16px",
+            justifyContent: collapsed ? "center" : "flex-start",
+            color: "#EF4444",
+          }}
+        >
+          <span className="flex-shrink-0">🚪</span>
+          {!collapsed && "تسجيل الخروج"}
         </button>
       </div>
     </aside>
@@ -77,47 +123,33 @@ function SidebarContent({ onClose }: { onClose?: () => void }) {
 }
 
 export default function AdminLayout({ children }: { children: React.ReactNode }) {
-  const [desktopOpen, setDesktopOpen] = useState(true);
-  const [mobileOpen,  setMobileOpen]  = useState(false);
+  const [collapsed,   setCollapsed]  = useState(false);
+  const [mobileOpen,  setMobileOpen] = useState(false);
   const pathname = usePathname();
   const title = pageTitle[pathname] ?? "لوحة التحكم";
 
+  const sidebarW = collapsed ? 64 : 260;
+
   return (
-    <div className="min-h-screen flex"
-      style={{ background: C.bg, color: C.text, fontFamily: "var(--font-cairo), Arial, sans-serif" }}>
+    <div
+      className="min-h-screen flex"
+      style={{ background: C.bg, color: C.text, fontFamily: "var(--font-cairo), Arial, sans-serif" }}
+    >
 
-      {/* ── Desktop Sidebar ── */}
-      {desktopOpen && (
-        <div className="hidden lg:block fixed top-0 bottom-0 left-0 w-[260px] z-30"
-          style={{ borderRight: `1px solid ${C.border}` }}>
-          <SidebarContent />
-        </div>
-      )}
+      {/* ── Main Area (takes remaining space) ── */}
+      <div className="flex-1 flex flex-col min-w-0">
 
-      {/* ── Mobile Drawer ── */}
-      {mobileOpen && (
-        <div className="fixed inset-0 z-40 lg:hidden flex">
-          <div className="absolute inset-0 bg-black/60" onClick={() => setMobileOpen(false)} />
-          <div className="relative z-50 h-full" style={{ borderRight: `1px solid ${C.border}` }}>
-            <SidebarContent onClose={() => setMobileOpen(false)} />
-          </div>
-        </div>
-      )}
-
-      {/* ── Main Area ── */}
-      <div
-        className="flex-1 flex flex-col min-w-0 transition-all duration-300"
-        style={{ marginRight: desktopOpen ? "260px" : "0" }}
-      >
         {/* ── Header ── */}
-        <header className="sticky top-0 z-20 flex items-center gap-3 px-4 lg:px-6 py-3 border-b"
-          style={{ background: C.card, borderColor: C.border }}>
-
+        <header
+          className="sticky top-0 z-20 flex items-center gap-3 px-4 lg:px-6 py-3 border-b"
+          style={{ background: C.card, borderColor: C.border }}
+        >
           {/* همبرجر موبايل */}
           <button
             className="lg:hidden w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0"
             style={{ background: C.bg }}
-            onClick={() => setMobileOpen(true)}>
+            onClick={() => setMobileOpen(true)}
+          >
             <HamburgerIcon color={C.muted} />
           </button>
 
@@ -125,7 +157,8 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
           <button
             className="hidden lg:flex w-9 h-9 rounded-xl items-center justify-center flex-shrink-0"
             style={{ background: C.bg }}
-            onClick={() => setDesktopOpen((v) => !v)}>
+            onClick={() => setCollapsed((v) => !v)}
+          >
             <HamburgerIcon color={C.muted} />
           </button>
 
@@ -140,8 +173,10 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
               <p className="text-sm font-semibold" style={{ color: C.text }}>أحمد الإداري</p>
               <p className="text-xs" style={{ color: C.muted }}>مدير النظام</p>
             </div>
-            <div className="w-9 h-9 rounded-full flex items-center justify-center text-sm font-black flex-shrink-0"
-              style={{ background: C.teal, color: "#fff" }}>
+            <div
+              className="w-9 h-9 rounded-full flex items-center justify-center text-sm font-black flex-shrink-0"
+              style={{ background: C.teal, color: "#fff" }}
+            >
               أ
             </div>
           </div>
@@ -152,6 +187,33 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
           {children}
         </main>
       </div>
+
+      {/* ── Desktop Sidebar Spacer (pushes main content left) ── */}
+      <div
+        className="hidden lg:block flex-shrink-0 transition-all duration-300"
+        style={{ width: `${sidebarW}px` }}
+      />
+
+      {/* ── Desktop Sidebar (fixed, right side) ── */}
+      <div
+        className="hidden lg:block fixed top-0 bottom-0 right-0 z-30 transition-all duration-300"
+        style={{ width: `${sidebarW}px`, borderLeft: `1px solid ${C.border}` }}
+      >
+        <SidebarContent collapsed={collapsed} />
+      </div>
+
+      {/* ── Mobile Drawer (slides from right) ── */}
+      {mobileOpen && (
+        <div className="fixed inset-0 z-40 lg:hidden flex justify-end">
+          <div className="absolute inset-0 bg-black/60" onClick={() => setMobileOpen(false)} />
+          <div
+            className="relative z-50 h-full"
+            style={{ borderLeft: `1px solid ${C.border}` }}
+          >
+            <SidebarContent onClose={() => setMobileOpen(false)} />
+          </div>
+        </div>
+      )}
 
     </div>
   );

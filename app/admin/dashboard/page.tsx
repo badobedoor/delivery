@@ -75,16 +75,19 @@ export default function AdminDashboardPage() {
       {/* ── 2. Latest Orders Table ── */}
       <div className="rounded-2xl overflow-hidden"
         style={{ background: C.card, border: `1px solid ${C.border}` }}>
-        <div className="px-5 py-4 border-b" style={{ borderColor: C.border }}>
-          <h2 className="text-base font-black" style={{ color: C.text }}>آخر الطلبات</h2>
+        <div className="px-4 py-3 border-b" style={{ borderColor: C.border }}>
+          <h2 className="text-sm font-black" style={{ color: C.text }}>آخر الطلبات</h2>
         </div>
         <div className="overflow-x-auto">
-          <table className="w-full text-sm">
+          <table className="w-full">
             <thead>
               <tr style={{ borderBottom: `1px solid ${C.border}` }}>
-                {["رقم الطلب", "العميل", "المطعم", "الإجمالي", "الحالة", "الوقت"].map((col) => (
-                  <th key={col} className="px-4 py-3 text-right font-semibold"
-                    style={{ color: C.muted }}>
+                {["#", "العميل", "المطعم", "الإجمالي", "الحالة", "الوقت"].map((col, i) => (
+                  <th
+                    key={col}
+                    className={`px-2 py-2 lg:px-4 lg:py-3 text-right font-semibold text-[10px] lg:text-xs${i === 2 ? " hidden sm:table-cell" : ""}`}
+                    style={{ color: C.muted }}
+                  >
                     {col}
                   </th>
                 ))}
@@ -94,17 +97,24 @@ export default function AdminDashboardPage() {
               {orders.map((order, i) => (
                 <tr key={order.id}
                   style={{ borderBottom: i < orders.length - 1 ? `1px solid ${C.border}` : "none" }}>
-                  <td className="px-4 py-3 font-bold" style={{ color: C.teal }}>{order.id}</td>
-                  <td className="px-4 py-3" style={{ color: C.text }}>{order.client}</td>
-                  <td className="px-4 py-3" style={{ color: C.muted }}>{order.restaurant}</td>
-                  <td className="px-4 py-3 font-semibold" style={{ color: C.text }}>{order.total}</td>
-                  <td className="px-4 py-3">
-                    <span className="px-2.5 py-1 rounded-full text-xs font-bold"
-                      style={statusStyle(order.status)}>
+                  <td className="px-2 py-2 lg:px-4 lg:py-3 font-bold text-[10px] lg:text-sm whitespace-nowrap"
+                    style={{ color: C.teal }}>{order.id}</td>
+                  <td className="px-2 py-2 lg:px-4 lg:py-3 text-[10px] lg:text-sm whitespace-nowrap"
+                    style={{ color: C.text }}>{order.client}</td>
+                  <td className="hidden sm:table-cell px-2 py-2 lg:px-4 lg:py-3 text-[10px] lg:text-sm whitespace-nowrap"
+                    style={{ color: C.muted }}>{order.restaurant}</td>
+                  <td className="px-2 py-2 lg:px-4 lg:py-3 font-semibold text-[10px] lg:text-sm whitespace-nowrap"
+                    style={{ color: C.text }}>{order.total}</td>
+                  <td className="px-2 py-2 lg:px-4 lg:py-3">
+                    <span
+                      className="px-1.5 py-0.5 lg:px-2.5 lg:py-1 rounded-full text-[9px] lg:text-xs font-bold whitespace-nowrap inline-block"
+                      style={statusStyle(order.status)}
+                    >
                       {order.status}
                     </span>
                   </td>
-                  <td className="px-4 py-3" style={{ color: C.muted }}>{order.time}</td>
+                  <td className="px-2 py-2 lg:px-4 lg:py-3 text-[10px] lg:text-sm whitespace-nowrap"
+                    style={{ color: C.muted }}>{order.time}</td>
                 </tr>
               ))}
             </tbody>
