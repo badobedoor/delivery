@@ -3,6 +3,7 @@
 import Image from "next/image";
 import Link from "next/link";
 import { useState } from "react";
+import MealBottomSheet, { sampleMeal } from "@/components/customer/MealBottomSheet";
 
 /* ── بيانات وهمية ── */
 const restaurant = {
@@ -73,7 +74,8 @@ function QuantityCounter({ price }: { price: number }) {
 }
 
 export default function RestaurantPage() {
-  const [activeTab, setActiveTab] = useState("الكشري");
+  const [activeTab, setActiveTab]   = useState("الكشري");
+  const [sheetOpen, setSheetOpen]   = useState(false);
 
   /* وهمي: عدد عناصر السلة والسعر الكلي */
   const cartItems = 2;
@@ -160,8 +162,8 @@ export default function RestaurantPage() {
             <div className="flex flex-col divide-y divide-[var(--color-border)]">
               {meals[activeTab]?.map((meal) =>
                 meal.hasExtras ? (
-                  /* وجبة بإضافات: تفتح صفحة جديدة */
-                  <Link key={meal.id} href={`/meal/${meal.id}`} className="flex items-start gap-3 py-3">
+                  /* وجبة بإضافات: تفتح الـ bottom sheet */
+                  <button key={meal.id} onClick={() => setSheetOpen(true)} className="flex items-start gap-3 py-3 w-full text-right">
                     <div className="relative w-20 h-20 flex-shrink-0 rounded-xl overflow-hidden">
                       <Image src={meal.img} alt={meal.name} fill className="object-cover" />
                     </div>
@@ -170,7 +172,7 @@ export default function RestaurantPage() {
                       <p className="text-xs text-[var(--color-muted)] mt-0.5 line-clamp-2 leading-relaxed">{meal.desc}</p>
                       <p className="text-sm font-bold text-[var(--color-primary)] mt-1.5">{formatPrice(meal.price)}</p>
                     </div>
-                  </Link>
+                  </button>
                 ) : (
                   /* وجبة بدون إضافات: عداد مباشر */
                   <div key={meal.id} className="flex items-start gap-3 py-3">
@@ -212,6 +214,12 @@ export default function RestaurantPage() {
         )}
 
       </div>
+
+      {/* ── MealBottomSheet ── */}
+      {sheetOpen && (
+        <MealBottomSheet meal={sampleMeal} onClose={() => setSheetOpen(false)} />
+      )}
+
     </div>
   );
 }
