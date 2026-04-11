@@ -136,7 +136,27 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
       style={{ background: C.bg, color: C.text, fontFamily: "var(--font-cairo), Arial, sans-serif" }}
     >
 
-      {/* ── Main Area (takes remaining space) ── */}
+      {/*
+        RTL flex flows RIGHT → LEFT.
+        Spacer is first in DOM  →  lands on the RIGHT  (reserves space for fixed sidebar).
+        Main content is second  →  fills the LEFT  (all remaining width).
+      */}
+
+      {/* ── Desktop Sidebar Spacer (RIGHT side in RTL) ── */}
+      <div
+        className="hidden lg:block flex-shrink-0 transition-all duration-300"
+        style={{ width: `${sidebarW}px` }}
+      />
+
+      {/* ── Desktop Sidebar (fixed, right-0) ── */}
+      <div
+        className="hidden lg:block fixed top-0 bottom-0 right-0 z-30 transition-all duration-300"
+        style={{ width: `${sidebarW}px`, borderLeft: `1px solid ${C.border}` }}
+      >
+        <SidebarContent collapsed={collapsed} />
+      </div>
+
+      {/* ── Main Area (LEFT side in RTL, fills remaining width) ── */}
       <div className="flex-1 flex flex-col min-w-0">
 
         {/* ── Header ── */}
@@ -186,20 +206,6 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
         <main className="flex-1 p-4 lg:p-6">
           {children}
         </main>
-      </div>
-
-      {/* ── Desktop Sidebar Spacer (pushes main content left) ── */}
-      <div
-        className="hidden lg:block flex-shrink-0 transition-all duration-300"
-        style={{ width: `${sidebarW}px` }}
-      />
-
-      {/* ── Desktop Sidebar (fixed, right side) ── */}
-      <div
-        className="hidden lg:block fixed top-0 bottom-0 right-0 z-30 transition-all duration-300"
-        style={{ width: `${sidebarW}px`, borderLeft: `1px solid ${C.border}` }}
-      >
-        <SidebarContent collapsed={collapsed} />
       </div>
 
       {/* ── Mobile Drawer (slides from right) ── */}
