@@ -22,6 +22,7 @@ const navLinks = [
   { emoji: "🕐", label: "الورديات",  href: "/admin/shifts"      },
   { emoji: "🎟️", label: "الكوبونات", href: "/admin/coupons"     },
   { emoji: "💰", label: "الحسابات",  href: "/admin/accounts"    },
+  { emoji: "👥", label: "المستخدمين", href: "/admin/users"       },
   { emoji: "⚙️", label: "الإعدادات", href: "/admin/settings"    },
 ];
 
