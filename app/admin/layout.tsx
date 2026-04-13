@@ -1,8 +1,12 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname } from "next/navigation";
-import { useState } from "react";
+import { usePathname, useRouter } from "next/navigation";
+import { useState, useEffect } from "react";
+
+const userRole: "super_admin" | "admin" | "staff" = "super_admin";
+
+const STAFF_ALLOWED = ["/admin/orders", "/admin/restaurants", "/admin/shifts"];
 
 const C = {
   bg:     "#0F172A",
@@ -13,19 +17,26 @@ const C = {
   border: "#334155",
 };
 
-const navLinks = [
-  { emoji: "📊", label: "الرئيسية",  href: "/admin/dashboard"  },
-  { emoji: "📦", label: "الطلبات",   href: "/admin/orders"      },
-  { emoji: "🍔", label: "المطاعم",   href: "/admin/restaurants" },
-  { emoji: "🗺️", label: "الأحياء",   href: "/admin/areas"       },
-  { emoji: "🛵", label: "الدلفري",   href: "/admin/drivers"     },
-  { emoji: "🕐", label: "الورديات",  href: "/admin/shifts"      },
-  { emoji: "🎟️", label: "الكوبونات", href: "/admin/coupons"     },
-  { emoji: "💰", label: "الحسابات",  href: "/admin/accounts"    },
-  { emoji: "👥", label: "المستخدمين", href: "/admin/users"       },
-  { emoji: "🫂", label: "الفريق",     href: "/admin/team"        },
-  { emoji: "⚙️", label: "الإعدادات", href: "/admin/settings"    },
+const allNavLinks = [
+  { emoji: "📊", label: "الرئيسية",   href: "/admin/dashboard"  },
+  { emoji: "📦", label: "الطلبات",    href: "/admin/orders"      },
+  { emoji: "🍔", label: "المطاعم",    href: "/admin/restaurants" },
+  { emoji: "🗺️", label: "الأحياء",    href: "/admin/areas"       },
+  { emoji: "🛵", label: "الدلفري",    href: "/admin/drivers"     },
+  { emoji: "🕐", label: "الورديات",   href: "/admin/shifts"      },
+  { emoji: "🎟️", label: "الكوبونات",  href: "/admin/coupons"     },
+  { emoji: "💰", label: "الحسابات",   href: "/admin/accounts"    },
+  { emoji: "👥", label: "المستخدمين",  href: "/admin/users"            },
+  { emoji: "🖼️", label: "الإعلانات",  href: "/admin/advertisements"   },
+  { emoji: "📱", label: "الأقسام",    href: "/admin/sections"         },
+  { emoji: "🫂", label: "الفريق",     href: "/admin/team"             },
+  { emoji: "⚙️", label: "الإعدادات",  href: "/admin/settings"         },
 ];
+
+const navLinks =
+  userRole === "staff"
+    ? allNavLinks.filter((l) => STAFF_ALLOWED.includes(l.href))
+    : allNavLinks;
 
 const pageTitle: Record<string, string> = {
   "/admin/dashboard":   "الرئيسية",
@@ -37,8 +48,10 @@ const pageTitle: Record<string, string> = {
   "/admin/coupons":     "الكوبونات",
   "/admin/accounts":    "الحسابات",
   "/admin/settings":    "الإعدادات",
-  "/admin/users":       "المستخدمون",
-  "/admin/team":        "الفريق",
+  "/admin/users":            "المستخدمون",
+  "/admin/advertisements":   "الإعلانات",
+  "/admin/sections":         "الأقسام",
+  "/admin/team":             "الفريق",
 };
 
 function HamburgerIcon({ color }: { color: string }) {
@@ -131,7 +144,16 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
   const [collapsed,   setCollapsed]  = useState(false);
   const [mobileOpen,  setMobileOpen] = useState(false);
   const pathname = usePathname();
-  const title = pageTitle[pathname] ?? "لوحة التحكم";
+  const router   = useRouter();
+  const title    = pageTitle[pathname] ?? "لوحة التحكم";
+
+  /* ── Role-based redirect ── */
+  useEffect(() => {
+    if (userRole === "staff") {
+      const allowed = STAFF_ALLOWED.some((p) => pathname.startsWith(p));
+      if (!allowed) router.replace("/admin/orders");
+    }
+  }, [pathname, router]);
 
   const sidebarW = collapsed ? 64 : 260;
 
