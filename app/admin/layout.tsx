@@ -23,6 +23,7 @@ const navLinks = [
   { emoji: "🎟️", label: "الكوبونات", href: "/admin/coupons"     },
   { emoji: "💰", label: "الحسابات",  href: "/admin/accounts"    },
   { emoji: "👥", label: "المستخدمين", href: "/admin/users"       },
+  { emoji: "🫂", label: "الفريق",     href: "/admin/team"        },
   { emoji: "⚙️", label: "الإعدادات", href: "/admin/settings"    },
 ];
 
@@ -37,6 +38,7 @@ const pageTitle: Record<string, string> = {
   "/admin/accounts":    "الحسابات",
   "/admin/settings":    "الإعدادات",
   "/admin/users":       "المستخدمون",
+  "/admin/team":        "الفريق",
 };
 
 function HamburgerIcon({ color }: { color: string }) {
