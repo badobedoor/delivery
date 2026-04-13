@@ -20,7 +20,8 @@ type Driver = {
   id: number;
   name: string;
   phone: string;
-  wallet: number;
+  moto: string;
+  shifts: string[];
   active: boolean;
 };
 
@@ -32,12 +33,14 @@ type Moto = {
 
 /* ─────────────────────── Seed data ─────────────────── */
 
+const SHIFT_OPTIONS = ["الوردية ١", "الوردية ٢", "الوردية ٣"];
+
 const seedDrivers: Driver[] = [
-  { id: 1, name: "كريم سعد",    phone: "0100-111-2233", wallet: 340,  active: true  },
-  { id: 2, name: "مصطفى علي",   phone: "0101-222-3344", wallet: 215,  active: true  },
-  { id: 3, name: "عمر حسين",    phone: "0102-333-4455", wallet: 580,  active: true  },
-  { id: 4, name: "يوسف أحمد",   phone: "0103-444-5566", wallet: 95,   active: false },
-  { id: 5, name: "إبراهيم رضا", phone: "0104-555-6677", wallet: 1200, active: false },
+  { id: 1, name: "كريم سعد",    phone: "0100-111-2233", moto: "ياماها ٢٠٢٣ - XR150",  shifts: ["الوردية ١", "الوردية ٢"], active: true  },
+  { id: 2, name: "مصطفى علي",   phone: "0101-222-3344", moto: "هوندا ٢٠٢٢ - CB125",   shifts: ["الوردية ١"],               active: true  },
+  { id: 3, name: "عمر حسين",    phone: "0102-333-4455", moto: "سوزوكي ٢٠٢٣ - GD110",  shifts: ["الوردية ٢"],               active: true  },
+  { id: 4, name: "يوسف أحمد",   phone: "0103-444-5566", moto: "كيمكو ٢٠٢١ - Super 8", shifts: ["الوردية ٢", "الوردية ٣"], active: false },
+  { id: 5, name: "إبراهيم رضا", phone: "0104-555-6677", moto: "TVS ٢٠٢٢ - Metro 110",  shifts: ["الوردية ٣"],               active: false },
 ];
 
 const seedMotos: Moto[] = [
@@ -177,7 +180,7 @@ function DriversTab() {
   const [rows,   setRows]   = useState<Driver[]>(seedDrivers);
   const [search, setSearch] = useState("");
   const [modal,  setModal]  = useState<{ open: boolean; id?: number }>({ open: false });
-  const [form,   setForm]   = useState({ name: "", phone: "", active: true });
+  const [form,   setForm]   = useState({ name: "", phone: "", moto: "", shifts: [] as string[], active: true });
 
   const isEdit   = modal.id !== undefined;
   const filtered = rows.filter(
@@ -185,11 +188,11 @@ function DriversTab() {
   );
 
   function openAdd() {
-    setForm({ name: "", phone: "", active: true });
+    setForm({ name: "", phone: "", moto: "", shifts: [], active: true });
     setModal({ open: true });
   }
   function openEdit(d: Driver) {
-    setForm({ name: d.name, phone: d.phone, active: d.active });
+    setForm({ name: d.name, phone: d.phone, moto: d.moto, shifts: d.shifts, active: d.active });
     setModal({ open: true, id: d.id });
   }
   function close() { setModal({ open: false }); }
@@ -197,7 +200,7 @@ function DriversTab() {
   function save() {
     if (!form.name.trim() || !form.phone.trim()) return;
     if (!isEdit) {
-      setRows((p) => [{ id: Date.now(), name: form.name.trim(), phone: form.phone.trim(), wallet: 0, active: form.active }, ...p]);
+      setRows((p) => [{ id: Date.now(), name: form.name.trim(), phone: form.phone.trim(), moto: form.moto, shifts: form.shifts, active: form.active }, ...p]);
     } else {
       setRows((p) => p.map((r) => r.id === modal.id ? { ...r, ...form, name: form.name.trim(), phone: form.phone.trim() } : r));
     }
@@ -224,16 +227,23 @@ function DriversTab() {
             <table className="w-full">
               <thead>
                 <tr style={{ borderBottom: `1px solid ${C.border}` }}>
-                  {["الاسم", "الموبايل", "رصيد المحفظة", "الحالة", "إجراءات"].map((col, i) => (
-                    <th key={col}
-                      className={`px-4 py-3 text-right font-semibold text-xs whitespace-nowrap${i === 1 ? " hidden sm:table-cell" : ""}`}
-                      style={{ color: C.muted }}>{col}</th>
+                  {[
+                    { label: "الاسم",     hide: ""                      },
+                    { label: "الموبايل",  hide: " hidden sm:table-cell" },
+                    { label: "الموتسكل", hide: " hidden md:table-cell" },
+                    { label: "الورديات",  hide: " hidden lg:table-cell" },
+                    { label: "الحالة",    hide: ""                      },
+                    { label: "إجراءات",   hide: ""                      },
+                  ].map(({ label, hide }) => (
+                    <th key={label}
+                      className={`px-4 py-3 text-right font-semibold text-xs whitespace-nowrap${hide}`}
+                      style={{ color: C.muted }}>{label}</th>
                   ))}
                 </tr>
               </thead>
               <tbody>
                 {filtered.length === 0 ? (
-                  <tr><td colSpan={5} className="px-4 py-12 text-center text-sm" style={{ color: C.muted }}>لا توجد نتائج</td></tr>
+                  <tr><td colSpan={6} className="px-4 py-12 text-center text-sm" style={{ color: C.muted }}>لا توجد نتائج</td></tr>
                 ) : filtered.map((d, i) => (
                   <tr key={d.id} style={{ borderBottom: i < filtered.length - 1 ? `1px solid ${C.border}` : "none" }}>
                     <td className="px-4 py-3">
@@ -244,8 +254,20 @@ function DriversTab() {
                       </div>
                     </td>
                     <td className="hidden sm:table-cell px-4 py-3 text-xs whitespace-nowrap" style={{ color: C.muted }}>{d.phone}</td>
-                    <td className="px-4 py-3 text-sm font-bold whitespace-nowrap" style={{ color: C.teal }}>
-                      {d.wallet.toLocaleString()} ج.م
+                    <td className="hidden md:table-cell px-4 py-3 text-xs whitespace-nowrap" style={{ color: C.muted }}>
+                      🛵 {d.moto || "—"}
+                    </td>
+                    <td className="hidden lg:table-cell px-4 py-3">
+                      <div className="flex flex-wrap gap-1">
+                        {d.shifts.length === 0 ? (
+                          <span style={{ color: C.muted }}>—</span>
+                        ) : d.shifts.map((s) => (
+                          <span key={s} className="text-[10px] font-bold px-2 py-0.5 rounded-full whitespace-nowrap"
+                            style={{ background: `${C.teal}20`, color: C.teal }}>
+                            {s}
+                          </span>
+                        ))}
+                      </div>
                     </td>
                     <td className="px-4 py-3">
                       <StatusBadge active={d.active} onToggle={() => setRows((p) => p.map((r) => r.id === d.id ? { ...r, active: !r.active } : r))} />
@@ -274,6 +296,38 @@ function DriversTab() {
         </Field>
         <Field label="الموبايل" required>
           <TextInput value={form.phone} onChange={(v) => setForm({ ...form, phone: v })} placeholder="01XX-XXX-XXXX" type="tel" />
+        </Field>
+        <Field label="الموتسكل">
+          <select value={form.moto} onChange={(e) => setForm({ ...form, moto: e.target.value })}
+            className="w-full rounded-xl px-3 py-2.5 text-sm outline-none"
+            style={{ background: C.bg, border: `1px solid ${C.border}`, color: form.moto ? C.text : C.muted, colorScheme: "dark" }}>
+            <option value="">اختار موتسكل...</option>
+            {seedMotos.map((m) => <option key={m.id} value={m.name}>🛵 {m.name}</option>)}
+          </select>
+        </Field>
+        <Field label="الورديات">
+          <div className="flex flex-col gap-2 rounded-xl px-3 py-3"
+            style={{ background: C.bg, border: `1px solid ${C.border}` }}>
+            {SHIFT_OPTIONS.map((s) => {
+              const checked = form.shifts.includes(s);
+              return (
+                <label key={s} className="flex items-center gap-2 cursor-pointer select-none">
+                  <div
+                    onClick={() => setForm({ ...form, shifts: checked ? form.shifts.filter((x) => x !== s) : [...form.shifts, s] })}
+                    className="w-4 h-4 rounded flex items-center justify-center flex-shrink-0 transition-colors"
+                    style={{ background: checked ? C.teal : "transparent", border: `1.5px solid ${checked ? C.teal : C.border}` }}
+                  >
+                    {checked && (
+                      <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="3" strokeLinecap="round">
+                        <polyline points="20 6 9 17 4 12" />
+                      </svg>
+                    )}
+                  </div>
+                  <span className="text-sm" style={{ color: C.text }}>{s}</span>
+                </label>
+              );
+            })}
+          </div>
         </Field>
         <ActiveToggle active={form.active} onChange={(v) => setForm({ ...form, active: v })} />
       </Modal>

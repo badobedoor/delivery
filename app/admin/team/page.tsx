@@ -425,8 +425,8 @@ function MemberTab({ seed, addLabel, entityLabel }: {
                     <td className="hidden sm:table-cell px-4 py-3 text-xs whitespace-nowrap" style={{ color: C.muted }}>
                       {r.phone || "—"}
                     </td>
-                    <td className="hidden md:table-cell px-4 py-3 text-sm tracking-widest" style={{ color: C.muted }}>
-                      ••••••••
+                    <td className="hidden md:table-cell px-4 py-3 text-sm font-mono" style={{ color: C.muted }}>
+                      {r.password}
                     </td>
                     <td className="px-4 py-3">
                       <span className="px-2.5 py-1 rounded-full text-[10px] font-bold whitespace-nowrap"
