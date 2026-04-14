@@ -1,7 +1,10 @@
 "use client";
 
-import Link from "next/link";
-import { usePathname } from "next/navigation";
+import Link         from "next/link";
+import { usePathname, useRouter } from "next/navigation";
+import { useEffect } from "react";
+import { useAuth }  from "@/hooks/useAuth";
+import { signOut }  from "@/lib/auth";
 
 const C = {
   bg:     "#0F172A",
@@ -13,7 +16,6 @@ const C = {
   red:    "#EF4444",
 };
 
-/* Hardcoded — will come from global state / context when wired to backend */
 const AVAILABLE_COUNT = 3;
 
 const navItems = [
@@ -22,12 +24,52 @@ const navItems = [
   { href: "/driver/accounts", emoji: "💰", label: "حساباتي", badge: 0              },
 ];
 
-export default function DriverLayout({ children }: { children: React.ReactNode }) {
-  const pathname = usePathname();
+function AuthLoadingScreen() {
+  return (
+    <div className="min-h-screen flex items-center justify-center"
+      style={{ background: C.bg }}>
+      <div className="flex flex-col items-center gap-3">
+        <span className="text-3xl" style={{ color: C.teal }}>⚡</span>
+        <p className="text-sm font-semibold animate-pulse" style={{ color: C.muted }}>
+          جاري التحقق...
+        </p>
+      </div>
+    </div>
+  );
+}
 
-  /* Login page: render without bottom nav */
-  if (pathname === "/driver/login") {
-    return <>{children}</>;
+export default function DriverLayout({ children }: { children: React.ReactNode }) {
+  const { user, profile, loading } = useAuth();
+  const pathname = usePathname();
+  const router   = useRouter();
+
+  /* Login page renders without bottom nav, skip auth guard */
+  const isLoginPage = pathname === "/driver/login";
+
+  useEffect(() => {
+    if (isLoginPage || loading) return;
+
+    if (!user) {
+      router.replace("/driver/login");
+      return;
+    }
+
+    if (profile && profile.role !== "driver") {
+      /* Wrong role → send to their correct area */
+      if (profile.role === "admin" || profile.role === "staff") {
+        router.replace("/admin/dashboard");
+      } else {
+        router.replace("/");
+      }
+    }
+  }, [isLoginPage, loading, user, profile, router]);
+
+  if (isLoginPage) return <>{children}</>;
+  if (loading || !user) return <AuthLoadingScreen />;
+
+  async function handleLogout() {
+    await signOut();
+    router.replace("/driver/login");
   }
 
   return (
@@ -41,7 +83,7 @@ export default function DriverLayout({ children }: { children: React.ReactNode }
       }}
     >
       {/* ── Page content ── */}
-      <div className="flex-1 overflow-y-auto">
+      <div className="flex-1 overflow-y-auto pb-20">
         {children}
       </div>
 
@@ -59,7 +101,6 @@ export default function DriverLayout({ children }: { children: React.ReactNode }
               className="flex-1 flex flex-col items-center justify-center gap-0.5 py-3 transition-colors"
               style={{ color: active ? C.teal : C.muted }}
             >
-              {/* Emoji + badge wrapper */}
               <div className="relative">
                 <span className="text-xl leading-none">{item.emoji}</span>
                 {item.badge > 0 && (
@@ -72,16 +113,22 @@ export default function DriverLayout({ children }: { children: React.ReactNode }
                 )}
               </div>
               <span className="text-[11px] font-bold">{item.label}</span>
-              {/* Active indicator dot */}
               {active && (
-                <span
-                  className="w-1 h-1 rounded-full mt-0.5"
-                  style={{ background: C.teal }}
-                />
+                <span className="w-1 h-1 rounded-full mt-0.5" style={{ background: C.teal }} />
               )}
             </Link>
           );
         })}
+
+        {/* Logout icon in bottom nav */}
+        <button
+          onClick={handleLogout}
+          className="flex-1 flex flex-col items-center justify-center gap-0.5 py-3 transition-colors"
+          style={{ color: C.red }}
+        >
+          <span className="text-xl leading-none">🚪</span>
+          <span className="text-[11px] font-bold">خروج</span>
+        </button>
       </nav>
     </div>
   );

@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import { signIn, getUserProfile, getRoleRedirect } from "@/lib/auth";
 
 const C = {
   bg:     "#0F172A",
@@ -11,6 +12,7 @@ const C = {
   muted:  "#94A3B8",
   border: "#334155",
   orange: "#F97316",
+  red:    "#EF4444",
 };
 
 function EyeIcon() {
@@ -36,31 +38,43 @@ function EyeOffIcon() {
 
 export default function AdminLoginPage() {
   const router = useRouter();
-  const [password,   setPassword]   = useState("");
-  const [showPass,   setShowPass]   = useState(false);
-  const [remember,   setRemember]   = useState(false);
-  const [error,      setError]      = useState("");
-  const [loading,    setLoading]    = useState(false);
+  const [email,    setEmail]    = useState("");
+  const [password, setPassword] = useState("");
+  const [showPass, setShowPass] = useState(false);
+  const [error,    setError]    = useState("");
+  const [loading,  setLoading]  = useState(false);
 
-  function handleSubmit(e: React.FormEvent) {
+  async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
-    if (!password.trim()) { setError("أدخل كلمة المرور"); return; }
+    if (!email.trim())    { setError("أدخل البريد الإلكتروني"); return; }
+    if (!password.trim()) { setError("أدخل كلمة المرور");        return; }
+
     setError("");
     setLoading(true);
-    setTimeout(() => {
+
+    try {
+      const { session } = await signIn(email.trim(), password);
+      if (!session) throw new Error("فشل تسجيل الدخول");
+
+      const profile = await getUserProfile(session.user.id);
+      if (!profile) throw new Error("لم يتم العثور على الملف الشخصي");
+
+      if (profile.role !== "admin" && profile.role !== "staff") {
+        throw new Error("غير مصرح لك بالدخول لهذه اللوحة");
+      }
+
+      router.push(getRoleRedirect(profile.role));
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : "حدث خطأ غير متوقع");
+    } finally {
       setLoading(false);
-      router.push("/admin/dashboard");
-    }, 800);
+    }
   }
 
   return (
     <div
       className="min-h-screen flex items-center justify-center p-4"
-      style={{
-        background: C.bg,
-        fontFamily: "var(--font-cairo), Arial, sans-serif",
-        direction: "rtl",
-      }}
+      style={{ background: C.bg, fontFamily: "var(--font-cairo), Arial, sans-serif", direction: "rtl" }}
     >
       <div
         className="w-full max-w-sm rounded-3xl p-8 flex flex-col gap-6"
@@ -84,6 +98,25 @@ export default function AdminLoginPage() {
         {/* ── Form ── */}
         <form onSubmit={handleSubmit} className="flex flex-col gap-4">
 
+          {/* Email */}
+          <div className="flex flex-col gap-1.5">
+            <label className="text-sm font-semibold" style={{ color: C.muted }}>
+              البريد الإلكتروني
+            </label>
+            <input
+              type="email"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              placeholder="admin@example.com"
+              className="w-full rounded-xl px-3 py-2.5 text-sm outline-none"
+              style={{
+                background: C.bg,
+                border: `1px solid ${error ? C.red : C.border}`,
+                color: C.text,
+              }}
+            />
+          </div>
+
           {/* Password */}
           <div className="flex flex-col gap-1.5">
             <label className="text-sm font-semibold" style={{ color: C.muted }}>
@@ -98,7 +131,7 @@ export default function AdminLoginPage() {
                 className="w-full rounded-xl px-3 py-2.5 text-sm outline-none"
                 style={{
                   background: C.bg,
-                  border: `1px solid ${error ? "#EF4444" : C.border}`,
+                  border: `1px solid ${error ? C.red : C.border}`,
                   color: C.text,
                   paddingLeft: "40px",
                 }}
@@ -112,41 +145,22 @@ export default function AdminLoginPage() {
                 {showPass ? <EyeOffIcon /> : <EyeIcon />}
               </button>
             </div>
-            {error && (
-              <p className="text-xs" style={{ color: "#EF4444" }}>{error}</p>
-            )}
           </div>
 
-          {/* Remember me */}
-          <label className="flex items-center gap-2 cursor-pointer select-none w-fit">
-            <div
-              onClick={() => setRemember((v) => !v)}
-              className="w-4 h-4 rounded flex items-center justify-center flex-shrink-0 transition-colors"
-              style={{
-                background: remember ? C.teal : "transparent",
-                border: `1.5px solid ${remember ? C.teal : C.border}`,
-              }}
-            >
-              {remember && (
-                <svg width="10" height="10" viewBox="0 0 24 24" fill="none"
-                  stroke="#fff" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
-                  <polyline points="20 6 9 17 4 12" />
-                </svg>
-              )}
-            </div>
-            <span className="text-sm" style={{ color: C.muted }}>تذكرني</span>
-          </label>
+          {/* Error */}
+          {error && (
+            <p className="text-xs text-center py-2 px-3 rounded-xl"
+              style={{ background: `${C.red}18`, color: C.red, border: `1px solid ${C.red}33` }}>
+              ⚠ {error}
+            </p>
+          )}
 
           {/* Submit */}
           <button
             type="submit"
             disabled={loading}
             className="w-full py-3 rounded-xl text-sm font-black transition-opacity hover:opacity-90 mt-1"
-            style={{
-              background: C.orange,
-              color: "#fff",
-              opacity: loading ? 0.7 : 1,
-            }}
+            style={{ background: C.orange, color: "#fff", opacity: loading ? 0.7 : 1 }}
           >
             {loading ? "جاري الدخول..." : "دخول"}
           </button>
