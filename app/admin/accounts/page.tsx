@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useMemo } from "react";
 
 /* ── Palette ── */
 const C = {
@@ -13,6 +13,7 @@ const C = {
   green:  "#22C55E",
   red:    "#EF4444",
   orange: "#F97316",
+  blue:   "#3B82F6",
 };
 
 /* ─────────────────────────────────────────────
@@ -25,14 +26,14 @@ type WalletCat    = "office" | "delivery" | "moto";
 type TxType       = "صرف" | "تحصيل" | "تحويل";
 
 type Transaction = {
-  id: number;
-  date: string;
-  type: TxType;
-  person: string;      /* driver/moto name, or "—" for transfers */
-  fromWallet: string;  /* wallet label */
-  toWallet: string;    /* wallet label or "—" */
-  amount: number;
-  note: string;
+  id:          number;
+  createdAt:   string;   /* formatted Arabic date + time */
+  type:        TxType;
+  personName?: string;   /* driver / moto name; omitted for transfers */
+  fromWallet:  string;   /* wallet label */
+  toWallet:    string;   /* wallet label or "—" */
+  amount:      number;
+  description: string;
 };
 
 /* ─────────────────────────────────────────────
@@ -52,16 +53,46 @@ const seedMotoWallets: MotoWallet[] = [
 ];
 
 const seedTransactions: Transaction[] = [
-  { id: 1, date: "١٤ أبريل ٢٠٢٦", type: "تحويل", person: "—",           fromWallet: "خزنة المكتب",      toWallet: "خزنة الدلفري",     amount: 5000, note: "تمويل رواتب السائقين" },
-  { id: 2, date: "١٣ أبريل ٢٠٢٦", type: "صرف",   person: "كريم سعد",    fromWallet: "خزنة المكتب",      toWallet: "—",                amount: 1200, note: "راتب"                 },
-  { id: 3, date: "١٣ أبريل ٢٠٢٦", type: "تحصيل", person: "موتوسيكل #1", fromWallet: "خزنة الموتسكلات", toWallet: "—",                amount: 200,  note: "خصم تأخير"            },
-  { id: 4, date: "١٢ أبريل ٢٠٢٦", type: "تحويل", person: "—",           fromWallet: "خزنة المكتب",      toWallet: "خزنة الموتسكلات",  amount: 2000, note: "صيانة وبنزين"         },
-  { id: 5, date: "١٢ أبريل ٢٠٢٦", type: "صرف",   person: "مصطفى علي",   fromWallet: "خزنة الدلفري",     toWallet: "—",                amount: 850,  note: "مكافأة أداء"          },
+  {
+    id: 1, createdAt: "١٤ أبريل ٢٠٢٦ — ١٠:٠٠ ص", type: "تحويل",
+    fromWallet: "خزنة المكتب", toWallet: "خزنة الدلفري",
+    amount: 5000, description: "تمويل رواتب السائقين",
+  },
+  {
+    id: 2, createdAt: "١٣ أبريل ٢٠٢٦ — ٢:٣٠ م", type: "صرف",
+    personName: "كريم سعد",
+    fromWallet: "خزنة المكتب", toWallet: "—",
+    amount: 1200, description: "راتب",
+  },
+  {
+    id: 3, createdAt: "١٣ أبريل ٢٠٢٦ — ٤:١٥ م", type: "تحصيل",
+    personName: "موتوسيكل #1",
+    fromWallet: "خزنة الموتسكلات", toWallet: "—",
+    amount: 200, description: "خصم تأخير",
+  },
+  {
+    id: 4, createdAt: "١٢ أبريل ٢٠٢٦ — ٩:٠٠ ص", type: "تحويل",
+    fromWallet: "خزنة المكتب", toWallet: "خزنة الموتسكلات",
+    amount: 2000, description: "صيانة وبنزين",
+  },
+  {
+    id: 5, createdAt: "١٢ أبريل ٢٠٢٦ — ١١:٤٥ ص", type: "صرف",
+    personName: "مصطفى علي",
+    fromWallet: "خزنة الدلفري", toWallet: "—",
+    amount: 850, description: "مكافأة أداء",
+  },
 ];
 
 /* ── Helpers ── */
-function fmtAmt(n: number) { return `${n.toLocaleString("ar-EG")} ج.م`; }
-function today()            { return new Date().toLocaleDateString("ar-EG", { day: "numeric", month: "long", year: "numeric" }); }
+function fmtAmt(n: number) {
+  return `${n.toLocaleString("ar-EG")} ج.م`;
+}
+function nowAr() {
+  const d = new Date();
+  const date = d.toLocaleDateString("ar-EG", { day: "numeric", month: "long", year: "numeric" });
+  const time = d.toLocaleTimeString("ar-EG", { hour: "2-digit", minute: "2-digit" });
+  return `${date} — ${time}`;
+}
 
 const WALLET_OPTIONS: { value: WalletCat; label: string; icon: string }[] = [
   { value: "office",   label: "خزنة المكتب",      icon: "🏦" },
@@ -74,8 +105,243 @@ const WALLET_LABELS: Record<WalletCat, string> = {
   moto:     "خزنة الموتسكلات",
 };
 
+/* ── Type meta ── */
+const TX_META: Record<TxType, { icon: string; color: string; label: (t: Transaction) => string }> = {
+  "صرف":    {
+    icon:  "↑",
+    color: C.red,
+    label: (t) => `صرف ${fmtAmt(t.amount)}${t.personName ? ` لـ ${t.personName}` : ""}`,
+  },
+  "تحصيل": {
+    icon:  "↓",
+    color: C.green,
+    label: (t) => `تحصيل ${fmtAmt(t.amount)}${t.personName ? ` من ${t.personName}` : ""}`,
+  },
+  "تحويل": {
+    icon:  "⇄",
+    color: C.blue,
+    label: (t) => `تحويل ${fmtAmt(t.amount)} من ${t.fromWallet} إلى ${t.toWallet}`,
+  },
+};
+
 /* ─────────────────────────────────────────────
-   TAB: ملخص (unchanged)
+   COMPONENT: TransactionActivity (reusable)
+   walletKey: which wallet to filter for
+             ("all" = show everything = office)
+───────────────────────────────────────────── */
+
+function TransactionActivity({
+  walletKey,
+  transactions,
+}: {
+  walletKey: WalletCat | "all";
+  transactions: Transaction[];
+}) {
+  const [query, setQuery] = useState("");
+
+  const walletLabel = walletKey === "all" ? null : WALLET_LABELS[walletKey];
+
+  /* Filter by wallet */
+  const walletFiltered = useMemo(() => {
+    if (!walletLabel) return transactions;
+    return transactions.filter(
+      (t) => t.fromWallet === walletLabel || t.toWallet === walletLabel,
+    );
+  }, [transactions, walletLabel]);
+
+  /* Filter by search query */
+  const displayed = useMemo(() => {
+    if (!query.trim()) return walletFiltered;
+    const q = query.trim().toLowerCase();
+    return walletFiltered.filter(
+      (t) =>
+        (t.personName ?? "").toLowerCase().includes(q) ||
+        t.description.toLowerCase().includes(q) ||
+        t.type.includes(q) ||
+        t.fromWallet.toLowerCase().includes(q) ||
+        t.toWallet.toLowerCase().includes(q),
+    );
+  }, [walletFiltered, query]);
+
+  return (
+    <div className="rounded-2xl flex flex-col gap-0 overflow-hidden"
+      style={{ background: C.card, border: `1px solid ${C.border}` }}>
+
+      {/* Header + search */}
+      <div className="flex flex-col gap-3 px-4 py-4 border-b" style={{ borderColor: C.border }}>
+        <div className="flex items-center justify-between">
+          <h3 className="text-sm font-black" style={{ color: C.text }}>سجل العمليات</h3>
+          <span className="text-[11px] px-2 py-0.5 rounded-full font-semibold"
+            style={{ background: `${C.teal}22`, color: C.teal }}>
+            {walletFiltered.length} عملية
+          </span>
+        </div>
+
+        {/* Search */}
+        <div className="relative">
+          <span className="absolute top-1/2 -translate-y-1/2 right-3 text-xs" style={{ color: C.muted }}>
+            🔍
+          </span>
+          <input
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            placeholder="ابحث باسم الشخص أو البيان..."
+            className="w-full rounded-xl pr-9 pl-4 py-2.5 text-sm outline-none"
+            style={{
+              background: C.bg,
+              border: `1px solid ${C.border}`,
+              color: C.text,
+            }}
+          />
+          {query && (
+            <button
+              onClick={() => setQuery("")}
+              className="absolute top-1/2 -translate-y-1/2 left-3 text-xs hover:opacity-70"
+              style={{ color: C.muted }}>✕</button>
+          )}
+        </div>
+
+        {/* Quick type filters */}
+        <div className="flex gap-2 flex-wrap">
+          {(["الكل", "صرف", "تحصيل", "تحويل"] as const).map((f) => {
+            const active =
+              f === "الكل"
+                ? query === ""
+                : query === f;
+            const col =
+              f === "صرف" ? C.red :
+              f === "تحصيل" ? C.green :
+              f === "تحويل" ? C.blue : C.teal;
+            return (
+              <button
+                key={f}
+                onClick={() => setQuery(f === "الكل" ? "" : f)}
+                className="px-3 py-1 rounded-lg text-[11px] font-bold transition-all"
+                style={{
+                  background: active ? col : `${col}18`,
+                  color: active ? "#fff" : col,
+                  border: `1px solid ${active ? col : `${col}33`}`,
+                }}
+              >
+                {f}
+              </button>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* Activity feed */}
+      <div className="overflow-y-auto" style={{ maxHeight: 420 }}>
+        {displayed.length === 0 ? (
+          <div className="flex flex-col items-center justify-center gap-3 py-12">
+            <span style={{ fontSize: 36 }}>📭</span>
+            <p className="text-sm font-semibold" style={{ color: C.muted }}>
+              {query ? "لا توجد نتائج للبحث" : "لا يوجد عمليات حتى الآن"}
+            </p>
+          </div>
+        ) : (
+          <div className="flex flex-col">
+            {displayed.map((t, i) => {
+              const meta  = TX_META[t.type];
+              const isLast = i === displayed.length - 1;
+              return (
+                <div
+                  key={t.id}
+                  className="flex items-start gap-4 px-4 py-3.5 transition-all"
+                  style={{
+                    borderBottom: isLast ? "none" : `1px solid ${C.border}`,
+                    /* fade-in via CSS animation for newest items */
+                    animation: i === 0 ? "txFadeIn 0.35s ease" : undefined,
+                  }}
+                >
+                  {/* Icon badge */}
+                  <div
+                    className="w-10 h-10 rounded-xl flex items-center justify-center text-lg font-black flex-shrink-0 mt-0.5"
+                    style={{ background: `${meta.color}20`, color: meta.color }}
+                  >
+                    {meta.icon}
+                  </div>
+
+                  {/* Main content */}
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-bold leading-snug" style={{ color: C.text }}>
+                      {meta.label(t)}
+                    </p>
+                    {t.description && (
+                      <p className="text-xs mt-0.5 truncate" style={{ color: C.muted }}>
+                        {t.description}
+                      </p>
+                    )}
+                    <div className="flex items-center gap-2 mt-1.5 flex-wrap">
+                      {/* Wallet badges */}
+                      <span className="text-[10px] px-2 py-0.5 rounded-md font-medium"
+                        style={{ background: `${C.border}`, color: C.muted }}>
+                        {t.fromWallet}
+                      </span>
+                      {t.toWallet !== "—" && (
+                        <>
+                          <span style={{ color: C.muted, fontSize: 10 }}>→</span>
+                          <span className="text-[10px] px-2 py-0.5 rounded-md font-medium"
+                            style={{ background: `${C.border}`, color: C.muted }}>
+                            {t.toWallet}
+                          </span>
+                        </>
+                      )}
+                    </div>
+                    <p className="text-[10px] mt-1" style={{ color: `${C.muted}99` }}>
+                      {t.createdAt}
+                    </p>
+                  </div>
+
+                  {/* Amount + type badge */}
+                  <div className="flex flex-col items-end gap-1.5 flex-shrink-0">
+                    <p className="text-base font-black" style={{ color: meta.color }}>
+                      {fmtAmt(t.amount)}
+                    </p>
+                    <span
+                      className="text-[10px] px-2 py-0.5 rounded-full font-bold"
+                      style={{ background: `${meta.color}22`, color: meta.color }}
+                    >
+                      {t.type}
+                    </span>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
+
+      {/* Footer count */}
+      {displayed.length > 0 && (
+        <div className="px-4 py-2.5 border-t text-xs flex items-center justify-between"
+          style={{ borderColor: C.border, color: C.muted }}>
+          <span>
+            {query
+              ? `${displayed.length} نتيجة من ${walletFiltered.length}`
+              : `${walletFiltered.length} عملية مسجلة`}
+          </span>
+          {query && (
+            <button onClick={() => setQuery("")}
+              className="text-[11px] hover:opacity-70"
+              style={{ color: C.teal }}>مسح البحث</button>
+          )}
+        </div>
+      )}
+
+      {/* Keyframe injection */}
+      <style>{`
+        @keyframes txFadeIn {
+          from { opacity: 0; transform: translateY(-8px); }
+          to   { opacity: 1; transform: translateY(0);    }
+        }
+      `}</style>
+    </div>
+  );
+}
+
+/* ─────────────────────────────────────────────
+   TAB: ملخص
 ───────────────────────────────────────────── */
 function SummaryTab() {
   return (
@@ -121,7 +387,6 @@ function SummaryTab() {
 
 /* ─────────────────────────────────────────────
    MODAL A — إدارة (صرف / تحصيل)
-   Affects: person balance + source wallet balance
 ───────────────────────────────────────────── */
 
 function ManageModal({ target, officeBalance, deliveryBalance, motoBalance, onSubmit, onClose }: {
@@ -149,18 +414,14 @@ function ManageModal({ target, officeBalance, deliveryBalance, motoBalance, onSu
   function handleSubmit() {
     const n = parseFloat(amount);
     if (!n || n <= 0) { setError("أدخل مبلغاً أكبر من صفر"); return; }
-
-    /* wallet must have enough funds (both ops consume wallet) */
     if (getWalletBalance(wallet) < n) {
       setError(`رصيد غير كافٍ في ${WALLET_LABELS[wallet]}`);
       return;
     }
-    /* تحصيل: person balance must cover the deduction */
     if (op === "تحصيل" && target.balance < n) {
       setError("رصيد الشخص غير كافٍ للتحصيل");
       return;
     }
-
     onSubmit(op, wallet, n, note.trim());
   }
 
@@ -174,7 +435,6 @@ function ManageModal({ target, officeBalance, deliveryBalance, motoBalance, onSu
       <div className="w-full max-w-sm rounded-2xl flex flex-col"
         style={{ background: C.card, border: `1px solid ${C.border}` }}>
 
-        {/* Header */}
         <div className="flex items-center justify-between px-5 py-4 border-b" style={{ borderColor: C.border }}>
           <div>
             <h2 className="text-base font-black" style={{ color: C.text }}>إدارة الرصيد</h2>
@@ -187,10 +447,7 @@ function ManageModal({ target, officeBalance, deliveryBalance, motoBalance, onSu
             style={{ background: C.bg, color: C.muted }}>✕</button>
         </div>
 
-        {/* Body */}
         <div className="px-5 py-4 flex flex-col gap-4">
-
-          {/* Op type */}
           <div className="flex flex-col gap-1.5">
             <label className="text-xs font-semibold" style={{ color: C.muted }}>نوع العملية</label>
             <div className="flex gap-2">
@@ -212,7 +469,6 @@ function ManageModal({ target, officeBalance, deliveryBalance, motoBalance, onSu
                 );
               })}
             </div>
-            {/* Explanation */}
             <p className="text-[11px] px-1" style={{ color: C.muted }}>
               {op === "صرف"
                 ? `صرف: يزيد رصيد ${target.name} ويخصم من الخزنة المختارة`
@@ -220,7 +476,6 @@ function ManageModal({ target, officeBalance, deliveryBalance, motoBalance, onSu
             </p>
           </div>
 
-          {/* من خزنة */}
           <div className="flex flex-col gap-1.5">
             <label className="text-xs font-semibold" style={{ color: C.muted }}>
               من خزنة <span style={{ color: C.red }}>*</span>
@@ -235,7 +490,6 @@ function ManageModal({ target, officeBalance, deliveryBalance, motoBalance, onSu
             </select>
           </div>
 
-          {/* Amount */}
           <div className="flex flex-col gap-1.5">
             <label className="text-xs font-semibold" style={{ color: C.muted }}>
               المبلغ <span style={{ color: C.red }}>*</span>
@@ -251,7 +505,6 @@ function ManageModal({ target, officeBalance, deliveryBalance, motoBalance, onSu
             </div>
           </div>
 
-          {/* Error */}
           {error && (
             <p className="text-xs text-center py-1.5 px-3 rounded-lg"
               style={{ background: `${C.red}18`, color: C.red, border: `1px solid ${C.red}33` }}>
@@ -259,7 +512,6 @@ function ManageModal({ target, officeBalance, deliveryBalance, motoBalance, onSu
             </p>
           )}
 
-          {/* Note */}
           <div className="flex flex-col gap-1.5">
             <label className="text-xs font-semibold" style={{ color: C.muted }}>البيان</label>
             <textarea value={note} onChange={(e) => setNote(e.target.value)}
@@ -270,7 +522,6 @@ function ManageModal({ target, officeBalance, deliveryBalance, motoBalance, onSu
           </div>
         </div>
 
-        {/* Footer */}
         <div className="flex gap-3 px-5 py-4 border-t" style={{ borderColor: C.border }}>
           <button onClick={handleSubmit}
             className="flex-1 py-2.5 rounded-xl text-sm font-bold hover:opacity-90"
@@ -286,7 +537,6 @@ function ManageModal({ target, officeBalance, deliveryBalance, motoBalance, onSu
 
 /* ─────────────────────────────────────────────
    MODAL B — تحويل بين الخزن
-   Subtracts from source, adds to target
 ───────────────────────────────────────────── */
 
 function TransferModal({ officeBalance, deliveryBalance, motoBalance, onSubmit, onClose }: {
@@ -334,7 +584,6 @@ function TransferModal({ officeBalance, deliveryBalance, motoBalance, onSubmit, 
       <div className="w-full max-w-sm rounded-2xl flex flex-col"
         style={{ background: C.card, border: `1px solid ${C.border}` }}>
 
-        {/* Header */}
         <div className="flex items-center justify-between px-5 py-4 border-b" style={{ borderColor: C.border }}>
           <h2 className="text-base font-black" style={{ color: C.text }}>⇄ تحويل بين الخزن</h2>
           <button onClick={onClose}
@@ -342,10 +591,7 @@ function TransferModal({ officeBalance, deliveryBalance, motoBalance, onSubmit, 
             style={{ background: C.bg, color: C.muted }}>✕</button>
         </div>
 
-        {/* Body */}
         <div className="px-5 py-4 flex flex-col gap-3">
-
-          {/* From */}
           <div className="flex flex-col gap-1.5">
             <label className="text-xs font-semibold" style={{ color: C.muted }}>من خزنة</label>
             <select value={from} onChange={(e) => handleFromChange(e.target.value as WalletCat)}
@@ -360,7 +606,6 @@ function TransferModal({ officeBalance, deliveryBalance, motoBalance, onSubmit, 
 
           <div className="flex justify-center"><span className="text-xl" style={{ color: C.teal }}>↓</span></div>
 
-          {/* To */}
           <div className="flex flex-col gap-1.5">
             <label className="text-xs font-semibold" style={{ color: C.muted }}>إلى خزنة</label>
             <select value={to} onChange={(e) => handleToChange(e.target.value as WalletCat)}
@@ -373,7 +618,6 @@ function TransferModal({ officeBalance, deliveryBalance, motoBalance, onSubmit, 
             </select>
           </div>
 
-          {/* Amount */}
           <div className="flex flex-col gap-1.5">
             <label className="text-xs font-semibold" style={{ color: C.muted }}>
               المبلغ <span style={{ color: C.red }}>*</span>
@@ -389,7 +633,6 @@ function TransferModal({ officeBalance, deliveryBalance, motoBalance, onSubmit, 
             </div>
           </div>
 
-          {/* Error */}
           {error && (
             <p className="text-xs text-center py-1.5 px-3 rounded-lg"
               style={{ background: `${C.red}18`, color: C.red, border: `1px solid ${C.red}33` }}>
@@ -397,7 +640,6 @@ function TransferModal({ officeBalance, deliveryBalance, motoBalance, onSubmit, 
             </p>
           )}
 
-          {/* Note */}
           <div className="flex flex-col gap-1.5">
             <label className="text-xs font-semibold" style={{ color: C.muted }}>البيان</label>
             <textarea value={note} onChange={(e) => setNote(e.target.value)}
@@ -408,7 +650,6 @@ function TransferModal({ officeBalance, deliveryBalance, motoBalance, onSubmit, 
           </div>
         </div>
 
-        {/* Footer */}
         <div className="flex gap-3 px-5 py-4 border-t" style={{ borderColor: C.border }}>
           <button onClick={handleSubmit}
             className="flex-1 py-2.5 rounded-xl text-sm font-bold hover:opacity-90"
@@ -423,7 +664,7 @@ function TransferModal({ officeBalance, deliveryBalance, motoBalance, onSubmit, 
 }
 
 /* ─────────────────────────────────────────────
-   TAB: خزنة المكتب — balance card + full transaction log
+   TAB: خزنة المكتب
 ───────────────────────────────────────────── */
 
 function OfficeWalletTab({ balance, transactions }: {
@@ -443,72 +684,8 @@ function OfficeWalletTab({ balance, transactions }: {
         <span style={{ fontSize: 40 }}>🏦</span>
       </div>
 
-      {/* Transaction log */}
-      <div className="rounded-2xl overflow-hidden" style={{ background: C.card, border: `1px solid ${C.border}` }}>
-        <div className="px-4 py-3 border-b" style={{ borderColor: C.border }}>
-          <h3 className="text-sm font-black" style={{ color: C.text }}>سجل العمليات الكامل</h3>
-        </div>
-        <div className="overflow-x-auto">
-          <table className="w-full">
-            <thead>
-              <tr style={{ borderBottom: `1px solid ${C.border}` }}>
-                {[
-                  { col: "التاريخ",   hide: "" },
-                  { col: "النوع",     hide: "" },
-                  { col: "الشخص",     hide: " hidden sm:table-cell" },
-                  { col: "من خزنة",   hide: " hidden sm:table-cell" },
-                  { col: "إلى خزنة",  hide: " hidden md:table-cell" },
-                  { col: "المبلغ",    hide: "" },
-                  { col: "البيان",    hide: " hidden lg:table-cell" },
-                ].map(({ col, hide }) => (
-                  <th key={col}
-                    className={`px-3 py-2.5 text-right text-xs font-semibold whitespace-nowrap${hide}`}
-                    style={{ color: C.muted }}>{col}</th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {transactions.length === 0 ? (
-                <tr>
-                  <td colSpan={7} className="px-4 py-10 text-center text-sm" style={{ color: C.muted }}>
-                    لا توجد عمليات بعد
-                  </td>
-                </tr>
-              ) : transactions.map((t, i) => {
-                const col = t.type === "صرف" ? C.teal : t.type === "تحصيل" ? C.orange : C.green;
-                return (
-                  <tr key={t.id}
-                    style={{ borderBottom: i < transactions.length - 1 ? `1px solid ${C.border}` : "none" }}>
-                    <td className="px-3 py-2.5 text-xs whitespace-nowrap" style={{ color: C.muted }}>{t.date}</td>
-                    <td className="px-3 py-2.5">
-                      <span className="text-[10px] px-2 py-0.5 rounded-full font-bold whitespace-nowrap"
-                        style={{ background: `${col}22`, color: col }}>{t.type}</span>
-                    </td>
-                    <td className="hidden sm:table-cell px-3 py-2.5 text-xs whitespace-nowrap" style={{ color: C.muted }}>
-                      {t.person}
-                    </td>
-                    <td className="hidden sm:table-cell px-3 py-2.5 text-xs whitespace-nowrap" style={{ color: C.muted }}>
-                      {t.fromWallet}
-                    </td>
-                    <td className="hidden md:table-cell px-3 py-2.5 text-xs whitespace-nowrap" style={{ color: C.muted }}>
-                      {t.toWallet}
-                    </td>
-                    <td className="px-3 py-2.5 text-sm font-bold whitespace-nowrap" style={{ color: C.text }}>
-                      {fmtAmt(t.amount)}
-                    </td>
-                    <td className="hidden lg:table-cell px-3 py-2.5 text-xs" style={{ color: C.muted }}>
-                      {t.note || "—"}
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
-        <div className="px-4 py-3 border-t text-xs" style={{ borderColor: C.border, color: C.muted }}>
-          {transactions.length} عملية مسجلة
-        </div>
-      </div>
+      {/* Activity feed — all transactions */}
+      <TransactionActivity walletKey="all" transactions={transactions} />
     </div>
   );
 }
@@ -517,9 +694,10 @@ function OfficeWalletTab({ balance, transactions }: {
    TAB: خزنة الدلفري
 ───────────────────────────────────────────── */
 
-function DeliveryWalletTab({ poolBalance, drivers, onManage }: {
+function DeliveryWalletTab({ poolBalance, drivers, transactions, onManage }: {
   poolBalance: number;
   drivers: DriverWallet[];
+  transactions: Transaction[];
   onManage: (id: number) => void;
 }) {
   return (
@@ -534,6 +712,7 @@ function DeliveryWalletTab({ poolBalance, drivers, onManage }: {
         <span style={{ fontSize: 40 }}>🛵</span>
       </div>
 
+      {/* Drivers table */}
       <div className="rounded-2xl overflow-hidden" style={{ background: C.card, border: `1px solid ${C.border}` }}>
         <div className="px-4 py-3 border-b" style={{ borderColor: C.border }}>
           <h3 className="text-sm font-black" style={{ color: C.text }}>رصيد السائقين</h3>
@@ -586,6 +765,9 @@ function DeliveryWalletTab({ poolBalance, drivers, onManage }: {
           {drivers.length} سائق
         </div>
       </div>
+
+      {/* Activity feed — delivery only */}
+      <TransactionActivity walletKey="delivery" transactions={transactions} />
     </div>
   );
 }
@@ -594,9 +776,10 @@ function DeliveryWalletTab({ poolBalance, drivers, onManage }: {
    TAB: خزنة الموتسكلات
 ───────────────────────────────────────────── */
 
-function MotoWalletTab({ poolBalance, motos, onManage }: {
+function MotoWalletTab({ poolBalance, motos, transactions, onManage }: {
   poolBalance: number;
   motos: MotoWallet[];
+  transactions: Transaction[];
   onManage: (id: number) => void;
 }) {
   return (
@@ -611,6 +794,7 @@ function MotoWalletTab({ poolBalance, motos, onManage }: {
         <span style={{ fontSize: 40 }}>🏍</span>
       </div>
 
+      {/* Motos table */}
       <div className="rounded-2xl overflow-hidden" style={{ background: C.card, border: `1px solid ${C.border}` }}>
         <div className="px-4 py-3 border-b" style={{ borderColor: C.border }}>
           <h3 className="text-sm font-black" style={{ color: C.text }}>رصيد الموتوسيكلات</h3>
@@ -663,6 +847,9 @@ function MotoWalletTab({ poolBalance, motos, onManage }: {
           {motos.length} موتوسيكل
         </div>
       </div>
+
+      {/* Activity feed — moto only */}
+      <TransactionActivity walletKey="moto" transactions={transactions} />
     </div>
   );
 }
@@ -726,7 +913,6 @@ export default function AdminAccountsPage() {
   function handleManage(op: "صرف" | "تحصيل", wallet: WalletCat, amount: number, note: string) {
     if (!manageTarget) return;
 
-    /* صرف: person +amount | تحصيل: person -amount */
     const personDelta = op === "صرف" ? +amount : -amount;
     if (manageTarget.type === "driver") {
       setDriverWallets((p) => p.map((d) =>
@@ -736,16 +922,17 @@ export default function AdminAccountsPage() {
         m.id === manageTarget.id ? { ...m, balance: m.balance + personDelta } : m));
     }
 
-    /* Both صرف and تحصيل consume from the selected wallet */
     adjWallet(wallet, -amount);
 
     setTransactions((p) => [{
-      id: Date.now(), date: today(), type: op,
-      person:     manageTarget.name,
-      fromWallet: WALLET_LABELS[wallet],
-      toWallet:   "—",
+      id:          Date.now(),
+      createdAt:   nowAr(),
+      type:        op,
+      personName:  manageTarget.name,
+      fromWallet:  WALLET_LABELS[wallet],
+      toWallet:    "—",
       amount,
-      note,
+      description: note,
     }, ...p]);
 
     setManageTarget(null);
@@ -757,12 +944,13 @@ export default function AdminAccountsPage() {
     adjWallet(to,   +amount);
 
     setTransactions((p) => [{
-      id: Date.now(), date: today(), type: "تحويل",
-      person:     "—",
-      fromWallet: WALLET_LABELS[from],
-      toWallet:   WALLET_LABELS[to],
+      id:          Date.now(),
+      createdAt:   nowAr(),
+      type:        "تحويل",
+      fromWallet:  WALLET_LABELS[from],
+      toWallet:    WALLET_LABELS[to],
       amount,
-      note,
+      description: note,
     }, ...p]);
 
     setShowTransfer(false);
@@ -799,25 +987,32 @@ export default function AdminAccountsPage() {
           </button>
         </div>
 
-        {tab === "ملخص"            && <SummaryTab />}
-        {tab === "خزنة المكتب"     && (
-          <OfficeWalletTab balance={officeBalance} transactions={transactions} />
+        {tab === "ملخص" && <SummaryTab />}
+
+        {tab === "خزنة المكتب" && (
+          <OfficeWalletTab
+            balance={officeBalance}
+            transactions={transactions}
+          />
         )}
-        {tab === "خزنة الدلفري"    && (
+
+        {tab === "خزنة الدلفري" && (
           <DeliveryWalletTab
             poolBalance={deliveryBalance}
             drivers={driverWallets}
+            transactions={transactions}
             onManage={openDriverManage}
           />
         )}
+
         {tab === "خزنة الموتسكلات" && (
           <MotoWalletTab
             poolBalance={motoBalance}
             motos={motoWallets}
+            transactions={transactions}
             onManage={openMotoManage}
           />
         )}
-
       </div>
 
       {/* Manage modal */}
