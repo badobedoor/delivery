@@ -1,10 +1,8 @@
 "use client";
 
-import Link         from "next/link";
-import { usePathname, useRouter } from "next/navigation";
-import { useEffect } from "react";
-import { useAuth }  from "@/hooks/useAuth";
-import { signOut }  from "@/lib/auth";
+import Link            from "next/link";
+import { usePathname } from "next/navigation";
+import { useEffect, useState } from "react";
 
 const C = {
   bg:     "#0F172A",
@@ -24,52 +22,46 @@ const navItems = [
   { href: "/driver/accounts", emoji: "💰", label: "حساباتي", badge: 0              },
 ];
 
-function AuthLoadingScreen() {
-  return (
-    <div className="min-h-screen flex items-center justify-center"
-      style={{ background: C.bg }}>
-      <div className="flex flex-col items-center gap-3">
-        <span className="text-3xl" style={{ color: C.teal }}>⚡</span>
-        <p className="text-sm font-semibold animate-pulse" style={{ color: C.muted }}>
-          جاري التحقق...
-        </p>
-      </div>
-    </div>
-  );
-}
-
 export default function DriverLayout({ children }: { children: React.ReactNode }) {
-  const { user, profile, loading } = useAuth();
-  const pathname = usePathname();
-  const router   = useRouter();
-
-  /* Login page renders without bottom nav, skip auth guard */
+  const pathname    = usePathname();
   const isLoginPage = pathname === "/driver/login";
 
-  useEffect(() => {
-    if (isLoginPage || loading) return;
+  const [ready, setReady] = useState(false);
 
-    if (!user) {
-      router.replace("/driver/login");
+  useEffect(() => {
+    if (isLoginPage) { setReady(true); return; }
+
+    /* Read driver session from localStorage */
+    let driver = null;
+    try {
+      const raw = localStorage.getItem("driver_user");
+      driver = raw ? JSON.parse(raw) : null;
+    } catch { /* ignore parse errors */ }
+
+    if (!driver) {
+      /* No session → send to login */
+      window.location.href = "/driver/login";
       return;
     }
 
-    if (profile && profile.role !== "driver") {
-      /* Wrong role → send to their correct area */
-      if (profile.role === "admin" || profile.role === "staff") {
-        router.replace("/admin/dashboard");
-      } else {
-        router.replace("/");
-      }
+    /* Driver trying to access anything outside /driver → back to orders */
+    if (!pathname.startsWith("/driver")) {
+      window.location.href = "/driver/orders";
+      return;
     }
-  }, [isLoginPage, loading, user, profile, router]);
 
+    setReady(true);
+  }, [isLoginPage, pathname]);
+
+  /* Login page: no bottom nav, no auth check */
   if (isLoginPage) return <>{children}</>;
-  if (loading || !user) return <AuthLoadingScreen />;
 
-  async function handleLogout() {
-    await signOut();
-    router.replace("/driver/login");
+  /* Wait until localStorage check completes */
+  if (!ready) return null;
+
+  function handleLogout() {
+    localStorage.removeItem("driver_user");
+    window.location.href = "/driver/login";
   }
 
   return (
@@ -120,7 +112,7 @@ export default function DriverLayout({ children }: { children: React.ReactNode }
           );
         })}
 
-        {/* Logout icon in bottom nav */}
+        {/* Logout */}
         <button
           onClick={handleLogout}
           className="flex-1 flex flex-col items-center justify-center gap-0.5 py-3 transition-colors"

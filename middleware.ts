@@ -2,11 +2,13 @@ import { createServerClient } from "@supabase/ssr";
 import { NextResponse }        from "next/server";
 import type { NextRequest }    from "next/server";
 
-/* Routes that require a session, paired with their login page */
+/*
+ * Only /admin/* is protected by Supabase Auth (JWT / cookie session).
+ * /driver/* and /staff/* use localStorage-based sessions handled in their
+ * respective layouts — the middleware must not touch them.
+ */
 const PROTECTED: { prefix: string; login: string }[] = [
   { prefix: "/admin", login: "/admin/login" },
-  { prefix: "/driver", login: "/driver/login" },
-  { prefix: "/staff",  login: "/staff/login"  },
 ];
 
 /* Pages that are always public even under a protected prefix */
@@ -27,6 +29,11 @@ export async function middleware(request: NextRequest) {
   /* Only inspect protected prefixes */
   const route = PROTECTED.find((r) => pathname.startsWith(r.prefix));
   if (!route) return NextResponse.next();
+
+  /* Staff users are authenticated via localStorage + a "staff_session" cookie */
+  if (request.cookies.get("staff_session")) {
+    return NextResponse.next();
+  }
 
   /* Build a response so @supabase/ssr can refresh cookies */
   let response = NextResponse.next({ request });
@@ -65,6 +72,6 @@ export async function middleware(request: NextRequest) {
 }
 
 export const config = {
-  /* Run on every /admin/*, /driver/*, /staff/* request */
-  matcher: ["/admin/:path*", "/driver/:path*", "/staff/:path*"],
+  /* Only run on /admin/* — driver and staff use localStorage auth in their layouts */
+  matcher: ["/admin/:path*"],
 };

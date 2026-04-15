@@ -1,6 +1,7 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
+import { supabasePublic } from "@/lib/supabasePublic";
 
 const C = {
   bg:     "#0F172A",
@@ -13,8 +14,6 @@ const C = {
   red:    "#EF4444",
   orange: "#F97316",
 };
-
-const CURRENT_ROLE: "super_admin" | "admin" = "super_admin";
 
 /* ── Eye icons ── */
 function EyeIcon() {
@@ -80,7 +79,6 @@ function TeamModal({
         {/* body */}
         <div className="flex-1 overflow-y-auto px-5 py-4 flex flex-col gap-4">
 
-          {/* الاسم */}
           <div className="flex flex-col gap-1.5">
             <label className="text-xs font-semibold" style={{ color: C.muted }}>
               الاسم <span style={{ color: C.red }}>*</span>
@@ -95,7 +93,6 @@ function TeamModal({
             />
           </div>
 
-          {/* رقم الهاتف */}
           <div className="flex flex-col gap-1.5">
             <label className="text-xs font-semibold" style={{ color: C.muted }}>رقم الهاتف</label>
             <input
@@ -108,7 +105,6 @@ function TeamModal({
             />
           </div>
 
-          {/* الباسورد */}
           <div className="flex flex-col gap-1.5">
             <label className="text-xs font-semibold" style={{ color: C.muted }}>
               الباسورد
@@ -140,7 +136,6 @@ function TeamModal({
             </div>
           </div>
 
-          {/* الحالة (optional) */}
           {showStatus && (
             <div className="flex items-center justify-between">
               <span className="text-xs font-semibold" style={{ color: C.muted }}>الحالة</span>
@@ -202,47 +197,79 @@ function DeleteModal({ open, onConfirm, onClose }: { open: boolean; onConfirm: (
 }
 
 /* ══════════════════════════════════════════
+   Types
+══════════════════════════════════════════ */
+
+type StaffRow = {
+  id: number;
+  name: string;
+  phone: string | null;
+  password: string | null;
+  role: string;
+  is_active: boolean;
+  created_at: string;
+};
+
+type DriverRow = {
+  id: number;
+  name: string;
+  phone: string | null;
+  password: string | null;
+  is_active: boolean;
+  created_at: string;
+};
+
+/* ══════════════════════════════════════════
    TAB 1 — المدراء
 ══════════════════════════════════════════ */
 
-type Admin = { id: number; name: string; phone: string; role: "super_admin" | "admin"; created: string };
-
-const seedAdmins: Admin[] = [
-  { id: 1, name: "أحمد الإداري", phone: "0100-111-0001", role: "super_admin", created: "١ يناير ٢٠٢٦"  },
-  { id: 2, name: "خالد المشرف",  phone: "0101-222-0002", role: "admin",       created: "١٥ يناير ٢٠٢٦" },
-  { id: 3, name: "دينا الإدارة", phone: "0102-333-0003", role: "admin",       created: "١ مارس ٢٠٢٦"   },
-];
-
-function AdminsTab() {
-  const [rows,     setRows]     = useState<Admin[]>(seedAdmins);
+function AdminsTab({
+  managers,
+  onRefresh,
+}: {
+  managers: StaffRow[];
+  onRefresh: () => void;
+}) {
   const [modal,    setModal]    = useState(false);
   const [form,     setForm]     = useState(emptyForm);
   const [deleteId, setDeleteId] = useState<number | null>(null);
 
-  const isSuperAdmin = CURRENT_ROLE === "super_admin";
-
-  function handleSave() {
+  async function handleSave() {
     if (!form.name.trim() || !form.password.trim()) return;
-    setRows((p) => [{
-      id: Date.now(), name: form.name.trim(), phone: form.phone.trim(),
-      role: "admin", created: "١٣ أبريل ٢٠٢٦",
-    }, ...p]);
-    setForm(emptyForm);
-    setModal(false);
+
+    const { error } = await supabasePublic
+      .from("staff")
+      .insert([{
+        name:      form.name.trim(),
+        phone:     form.phone.trim() || null,
+        password:  form.password,
+        role:      "admin",
+        is_active: true,
+      }]);
+
+    if (!error) {
+      setForm(emptyForm);
+      setModal(false);
+      onRefresh();
+    }
+  }
+
+  async function handleDelete(id: number) {
+    await supabasePublic.from("staff").delete().eq("id", id);
+    setDeleteId(null);
+    onRefresh();
   }
 
   return (
     <>
       <div className="flex flex-col gap-4">
-        {isSuperAdmin && (
-          <div className="flex justify-start">
-            <button onClick={() => { setForm(emptyForm); setModal(true); }}
-              className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-bold hover:opacity-90 transition-opacity"
-              style={{ background: C.orange, color: "#fff" }}>
-              <span className="text-base leading-none">+</span> إضافة مدير
-            </button>
-          </div>
-        )}
+        <div className="flex justify-start">
+          <button onClick={() => { setForm(emptyForm); setModal(true); }}
+            className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-bold hover:opacity-90 transition-opacity"
+            style={{ background: C.orange, color: "#fff" }}>
+            <span className="text-base leading-none">+</span> إضافة مدير
+          </button>
+        </div>
 
         <div className="rounded-2xl overflow-hidden" style={{ background: C.card, border: `1px solid ${C.border}` }}>
           <div className="overflow-x-auto">
@@ -264,12 +291,14 @@ function AdminsTab() {
                 </tr>
               </thead>
               <tbody>
-                {rows.map((r, i) => (
-                  <tr key={r.id} style={{ borderBottom: i < rows.length - 1 ? `1px solid ${C.border}` : "none" }}>
+                {managers.length === 0 ? (
+                  <tr><td colSpan={6} className="px-4 py-12 text-center text-sm" style={{ color: C.muted }}>لا يوجد مدراء</td></tr>
+                ) : managers.map((r, i) => (
+                  <tr key={r.id} style={{ borderBottom: i < managers.length - 1 ? `1px solid ${C.border}` : "none" }}>
                     <td className="px-4 py-3">
                       <div className="flex items-center gap-3">
                         <div className="w-8 h-8 rounded-full flex items-center justify-center text-sm font-black flex-shrink-0"
-                          style={{ background: r.role === "super_admin" ? `${C.orange}30` : `${C.teal}30`, color: r.role === "super_admin" ? C.orange : C.teal }}>
+                          style={{ background: `${C.orange}30`, color: C.orange }}>
                           {r.name[0]}
                         </div>
                         <p className="text-sm font-semibold whitespace-nowrap" style={{ color: C.text }}>{r.name}</p>
@@ -279,29 +308,25 @@ function AdminsTab() {
                       {r.phone || "—"}
                     </td>
                     <td className="px-4 py-3">
-                      {r.role === "super_admin" ? (
-                        <span className="px-2.5 py-1 rounded-full text-[10px] font-bold whitespace-nowrap"
-                          style={{ background: `${C.green}22`, color: C.green }}>المدير الأساسي</span>
-                      ) : (
-                        <span className="px-2.5 py-1 rounded-full text-[10px] font-bold whitespace-nowrap"
-                          style={{ background: `${C.teal}22`, color: C.teal }}>مدير</span>
-                      )}
+                      <span className="px-2.5 py-1 rounded-full text-[10px] font-bold whitespace-nowrap"
+                        style={{ background: `${C.teal}22`, color: C.teal }}>مدير</span>
                     </td>
                     <td className="px-4 py-3">
                       <span className="px-2.5 py-1 rounded-full text-[10px] font-bold whitespace-nowrap"
-                        style={{ background: `${C.green}22`, color: C.green }}>نشط</span>
+                        style={{
+                          background: r.is_active ? `${C.green}22` : `${C.red}22`,
+                          color:      r.is_active ? C.green : C.red,
+                        }}>
+                        {r.is_active ? "نشط" : "مش نشط"}
+                      </span>
                     </td>
                     <td className="hidden md:table-cell px-4 py-3 text-xs whitespace-nowrap" style={{ color: C.muted }}>
-                      {r.created}
+                      {new Date(r.created_at).toLocaleDateString("ar-EG")}
                     </td>
                     <td className="px-4 py-3">
-                      {r.role !== "super_admin" && isSuperAdmin ? (
-                        <button onClick={() => setDeleteId(r.id)}
-                          className="px-3 py-1.5 rounded-lg text-xs font-bold hover:opacity-80 transition-opacity"
-                          style={{ background: `${C.red}22`, color: C.red }}>حذف</button>
-                      ) : (
-                        <span className="text-xs" style={{ color: C.muted }}>—</span>
-                      )}
+                      <button onClick={() => setDeleteId(r.id)}
+                        className="px-3 py-1.5 rounded-lg text-xs font-bold hover:opacity-80 transition-opacity"
+                        style={{ background: `${C.red}22`, color: C.red }}>حذف</button>
                     </td>
                   </tr>
                 ))}
@@ -309,7 +334,7 @@ function AdminsTab() {
             </table>
           </div>
           <div className="px-4 py-3 border-t text-xs" style={{ borderColor: C.border, color: C.muted }}>
-            {rows.length} مدير
+            {managers.length} مدير
           </div>
         </div>
       </div>
@@ -317,61 +342,80 @@ function AdminsTab() {
       <TeamModal open={modal} title="إضافة مدير جديد" isEdit={false} showStatus={false}
         form={form} setForm={setForm} onSave={handleSave} onClose={() => setModal(false)} />
       <DeleteModal open={deleteId !== null}
-        onConfirm={() => { setRows((p) => p.filter((r) => r.id !== deleteId)); setDeleteId(null); }}
+        onConfirm={() => deleteId !== null && handleDelete(deleteId)}
         onClose={() => setDeleteId(null)} />
     </>
   );
 }
 
 /* ══════════════════════════════════════════
-   Shared TAB 2 & 3
+   TAB 2 — الموظفين
 ══════════════════════════════════════════ */
 
-type Member = { id: number; name: string; phone: string; password: string; active: boolean; created: string };
-
-function MemberTab({ seed, addLabel, entityLabel }: {
-  seed: Member[]; addLabel: string; entityLabel: string;
+function StaffTab({
+  staff,
+  onRefresh,
+}: {
+  staff: StaffRow[];
+  onRefresh: () => void;
 }) {
-  const [rows,     setRows]     = useState<Member[]>(seed);
   const [modal,    setModal]    = useState<{ open: boolean; id?: number }>({ open: false });
   const [form,     setForm]     = useState(emptyForm);
   const [deleteId, setDeleteId] = useState<number | null>(null);
   const [search,   setSearch]   = useState("");
 
   const isEdit   = modal.id !== undefined;
-  const filtered = rows.filter((r) => !search.trim() || r.name.includes(search) || r.phone.includes(search));
+  const filtered = staff.filter((r) =>
+    !search.trim() || r.name.includes(search) || (r.phone ?? "").includes(search),
+  );
 
-  function openAdd()    { setForm(emptyForm); setModal({ open: true }); }
-  function openEdit(r: Member) {
-    setForm({ name: r.name, phone: r.phone, password: "", active: r.active });
+  function openAdd() { setForm(emptyForm); setModal({ open: true }); }
+  function openEdit(r: StaffRow) {
+    setForm({ name: r.name, phone: r.phone ?? "", password: "", active: r.is_active });
     setModal({ open: true, id: r.id });
   }
   function closeModal() { setModal({ open: false }); }
 
-  function handleSave() {
+  async function handleSave() {
     if (!form.name.trim()) return;
     if (!isEdit && !form.password.trim()) return;
+
     if (!isEdit) {
-      setRows((p) => [{
-        id: Date.now(), name: form.name.trim(), phone: form.phone.trim(),
-        password: form.password, active: form.active, created: "١٣ أبريل ٢٠٢٦",
-      }, ...p]);
+      const { error } = await supabasePublic
+        .from("staff")
+        .insert([{
+          name:      form.name.trim(),
+          phone:     form.phone.trim() || null,
+          password:  form.password,
+          role:      "staff",
+          is_active: form.active,
+        }]);
+      if (!error) { closeModal(); onRefresh(); }
     } else {
-      setRows((p) => p.map((r) => r.id === modal.id ? {
-        ...r,
-        name:   form.name.trim(),
-        phone:  form.phone.trim(),
-        active: form.active,
-        ...(form.password ? { password: form.password } : {}),
-      } : r));
+      const update: Record<string, unknown> = {
+        name:      form.name.trim(),
+        phone:     form.phone.trim() || null,
+        is_active: form.active,
+      };
+      if (form.password.trim()) update.password = form.password;
+
+      const { error } = await supabasePublic
+        .from("staff")
+        .update(update)
+        .eq("id", modal.id!);
+      if (!error) { closeModal(); onRefresh(); }
     }
-    closeModal();
+  }
+
+  async function handleDelete(id: number) {
+    await supabasePublic.from("staff").delete().eq("id", id);
+    setDeleteId(null);
+    onRefresh();
   }
 
   return (
     <>
       <div className="flex flex-col gap-4">
-
         <div className="flex items-center gap-3">
           <div className="flex-1 flex items-center gap-2 rounded-xl px-3 py-2.5"
             style={{ background: C.card, border: `1px solid ${C.border}` }}>
@@ -379,7 +423,7 @@ function MemberTab({ seed, addLabel, entityLabel }: {
               <circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/>
             </svg>
             <input type="text" value={search} onChange={(e) => setSearch(e.target.value)}
-              placeholder={`ابحث عن ${entityLabel}...`}
+              placeholder="ابحث عن موظف..."
               className="flex-1 text-sm bg-transparent outline-none" style={{ color: C.text }} />
             {search && <button onClick={() => setSearch("")} style={{ color: C.muted }}>✕</button>}
           </div>
@@ -387,7 +431,7 @@ function MemberTab({ seed, addLabel, entityLabel }: {
             className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-bold flex-shrink-0 hover:opacity-90 transition-opacity"
             style={{ background: C.orange, color: "#fff" }}>
             <span className="text-base leading-none">+</span>
-            <span className="hidden sm:inline">{addLabel}</span>
+            <span className="hidden sm:inline">إضافة موظف</span>
           </button>
         </div>
 
@@ -426,16 +470,19 @@ function MemberTab({ seed, addLabel, entityLabel }: {
                       {r.phone || "—"}
                     </td>
                     <td className="hidden md:table-cell px-4 py-3 text-sm font-mono" style={{ color: C.muted }}>
-                      {r.password}
+                      {r.password || "—"}
                     </td>
                     <td className="px-4 py-3">
                       <span className="px-2.5 py-1 rounded-full text-[10px] font-bold whitespace-nowrap"
-                        style={{ background: r.active ? `${C.green}22` : `${C.red}22`, color: r.active ? C.green : C.red }}>
-                        {r.active ? "نشط" : "مش نشط"}
+                        style={{
+                          background: r.is_active ? `${C.green}22` : `${C.red}22`,
+                          color:      r.is_active ? C.green : C.red,
+                        }}>
+                        {r.is_active ? "نشط" : "مش نشط"}
                       </span>
                     </td>
                     <td className="hidden lg:table-cell px-4 py-3 text-xs whitespace-nowrap" style={{ color: C.muted }}>
-                      {r.created}
+                      {new Date(r.created_at).toLocaleDateString("ar-EG")}
                     </td>
                     <td className="px-4 py-3">
                       <div className="flex items-center gap-2">
@@ -453,36 +500,190 @@ function MemberTab({ seed, addLabel, entityLabel }: {
             </table>
           </div>
           <div className="px-4 py-3 border-t text-xs" style={{ borderColor: C.border, color: C.muted }}>
-            {filtered.length} {entityLabel}
+            {filtered.length} موظف
           </div>
         </div>
       </div>
 
-      <TeamModal open={modal.open} title={isEdit ? `تعديل ${entityLabel}` : `إضافة ${entityLabel} جديد`}
+      <TeamModal open={modal.open} title={isEdit ? "تعديل موظف" : "إضافة موظف جديد"}
         isEdit={isEdit} showStatus={true} form={form} setForm={setForm}
         onSave={handleSave} onClose={closeModal} />
       <DeleteModal open={deleteId !== null}
-        onConfirm={() => { setRows((p) => p.filter((r) => r.id !== deleteId)); setDeleteId(null); }}
+        onConfirm={() => deleteId !== null && handleDelete(deleteId)}
         onClose={() => setDeleteId(null)} />
     </>
   );
 }
 
-/* ── Seed data ── */
+/* ══════════════════════════════════════════
+   TAB 3 — الدلفري
+══════════════════════════════════════════ */
 
-const seedStaff: Member[] = [
-  { id: 1, name: "نور المشرفة", phone: "0100-111-1001", password: "staff111", active: true,  created: "١٥ يناير ٢٠٢٦" },
-  { id: 2, name: "طارق الدعم",  phone: "0101-222-1002", password: "staff222", active: true,  created: "١ فبراير ٢٠٢٦" },
-  { id: 3, name: "منى خدمة",    phone: "0102-333-1003", password: "staff333", active: false, created: "١٠ مارس ٢٠٢٦"  },
-];
+function DriversTab({
+  drivers,
+  onRefresh,
+}: {
+  drivers: DriverRow[];
+  onRefresh: () => void;
+}) {
+  console.log("DRIVERS PROPS:", drivers);
 
-const seedDrivers: Member[] = [
-  { id: 1, name: "كريم سعد",    phone: "0100-111-2001", password: "drv111", active: true,  created: "١٠ يناير ٢٠٢٦"  },
-  { id: 2, name: "مصطفى علي",   phone: "0101-222-2002", password: "drv222", active: true,  created: "٢٠ يناير ٢٠٢٦"  },
-  { id: 3, name: "عمر حسين",    phone: "0102-333-2003", password: "drv333", active: true,  created: "١ فبراير ٢٠٢٦"  },
-  { id: 4, name: "يوسف أحمد",   phone: "0103-444-2004", password: "drv444", active: false, created: "١٥ فبراير ٢٠٢٦" },
-  { id: 5, name: "إبراهيم رضا", phone: "0104-555-2005", password: "drv555", active: false, created: "١ مارس ٢٠٢٦"    },
-];
+  const [modal,    setModal]    = useState<{ open: boolean; id?: number }>({ open: false });
+  const [form,     setForm]     = useState(emptyForm);
+  const [deleteId, setDeleteId] = useState<number | null>(null);
+  const [search,   setSearch]   = useState("");
+
+  const isEdit   = modal.id !== undefined;
+  const filtered = drivers.filter((r) =>
+    !search.trim() || r.name.includes(search) || (r.phone ?? "").includes(search),
+  );
+
+  function openAdd() { setForm(emptyForm); setModal({ open: true }); }
+  function openEdit(r: DriverRow) {
+    setForm({ name: r.name, phone: r.phone ?? "", password: "", active: r.is_active });
+    setModal({ open: true, id: r.id });
+  }
+  function closeModal() { setModal({ open: false }); }
+
+  async function handleSave() {
+    if (!form.name.trim()) return;
+    if (!isEdit && !form.password.trim()) return;
+
+    if (!isEdit) {
+      const { data: inserted, error } = await supabasePublic
+        .from("delivery_staff")
+        .insert([{
+          name:      form.name.trim(),
+          phone:     form.phone.trim() || null,
+          password:  form.password,
+          is_active: form.active,
+        }])
+        .select();
+      console.log("INSERT DRIVER RESULT:", inserted, "ERROR:", error);
+      if (!error) { closeModal(); onRefresh(); }
+    } else {
+      const update: Record<string, unknown> = {
+        name:      form.name.trim(),
+        phone:     form.phone.trim() || null,
+        is_active: form.active,
+      };
+      if (form.password.trim()) update.password = form.password;
+
+      const { error } = await supabasePublic
+        .from("delivery_staff")
+        .update(update)
+        .eq("id", modal.id!);
+      if (!error) { closeModal(); onRefresh(); }
+    }
+  }
+
+  async function handleDelete(id: number) {
+    await supabasePublic.from("delivery_staff").delete().eq("id", id);
+    setDeleteId(null);
+    onRefresh();
+  }
+
+  return (
+    <>
+      <div className="flex flex-col gap-4">
+        <div className="flex items-center gap-3">
+          <div className="flex-1 flex items-center gap-2 rounded-xl px-3 py-2.5"
+            style={{ background: C.card, border: `1px solid ${C.border}` }}>
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke={C.muted} strokeWidth="2">
+              <circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/>
+            </svg>
+            <input type="text" value={search} onChange={(e) => setSearch(e.target.value)}
+              placeholder="ابحث عن دلفري..."
+              className="flex-1 text-sm bg-transparent outline-none" style={{ color: C.text }} />
+            {search && <button onClick={() => setSearch("")} style={{ color: C.muted }}>✕</button>}
+          </div>
+          <button onClick={openAdd}
+            className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-bold flex-shrink-0 hover:opacity-90 transition-opacity"
+            style={{ background: C.orange, color: "#fff" }}>
+            <span className="text-base leading-none">+</span>
+            <span className="hidden sm:inline">إضافة دلفري</span>
+          </button>
+        </div>
+
+        <div className="rounded-2xl overflow-hidden" style={{ background: C.card, border: `1px solid ${C.border}` }}>
+          <div className="overflow-x-auto">
+            <table className="w-full">
+              <thead>
+                <tr style={{ borderBottom: `1px solid ${C.border}` }}>
+                  {[
+                    { label: "الاسم",         hide: "" },
+                    { label: "رقم الهاتف",    hide: " hidden sm:table-cell" },
+                    { label: "الباسورد",      hide: " hidden md:table-cell" },
+                    { label: "الحالة",         hide: "" },
+                    { label: "تاريخ الإنشاء", hide: " hidden lg:table-cell" },
+                    { label: "إجراءات",        hide: "" },
+                  ].map(({ label, hide }) => (
+                    <th key={label}
+                      className={`px-4 py-3 text-right font-semibold text-xs whitespace-nowrap${hide}`}
+                      style={{ color: C.muted }}>{label}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {filtered.length === 0 ? (
+                  <tr><td colSpan={6} className="px-4 py-12 text-center text-sm" style={{ color: C.muted }}>لا توجد نتائج</td></tr>
+                ) : filtered.map((r, i) => (
+                  <tr key={r.id} style={{ borderBottom: i < filtered.length - 1 ? `1px solid ${C.border}` : "none" }}>
+                    <td className="px-4 py-3">
+                      <div className="flex items-center gap-3">
+                        <div className="w-8 h-8 rounded-full flex items-center justify-center text-sm font-black flex-shrink-0"
+                          style={{ background: `${C.teal}30`, color: C.teal }}>{r.name[0]}</div>
+                        <p className="text-sm font-semibold whitespace-nowrap" style={{ color: C.text }}>{r.name}</p>
+                      </div>
+                    </td>
+                    <td className="hidden sm:table-cell px-4 py-3 text-xs whitespace-nowrap" style={{ color: C.muted }}>
+                      {r.phone || "—"}
+                    </td>
+                    <td className="hidden md:table-cell px-4 py-3 text-sm font-mono" style={{ color: C.muted }}>
+                      {r.password || "—"}
+                    </td>
+                    <td className="px-4 py-3">
+                      <span className="px-2.5 py-1 rounded-full text-[10px] font-bold whitespace-nowrap"
+                        style={{
+                          background: r.is_active ? `${C.green}22` : `${C.red}22`,
+                          color:      r.is_active ? C.green : C.red,
+                        }}>
+                        {r.is_active ? "نشط" : "مش نشط"}
+                      </span>
+                    </td>
+                    <td className="hidden lg:table-cell px-4 py-3 text-xs whitespace-nowrap" style={{ color: C.muted }}>
+                      {new Date(r.created_at).toLocaleDateString("ar-EG")}
+                    </td>
+                    <td className="px-4 py-3">
+                      <div className="flex items-center gap-2">
+                        <button onClick={() => openEdit(r)}
+                          className="px-3 py-1.5 rounded-lg text-xs font-bold hover:opacity-80 transition-opacity"
+                          style={{ background: `${C.teal}22`, color: C.teal }}>تعديل</button>
+                        <button onClick={() => setDeleteId(r.id)}
+                          className="px-3 py-1.5 rounded-lg text-xs font-bold hover:opacity-80 transition-opacity"
+                          style={{ background: `${C.red}22`, color: C.red }}>حذف</button>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          <div className="px-4 py-3 border-t text-xs" style={{ borderColor: C.border, color: C.muted }}>
+            {filtered.length} دلفري
+          </div>
+        </div>
+      </div>
+
+      <TeamModal open={modal.open} title={isEdit ? "تعديل دلفري" : "إضافة دلفري جديد"}
+        isEdit={isEdit} showStatus={true} form={form} setForm={setForm}
+        onSave={handleSave} onClose={closeModal} />
+      <DeleteModal open={deleteId !== null}
+        onConfirm={() => deleteId !== null && handleDelete(deleteId)}
+        onClose={() => setDeleteId(null)} />
+    </>
+  );
+}
 
 /* ══════════════════════════════════════════
    Page
@@ -492,7 +693,39 @@ const TABS = ["المدراء", "الموظفين", "الدلفري"] as const;
 type Tab = typeof TABS[number];
 
 export default function AdminTeamPage() {
-  const [tab, setTab] = useState<Tab>("المدراء");
+  const [tab,      setTab]      = useState<Tab>("المدراء");
+  const [managers, setManagers] = useState<StaffRow[]>([]);
+  const [staff,    setStaff]    = useState<StaffRow[]>([]);
+  const [drivers,  setDrivers]  = useState<DriverRow[]>([]);
+
+  async function fetchStaff() {
+    const { data } = await supabasePublic.from("staff").select("*").order("created_at", { ascending: false });
+    if (data) {
+      setManagers(data.filter((u) => u.role === "admin"));
+      setStaff(data.filter((u) => u.role === "staff"));
+    }
+  }
+
+  async function fetchDrivers() {
+    const { data, error } = await supabasePublic
+      .from("delivery_staff")
+      .select("*");
+
+    console.log("FETCH DRIVERS:", data, error);
+
+    if (error) {
+      console.error("DRIVER FETCH ERROR:", error);
+    }
+
+    const result = data ?? [];
+    console.log("STATE DRIVERS:", result);
+    setDrivers(result);
+  }
+
+  useEffect(() => {
+    fetchStaff();
+    fetchDrivers();
+  }, []);
 
   return (
     <div className="flex flex-col gap-5">
@@ -507,9 +740,9 @@ export default function AdminTeamPage() {
         ))}
       </div>
 
-      {tab === "المدراء"  && <AdminsTab />}
-      {tab === "الموظفين" && <MemberTab seed={seedStaff}   addLabel="إضافة موظف"  entityLabel="موظف"  />}
-      {tab === "الدلفري"  && <MemberTab seed={seedDrivers} addLabel="إضافة دلفري" entityLabel="دلفري" />}
+      {tab === "المدراء"  && <AdminsTab managers={managers} onRefresh={fetchStaff} />}
+      {tab === "الموظفين" && <StaffTab  staff={staff}       onRefresh={fetchStaff} />}
+      {tab === "الدلفري"  && <DriversTab drivers={drivers}  onRefresh={fetchDrivers} />}
     </div>
   );
 }

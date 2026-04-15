@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { signIn, getUserProfile, getRoleRedirect } from "@/lib/auth";
+import { supabasePublic } from "@/lib/supabasePublic";
 
 const C = {
   bg:     "#0F172A",
@@ -36,44 +36,39 @@ function EyeOffIcon() {
 }
 
 export default function StaffLoginPage() {
-  const [email,    setEmail]    = useState("");
+  const [phone,    setPhone]    = useState("");
   const [password, setPassword] = useState("");
   const [showPass, setShowPass] = useState(false);
   const [error,    setError]    = useState("");
   const [loading,  setLoading]  = useState(false);
 
-  async function handleSubmit(e: React.FormEvent) {
-    e.preventDefault();
-    if (!email.trim())    { setError("أدخل البريد الإلكتروني"); return; }
-    if (!password.trim()) { setError("أدخل كلمة المرور");        return; }
+  async function handleLogin() {
+    if (!phone.trim())    { setError("أدخل رقم الهاتف"); return; }
+    if (!password.trim()) { setError("أدخل كلمة المرور"); return; }
+
+    console.log("PHONE:", phone);
+    console.log("PASSWORD:", password);
 
     setError("");
     setLoading(true);
 
-    try {
-      const data = await signIn(email.trim(), password);
-      console.log("STAFF LOGIN DATA:", data);
+    const { data, error } = await supabasePublic
+      .from("staff")
+      .select("*")
+      .eq("phone", phone.trim())
+      .eq("password", password)
+      .single();
 
-      const session = data?.session;
-      if (!session?.user) throw new Error("فشل تسجيل الدخول — لا توجد جلسة");
-
-      const profile = await getUserProfile(session.user.id);
-      console.log("STAFF PROFILE:", profile);
-
-      if (!profile) {
-        throw new Error("لم يتم العثور على الملف الشخصي");
-      }
-
-      if (profile.role !== "staff" && profile.role !== "admin") {
-        throw new Error("هذا الدخول مخصص لفريق العمل فقط");
-      }
-
-      window.location.href = getRoleRedirect(profile.role);
-    } catch (err: unknown) {
-      console.error("STAFF LOGIN ERROR:", err);
-      setError(err instanceof Error ? err.message : "حدث خطأ غير متوقع");
+    if (error || !data) {
+      alert("بيانات غير صحيحة");
       setLoading(false);
+      return;
     }
+
+    localStorage.setItem("staff_user", JSON.stringify(data));
+    /* Set a cookie so the Edge middleware allows /admin/* access */
+    document.cookie = "staff_session=1; path=/; SameSite=Lax";
+    window.location.href = "/admin/orders";
   }
 
   return (
@@ -101,18 +96,18 @@ export default function StaffLoginPage() {
         </p>
 
         {/* ── Form ── */}
-        <form onSubmit={handleSubmit} className="flex flex-col gap-4">
+        <form onSubmit={(e) => { e.preventDefault(); handleLogin(); }} className="flex flex-col gap-4">
 
-          {/* Email */}
+          {/* Phone */}
           <div className="flex flex-col gap-1.5">
             <label className="text-sm font-semibold" style={{ color: C.muted }}>
-              البريد الإلكتروني
+              رقم الهاتف
             </label>
             <input
-              type="email"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              placeholder="staff@example.com"
+              type="tel"
+              value={phone}
+              onChange={(e) => setPhone(e.target.value)}
+              placeholder="01XXXXXXXXX"
               className="w-full rounded-xl px-3 py-2.5 text-sm outline-none"
               style={{
                 background: C.bg,
@@ -162,7 +157,8 @@ export default function StaffLoginPage() {
 
           {/* Submit */}
           <button
-            type="submit"
+            type="button"
+            onClick={handleLogin}
             disabled={loading}
             className="w-full py-3 rounded-xl text-sm font-black transition-opacity hover:opacity-90 mt-1"
             style={{ background: C.orange, color: "#fff", opacity: loading ? 0.7 : 1 }}

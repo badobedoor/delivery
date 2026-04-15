@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { Cairo } from "next/font/google";
 import "./globals.css";
+import UserSync from "@/components/UserSync";
 
 const cairo = Cairo({
   variable: "--font-cairo",
@@ -23,7 +24,10 @@ export default function RootLayout({
       dir="rtl"
       className={`${cairo.variable} h-full antialiased`}
     >
-      <body className="min-h-full flex flex-col font-[var(--font-cairo)]">{children}</body>
+      <body className="min-h-full flex flex-col font-[var(--font-cairo)]">
+        <UserSync />
+        {children}
+      </body>
     </html>
   );
 }

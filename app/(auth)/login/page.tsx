@@ -1,6 +1,23 @@
+"use client";
+
 import Image from "next/image";
+import { createBrowserClient } from "@supabase/ssr";
+
+const supabase = createBrowserClient(
+  process.env.NEXT_PUBLIC_SUPABASE_URL!,
+  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+);
 
 export default function LoginPage() {
+  async function handleGoogleLogin() {
+    await supabase.auth.signInWithOAuth({
+      provider: "google",
+      options: {
+        redirectTo: "http://localhost:3000",
+      },
+    });
+  }
+
   return (
     <main className="min-h-screen flex flex-col items-center justify-center px-6 bg-[var(--color-surface)]">
 
@@ -35,6 +52,7 @@ export default function LoginPage() {
       <div className="w-full max-w-xs flex flex-col gap-4">
         <button
           type="button"
+          onClick={handleGoogleLogin}
           className="w-full flex items-center justify-center gap-3 bg-[var(--color-primary)] hover:bg-[var(--color-primary-dark)] active:scale-95 text-white text-base font-semibold py-3.5 rounded-2xl shadow-md transition-all duration-150"
         >
           {/* Google Icon */}

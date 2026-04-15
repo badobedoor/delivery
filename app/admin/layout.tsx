@@ -6,7 +6,8 @@ import { useState, useEffect }    from "react";
 import { useAuth }  from "@/hooks/useAuth";
 import { signOut }  from "@/lib/auth";
 
-const STAFF_ALLOWED = ["/admin/orders", "/admin/restaurants", "/admin/shifts"];
+/* Pages staff are allowed to visit */
+const STAFF_ALLOWED = ["/admin/orders", "/admin/restaurants", "/admin/drivers"];
 
 const C = {
   bg:     "#0F172A",
@@ -29,7 +30,7 @@ const allNavLinks = [
   { emoji: "👥", label: "المستخدمين", href: "/admin/users"           },
   { emoji: "🖼️", label: "الإعلانات",  href: "/admin/advertisements"  },
   { emoji: "📱", label: "الأقسام",    href: "/admin/sections"        },
-  { emoji: "🫂", label: "الفريق",     href: "/admin/team"            },
+  { emoji: "👥", label: "الفريق",     href: "/admin/team"            },
   { emoji: "⚙️", label: "الإعدادات",  href: "/admin/settings"        },
 ];
 
@@ -47,11 +48,6 @@ const pageTitle: Record<string, string> = {
   "/admin/advertisements": "الإعلانات",
   "/admin/sections":       "الأقسام",
   "/admin/team":           "الفريق",
-};
-
-const ROLE_LABEL: Record<string, string> = {
-  admin: "مدير النظام",
-  staff: "موظف",
 };
 
 function HamburgerIcon({ color }: { color: string }) {
@@ -146,7 +142,6 @@ function SidebarContent({
   );
 }
 
-/* ── Loading skeleton ── */
 function AuthLoadingScreen() {
   return (
     <div className="min-h-screen flex items-center justify-center"
@@ -161,60 +156,112 @@ function AuthLoadingScreen() {
   );
 }
 
+/* ── Staff session type (from localStorage) ── */
+type StaffUser = { id: number; name: string; phone: string; [key: string]: unknown };
+
 export default function AdminLayout({ children }: { children: React.ReactNode }) {
-  const { user, profile, loading } = useAuth();
-  const [collapsed,  setCollapsed]  = useState(false);
-  const [mobileOpen, setMobileOpen] = useState(false);
   const pathname = usePathname();
   const router   = useRouter();
-  const title    = pageTitle[pathname] ?? "لوحة التحكم";
 
-  /* ── Auth + role guard ── */
+  /* ── Login page: skip ALL auth checks, render immediately ── */
+  if (pathname === "/admin/login") return <>{children}</>;
+
+  /* ── localStorage staff session (checked before Supabase auth) ── */
+  const [staffUser,    setStaffUser]    = useState<StaffUser | null>(null);
+  const [staffChecked, setStaffChecked] = useState(false);
+
   useEffect(() => {
-    if (loading) return;
+    /* If a driver session exists, they should not be here */
+    try {
+      const driverRaw = localStorage.getItem("driver_user");
+      if (driverRaw && JSON.parse(driverRaw)) {
+        window.location.href = "/driver/orders";
+        return;
+      }
+    } catch { /* ignore */ }
 
-    /* No session → go to login */
+    try {
+      const raw = localStorage.getItem("staff_user");
+      setStaffUser(raw ? (JSON.parse(raw) as StaffUser) : null);
+    } catch {
+      setStaffUser(null);
+    }
+    setStaffChecked(true);
+  }, []);
+
+  /* ── Supabase auth (admin users only) ── */
+  const { user, profile, loading: authLoading } = useAuth();
+
+  const [collapsed,  setCollapsed]  = useState(false);
+  const [mobileOpen, setMobileOpen] = useState(false);
+  const title = pageTitle[pathname] ?? "لوحة التحكم";
+
+  console.log("AUTH USER:", user);
+  console.log("AUTH LOADING:", authLoading);
+
+  /* ── Staff route guard ── */
+  useEffect(() => {
+    if (!staffChecked || !staffUser) return;
+
+    const allowed = STAFF_ALLOWED.some((p) => pathname.startsWith(p));
+    if (!allowed) {
+      window.location.href = "/admin/orders";
+    }
+  }, [staffChecked, staffUser, pathname]);
+
+  /* ── Admin/Supabase auth guard (only when no staff session) ── */
+  useEffect(() => {
+    if (!staffChecked || staffUser) return;   /* skip if staff session exists */
+    if (authLoading) return;
+
     if (!user) {
       router.replace("/admin/login");
       return;
     }
-
-    /* Wrong role → redirect to correct area */
-    if (profile && profile.role === "driver") {
-      router.replace("/driver/orders");
-      return;
-    }
-    if (profile && profile.role === "customer") {
-      router.replace("/");
-      return;
-    }
-
-    /* Staff can only access STAFF_ALLOWED pages */
+    if (profile?.role === "driver") { router.replace("/driver/orders");    return; }
+    if (profile?.role === "customer") { router.replace("/");               return; }
     if (profile?.role === "staff") {
       const allowed = STAFF_ALLOWED.some((p) => pathname.startsWith(p));
       if (!allowed) router.replace("/admin/orders");
     }
-  }, [loading, user, profile, pathname, router]);
+  }, [staffChecked, staffUser, authLoading, user, profile, pathname, router]);
 
-  /* ── Logout handler ── */
+  /* ── Logout ── */
   async function handleLogout() {
+    if (staffUser) {
+      localStorage.removeItem("staff_user");
+      document.cookie = "staff_session=; path=/; max-age=0";
+      window.location.href = "/staff/login";
+      return;
+    }
     await signOut();
     router.replace("/admin/login");
   }
 
-  /* Show spinner while auth resolves */
-  if (loading || !user) return <AuthLoadingScreen />;
+  /* ── Wait until localStorage is read ── */
+  if (!staffChecked) return <AuthLoadingScreen />;
 
-  const navLinks =
-    profile?.role === "staff"
+  /* ── Staff mode: render immediately, no Supabase session needed ── */
+  const isStaffMode = Boolean(staffUser);
+
+  /* ── Admin mode: wait for Supabase auth ── */
+  if (!isStaffMode && (authLoading || !user)) return <AuthLoadingScreen />;
+
+  /* ── Nav links: staff sees filtered list, admin sees all ── */
+  const navLinks = isStaffMode
+    ? allNavLinks.filter((l) => STAFF_ALLOWED.includes(l.href))
+    : profile?.role === "staff"
       ? allNavLinks.filter((l) => STAFF_ALLOWED.includes(l.href))
       : allNavLinks;
 
-  const sidebarW = collapsed ? 64 : 260;
+  /* ── Header display info ── */
+  const displayName  = isStaffMode
+    ? (staffUser?.name ?? "موظف")
+    : (profile?.name ?? user?.email ?? "مدير");
+  const displayRole  = isStaffMode ? "موظف" : (profile?.role === "admin" ? "مدير النظام" : profile?.role ?? "");
+  const avatarLetter = displayName[0] ?? "م";
 
-  const displayName  = profile?.name ?? user.email ?? "مدير";
-  const displayRole  = ROLE_LABEL[profile?.role ?? ""] ?? profile?.role ?? "";
-  const avatarLetter = (profile?.name ?? user.email ?? "م")[0];
+  const sidebarW = collapsed ? 64 : 260;
 
   return (
     <div
@@ -242,24 +289,20 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
         <header className="sticky top-0 z-20 flex items-center gap-3 px-4 lg:px-6 py-3 border-b"
           style={{ background: C.card, borderColor: C.border }}>
 
-          {/* Mobile hamburger */}
           <button className="lg:hidden w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0"
             style={{ background: C.bg }} onClick={() => setMobileOpen(true)}>
             <HamburgerIcon color={C.muted} />
           </button>
 
-          {/* Desktop collapse toggle */}
           <button className="hidden lg:flex w-9 h-9 rounded-xl items-center justify-center flex-shrink-0"
             style={{ background: C.bg }} onClick={() => setCollapsed((v) => !v)}>
             <HamburgerIcon color={C.muted} />
           </button>
 
-          {/* Page title */}
           <p className="flex-1 text-base font-black text-center" style={{ color: C.text }}>
             {title}
           </p>
 
-          {/* User info */}
           <div className="flex items-center gap-2 flex-shrink-0">
             <div className="text-right hidden sm:block">
               <p className="text-sm font-semibold" style={{ color: C.text }}>{displayName}</p>

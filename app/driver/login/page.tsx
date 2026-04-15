@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { signIn, getUserProfile, getRoleRedirect } from "@/lib/auth";
+import { supabasePublic } from "@/lib/supabasePublic";
 
 const C = {
   bg:     "#0F172A",
@@ -36,44 +36,35 @@ function EyeOffIcon() {
 }
 
 export default function DriverLoginPage() {
-  const [email,    setEmail]    = useState("");
+  const [phone,    setPhone]    = useState("");
   const [password, setPassword] = useState("");
   const [showPass, setShowPass] = useState(false);
   const [error,    setError]    = useState("");
   const [loading,  setLoading]  = useState(false);
 
-  async function handleSubmit(e: React.FormEvent) {
-    e.preventDefault();
-    if (!email.trim())    { setError("أدخل البريد الإلكتروني"); return; }
-    if (!password.trim()) { setError("أدخل كلمة المرور");        return; }
+  async function handleLogin() {
+    if (!phone.trim())    { setError("أدخل رقم الهاتف"); return; }
+    if (!password.trim()) { setError("أدخل كلمة المرور"); return; }
 
     setError("");
     setLoading(true);
 
-    try {
-      const data = await signIn(email.trim(), password);
-      console.log("DRIVER LOGIN DATA:", data);
+    const { data, error } = await supabasePublic
+      .from("delivery_staff")
+      .select("*")
+      .eq("phone", phone.trim())
+      .eq("password", password)
+      .eq("is_active", true)
+      .single();
 
-      const session = data?.session;
-      if (!session?.user) throw new Error("فشل تسجيل الدخول — لا توجد جلسة");
-
-      const profile = await getUserProfile(session.user.id);
-      console.log("DRIVER PROFILE:", profile);
-
-      if (!profile) {
-        throw new Error("لم يتم العثور على الملف الشخصي");
-      }
-
-      if (profile.role !== "driver") {
-        throw new Error("هذا الدخول مخصص للسائقين فقط");
-      }
-
-      window.location.href = getRoleRedirect(profile.role);
-    } catch (err: unknown) {
-      console.error("DRIVER LOGIN ERROR:", err);
-      setError(err instanceof Error ? err.message : "حدث خطأ غير متوقع");
+    if (error || !data) {
+      alert("بيانات غير صحيحة أو الحساب غير مفعل");
       setLoading(false);
+      return;
     }
+
+    localStorage.setItem("driver_user", JSON.stringify(data));
+    window.location.href = "/driver/orders";
   }
 
   return (
@@ -101,18 +92,18 @@ export default function DriverLoginPage() {
         </p>
 
         {/* ── Form ── */}
-        <form onSubmit={handleSubmit} className="flex flex-col gap-4">
+        <form onSubmit={(e) => { e.preventDefault(); handleLogin(); }} className="flex flex-col gap-4">
 
-          {/* Email */}
+          {/* Phone */}
           <div className="flex flex-col gap-1.5">
             <label className="text-sm font-semibold" style={{ color: C.muted }}>
-              البريد الإلكتروني
+              رقم الهاتف
             </label>
             <input
-              type="email"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              placeholder="driver@example.com"
+              type="tel"
+              value={phone}
+              onChange={(e) => setPhone(e.target.value)}
+              placeholder="01XXXXXXXXX"
               className="w-full rounded-xl px-3 py-2.5 text-sm outline-none"
               style={{
                 background: C.bg,
@@ -162,7 +153,8 @@ export default function DriverLoginPage() {
 
           {/* Submit */}
           <button
-            type="submit"
+            type="button"
+            onClick={handleLogin}
             disabled={loading}
             className="w-full py-3 rounded-xl text-sm font-black transition-opacity hover:opacity-90 mt-1"
             style={{ background: C.orange, color: "#fff", opacity: loading ? 0.7 : 1 }}
