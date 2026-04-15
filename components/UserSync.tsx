@@ -5,8 +5,9 @@ import { supabase } from "@/lib/supabase";
 
 /**
  * Invisible component mounted in the root layout.
- * Listens for auth state changes so it catches the session even when
- * it arrives after the component mounts (e.g. right after OAuth redirect).
+ * On every login / session refresh:
+ *   1. Inserts the user into "users" if they don't exist yet.
+ *   2. Checks is_blocked — signs out and redirects blocked users immediately.
  */
 export default function UserSync() {
   useEffect(() => {
@@ -15,10 +16,10 @@ export default function UserSync() {
     async function syncUser(userId: string, email: string | undefined, fullName: string | undefined) {
       console.log("[UserSync] AUTH USER:", { id: userId, email, fullName });
 
-      /* maybeSingle() → null when row missing, no error */
+      /* ── Fetch the user row (or confirm it needs to be created) ── */
       const { data: existingUser, error: selectError } = await supabase
         .from("users")
-        .select("id")
+        .select("id, is_blocked")
         .eq("id", userId)
         .maybeSingle();
 
@@ -29,29 +30,39 @@ export default function UserSync() {
         return;
       }
 
-      if (existingUser) {
-        console.log("[UserSync] user already exists, skipping insert");
-        return;
+      /* ── Insert if first login ── */
+      if (!existingUser) {
+        console.log("[UserSync] INSERT ATTEMPT");
+
+        const { data: insertData, error: insertError } = await supabase
+          .from("users")
+          .insert([
+            {
+              id:           userId,
+              name:         fullName || email || "مستخدم",
+              email:        email ?? null,
+              phone:        null,
+              total_orders: 0,
+              is_blocked:   false,
+            },
+          ]);
+
+        console.log("[UserSync] INSERT RESULT:", insertData);
+
+        if (insertError) {
+          console.error("[UserSync] INSERT ERROR:", insertError);
+        }
+
+        return; /* newly created users are never blocked */
       }
 
-      console.log("[UserSync] INSERT ATTEMPT");
+      /* ── Block check ── */
+      console.log("[UserSync] is_blocked:", existingUser.is_blocked);
 
-      const { data: insertData, error: insertError } = await supabase
-        .from("users")
-        .insert([
-          {
-            id:           userId,
-            name:         fullName || email || "مستخدم",
-            email:        email ?? null,
-            phone:        null,
-            total_orders: 0,
-          },
-        ]);
-
-      console.log("[UserSync] INSERT RESULT:", insertData);
-
-      if (insertError) {
-        console.error("[UserSync] INSERT ERROR:", insertError);
+      if (existingUser.is_blocked) {
+        alert("تم حظر هذا الحساب. يرجى التواصل مع الدعم.");
+        await supabase.auth.signOut();
+        window.location.href = "/login";
       }
     }
 
@@ -63,7 +74,7 @@ export default function UserSync() {
       }
     });
 
-    /* 2 — Also listen for auth state changes (catches post-OAuth session arrival) */
+    /* 2 — Catch post-OAuth session arrival and token refreshes */
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
       console.log("[UserSync] onAuthStateChange event:", event, "user:", session?.user?.id ?? "null");
 
