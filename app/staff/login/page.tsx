@@ -1,7 +1,6 @@
 "use client";
 
 import { useState } from "react";
-import { useRouter } from "next/navigation";
 import { signIn, getUserProfile, getRoleRedirect } from "@/lib/auth";
 
 const C = {
@@ -37,7 +36,6 @@ function EyeOffIcon() {
 }
 
 export default function StaffLoginPage() {
-  const router = useRouter();
   const [email,    setEmail]    = useState("");
   const [password, setPassword] = useState("");
   const [showPass, setShowPass] = useState(false);
@@ -53,20 +51,27 @@ export default function StaffLoginPage() {
     setLoading(true);
 
     try {
-      const { session } = await signIn(email.trim(), password);
-      if (!session) throw new Error("فشل تسجيل الدخول");
+      const data = await signIn(email.trim(), password);
+      console.log("STAFF LOGIN DATA:", data);
+
+      const session = data?.session;
+      if (!session?.user) throw new Error("فشل تسجيل الدخول — لا توجد جلسة");
 
       const profile = await getUserProfile(session.user.id);
-      if (!profile) throw new Error("لم يتم العثور على الملف الشخصي");
+      console.log("STAFF PROFILE:", profile);
+
+      if (!profile) {
+        throw new Error("لم يتم العثور على الملف الشخصي");
+      }
 
       if (profile.role !== "staff" && profile.role !== "admin") {
         throw new Error("هذا الدخول مخصص لفريق العمل فقط");
       }
 
-      router.push(getRoleRedirect(profile.role));
+      window.location.href = getRoleRedirect(profile.role);
     } catch (err: unknown) {
+      console.error("STAFF LOGIN ERROR:", err);
       setError(err instanceof Error ? err.message : "حدث خطأ غير متوقع");
-    } finally {
       setLoading(false);
     }
   }

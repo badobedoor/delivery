@@ -1,7 +1,9 @@
-import { createClient } from "@supabase/supabase-js";
+import { createBrowserClient } from "@supabase/ssr";
 
-const supabaseUrl  = process.env.NEXT_PUBLIC_SUPABASE_URL!;
-const supabaseAnon = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
-
-/* Browser singleton — used in client components and hooks */
-export const supabase = createClient(supabaseUrl, supabaseAnon);
+/* Browser singleton using @supabase/ssr so the session is stored in
+   cookies (not localStorage). This makes the session visible to the
+   middleware's createServerClient and prevents redirect loops. */
+export const supabase = createBrowserClient(
+  process.env.NEXT_PUBLIC_SUPABASE_URL!,
+  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+);

@@ -1,7 +1,6 @@
 "use client";
 
 import { useState } from "react";
-import { useRouter } from "next/navigation";
 import { signIn, getUserProfile, getRoleRedirect } from "@/lib/auth";
 
 const C = {
@@ -37,7 +36,6 @@ function EyeOffIcon() {
 }
 
 export default function AdminLoginPage() {
-  const router = useRouter();
   const [email,    setEmail]    = useState("");
   const [password, setPassword] = useState("");
   const [showPass, setShowPass] = useState(false);
@@ -53,22 +51,39 @@ export default function AdminLoginPage() {
     setLoading(true);
 
     try {
-      const { session } = await signIn(email.trim(), password);
-      if (!session) throw new Error("فشل تسجيل الدخول");
+      /* ── Step 1: authenticate ── */
+      const data = await signIn(email.trim(), password);
+      console.log("LOGIN DATA:", data);
 
+      const session = data?.session;
+      if (!session?.user) throw new Error("فشل تسجيل الدخول — لا توجد جلسة");
+
+      /* ── Step 2: fetch profile ── */
       const profile = await getUserProfile(session.user.id);
-      if (!profile) throw new Error("لم يتم العثور على الملف الشخصي");
+      console.log("PROFILE:", profile);
 
-      if (profile.role !== "admin" && profile.role !== "staff") {
-        throw new Error("غير مصرح لك بالدخول لهذه اللوحة");
+      if (!profile) {
+        throw new Error(
+          "لم يتم العثور على الملف الشخصي — تأكد من إنشاء صف في جدول profiles",
+        );
       }
 
-      router.push(getRoleRedirect(profile.role));
+      /* ── Step 3: role check ── */
+      if (profile.role !== "admin" && profile.role !== "staff") {
+        throw new Error(`غير مصرح لك بالدخول لهذه اللوحة (دورك: ${profile.role})`);
+      }
+
+      /* ── Step 4: hard redirect so the middleware sees the new cookie ── */
+      const dest = getRoleRedirect(profile.role);
+      console.log("REDIRECTING TO:", dest);
+      window.location.href = dest;
     } catch (err: unknown) {
+      console.error("LOGIN ERROR:", err);
       setError(err instanceof Error ? err.message : "حدث خطأ غير متوقع");
-    } finally {
       setLoading(false);
     }
+    /* Note: setLoading(false) is intentionally skipped on success —
+       the page will navigate away so there is nothing to reset. */
   }
 
   return (
