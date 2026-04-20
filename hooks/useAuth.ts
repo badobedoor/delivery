@@ -20,20 +20,38 @@ export function useAuth(): AuthState {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    /* Load initial session */
-    supabase.auth.getSession().then(async ({ data: { session } }) => {
-      const u = session?.user ?? null;
-      setUser(u);
-      if (u) setProfile(await getUserProfile(u.id));
-      setLoading(false);
-    });
+    /* Load initial session — always call setLoading(false) regardless of outcome */
+    supabase.auth.getSession()
+      .then(async ({ data: { session } }) => {
+        const u = session?.user ?? null;
+        setUser(u);
+        if (u) {
+          try {
+            setProfile(await getUserProfile(u.id));
+          } catch {
+            /* profile fetch failed — proceed without it */
+          }
+        }
+        setLoading(false);
+      })
+      .catch(() => {
+        setLoading(false);
+      });
 
     /* Stay in sync with auth state changes (sign-in / sign-out / token refresh) */
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
       async (_event, session) => {
         const u = session?.user ?? null;
         setUser(u);
-        setProfile(u ? await getUserProfile(u.id) : null);
+        if (u) {
+          try {
+            setProfile(await getUserProfile(u.id));
+          } catch {
+            setProfile(null);
+          }
+        } else {
+          setProfile(null);
+        }
       },
     );
 

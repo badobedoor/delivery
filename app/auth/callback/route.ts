@@ -74,7 +74,7 @@ export async function GET(request: Request) {
   console.log("[callback] CHECK USER EXISTS:", existingUser, "selectError:", selectError);
 
   if (selectError) {
-    console.error("[callback] ERROR (select users):", selectError);
+    console.error("[callback] ERROR (select users):", selectError.message, selectError);
   }
 
   if (!existingUser && !selectError) {
@@ -93,7 +93,7 @@ export async function GET(request: Request) {
     console.log("[callback] INSERT RESULT:", insertResult);
 
     if (insertResult.error) {
-      console.error("[callback] ERROR (insert users):", insertResult.error);
+      console.error("[callback] ERROR (insert users):", insertResult.error.message, insertResult.error);
     }
   }
 

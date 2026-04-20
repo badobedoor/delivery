@@ -46,9 +46,7 @@ export default function AdminUsersPage() {
       .select("*")
       .order("created_at", { ascending: false });
 
-    console.log("USERS DATA:", data);
-    console.error("USERS ERROR:", error);
-
+    if (error) console.error("USERS ERROR:", error.message, error);
     if (data) setUsers(data);
     setLoading(false);
   }
@@ -62,7 +60,7 @@ export default function AdminUsersPage() {
       .eq("id", userId);
 
     if (error) {
-      console.error("BLOCK TOGGLE ERROR:", error);
+      console.error("BLOCK TOGGLE ERROR:", error.message, error);
       return;
     }
 

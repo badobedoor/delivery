@@ -35,10 +35,14 @@ export async function getUserProfile(userId: string): Promise<Profile | null> {
     .from("profiles")
     .select("id, name, role, phone, created_at")
     .eq("id", userId)
-    .single();
+    .maybeSingle();
 
-  if (error || !data) return null;
-  return data as Profile;
+  if (error) {
+    console.error("PROFILE ERROR:", error.message, error);
+    return null;
+  }
+
+  return data as Profile | null;
 }
 
 /* ── Google OAuth (for customer sign-in) ── */
