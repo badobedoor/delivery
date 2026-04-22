@@ -1,6 +1,20 @@
-import Image from "next/image";
+"use client";
 
-/* ── بيانات وهمية ── */
+import Image from "next/image";
+import Link from "next/link";
+import { useState, useEffect } from "react";
+import { supabase } from "@/lib/supabase";
+
+/* ── Types ── */
+type Restaurant = {
+  id: string;
+  name: string;
+  description: string | null;
+  image_url: string | null;
+  cover_image_url: string | null;
+};
+
+/* ── Static promotional data (no DB table) ── */
 const topMeals = [
   { id: 1, name: "برجر كلاسيك",    restaurant: "بيت البرجر",   rating: 4.8, img: "https://images.unsplash.com/photo-1568901346375-23c9450c58cd?w=300&h=200&fit=crop" },
   { id: 2, name: "بيتزا مارجريتا", restaurant: "ليالي بيتزا",  rating: 4.6, img: "https://images.unsplash.com/photo-1568901346375-23c9450c58cd?w=300&h=200&fit=crop" },
@@ -8,14 +22,7 @@ const topMeals = [
   { id: 4, name: "دجاج مشوي",     restaurant: "مشويات النيل", rating: 4.5, img: "https://images.unsplash.com/photo-1568901346375-23c9450c58cd?w=300&h=200&fit=crop" },
 ];
 
-const restaurants = [
-  { id: 1, name: "بيت البرجر",   desc: "برجر أمريكي وسندويتشات مميزة",        rating: 4.8, img: "https://images.unsplash.com/photo-1552566626-52f8b828add9?w=100&h=100&fit=crop" },
-  { id: 2, name: "ليالي بيتزا",  desc: "بيتزا إيطالية طازجة بعجينة رفيعة",   rating: 4.6, img: "https://images.unsplash.com/photo-1552566626-52f8b828add9?w=100&h=100&fit=crop" },
-  { id: 3, name: "شاورما الشام", desc: "شاورما شامية أصيلة بالصوص السري",     rating: 4.7, img: "https://images.unsplash.com/photo-1552566626-52f8b828add9?w=100&h=100&fit=crop" },
-  { id: 4, name: "مشويات النيل", desc: "مشويات فاخرة وأكلات شرقية متنوعة",   rating: 4.5, img: "https://images.unsplash.com/photo-1552566626-52f8b828add9?w=100&h=100&fit=crop" },
-  { id: 5, name: "سوشي تايم",   desc: "سوشي ياباني طازج يومياً",             rating: 4.9, img: "https://images.unsplash.com/photo-1552566626-52f8b828add9?w=100&h=100&fit=crop" },
-  { id: 6, name: "كنتاكي الشام", desc: "دجاج مقرمش بوصفات سرية لا تُقاوَم",  rating: 4.4, img: "https://images.unsplash.com/photo-1552566626-52f8b828add9?w=100&h=100&fit=crop" },
-];
+const FALLBACK_IMG = "https://images.unsplash.com/photo-1552566626-52f8b828add9?w=100&h=100&fit=crop";
 
 function StarRating({ rating }: { rating: number }) {
   return (
@@ -31,9 +38,31 @@ function StarRating({ rating }: { rating: number }) {
   );
 }
 
-
 export default function RestaurantsPage() {
   const address = "المعادي، القاهرة";
+
+  const [restaurants, setRestaurants] = useState<Restaurant[]>([]);
+  const [loading,     setLoading]     = useState(true);
+  const [error,       setError]       = useState<string | null>(null);
+
+  useEffect(() => {
+    async function fetchRestaurants() {
+      const { data, error } = await supabase
+        .from("restaurants")
+        .select("id, name, description, image_url, cover_image_url")
+        .eq("is_active", true)
+        .order("name");
+
+      if (error) {
+        setError("تعذّر تحميل المطاعم");
+      } else {
+        setRestaurants(data ?? []);
+      }
+      setLoading(false);
+    }
+
+    fetchRestaurants();
+  }, []);
 
   return (
     <div className="min-h-screen bg-[var(--color-surface)]">
@@ -118,15 +147,34 @@ export default function RestaurantsPage() {
             <h2 className="text-base font-bold text-[var(--color-secondary)] mb-3">
               كل المطاعم
             </h2>
+
+            {loading && (
+              <p className="text-sm text-[var(--color-muted)] text-center py-6">جاري التحميل...</p>
+            )}
+
+            {error && (
+              <p className="text-sm text-[var(--color-muted)] text-center py-6">{error}</p>
+            )}
+
+            {!loading && !error && restaurants.length === 0 && (
+              <p className="text-sm text-[var(--color-muted)] text-center py-6">لا توجد مطاعم متاحة حالياً</p>
+            )}
+
             <div className="flex flex-col gap-3">
               {restaurants.map((r) => (
-                <div
+                <Link
                   key={r.id}
+                  href={`/restaurant/${r.id}`}
                   className="flex items-center gap-3 bg-white rounded-2xl p-3 shadow-sm border border-[var(--color-border)]"
                 >
                   {/* صورة المطعم — يمين */}
                   <div className="relative w-16 h-16 flex-shrink-0 rounded-xl overflow-hidden">
-                    <Image src={r.img} alt={r.name} fill className="object-cover" />
+                    <Image
+                      src={r.image_url ?? FALLBACK_IMG}
+                      alt={r.name}
+                      fill
+                      className="object-cover"
+                    />
                   </div>
 
                   {/* المعلومات */}
@@ -135,14 +183,13 @@ export default function RestaurantsPage() {
                       {r.name}
                     </p>
                     <p className="text-xs text-[var(--color-muted)] truncate mt-0.5">
-                      {r.desc}
+                      {r.description ?? ""}
                     </p>
                     <div className="mt-1.5">
-                      <StarRating rating={r.rating} />
+                      <StarRating rating={4.5} />
                     </div>
                   </div>
-
-                </div>
+                </Link>
               ))}
             </div>
           </section>

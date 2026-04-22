@@ -5,7 +5,7 @@ import { useState } from "react";
 
 /* ── Types ── */
 interface Extra  { id: number; name: string; price: number }
-interface Size   { id: number; name: string }
+interface Size   { id: number; name: string; price?: number }
 interface Meal   {
   id: number;
   name: string;
@@ -52,7 +52,11 @@ export default function MealBottomSheet({ meal, onClose }: Props) {
     return sum + (extra?.price ?? 0);
   }, 0);
 
-  const total = (meal.basePrice + extrasTotal) * qty;
+  const activePrice = selectedSize !== null
+    ? (meal.sizes?.find((s) => s.id === selectedSize)?.price ?? meal.basePrice)
+    : meal.basePrice;
+
+  const total = (activePrice + extrasTotal) * qty;
 
   function toggleExtra(id: number) {
     setSelectedExtras((prev) =>
@@ -111,7 +115,7 @@ export default function MealBottomSheet({ meal, onClose }: Props) {
                   {meal.name}
                 </h2>
                 <p className="text-base font-bold text-[var(--color-primary)] mt-1">
-                  {meal.basePrice} ج.م
+                  {activePrice} ج.م
                 </p>
               </div>
 
@@ -202,7 +206,12 @@ export default function MealBottomSheet({ meal, onClose }: Props) {
                       className="flex items-center justify-between cursor-pointer"
                       onClick={() => setSelectedSize(size.id)}
                     >
-                      <span className="text-sm text-[var(--color-secondary)]">{size.name}</span>
+                      <span className={`text-sm transition-colors ${selected ? "font-bold text-[var(--color-primary)]" : "text-[var(--color-secondary)]"}`}>
+                        {size.name}
+                        {size.price !== undefined && (
+                          <span className="font-normal text-[var(--color-muted)] mr-1">— {size.price} ج.م</span>
+                        )}
+                      </span>
                       <div className={`w-5 h-5 rounded-full border-2 flex items-center justify-center transition-colors ${
                         selected
                           ? "border-[var(--color-primary)]"

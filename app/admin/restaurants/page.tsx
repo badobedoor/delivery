@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import Cropper from "react-easy-crop";
 import type { Area } from "react-easy-crop";
 import imageCompression from "browser-image-compression";
@@ -38,14 +38,31 @@ type RestForm = {
 };
 type FormErrors = Partial<Record<keyof RestForm, string>>;
 
-type Category = { id: number; restaurantId: string; name: string };
-type Extra    = { id: number; name: string; price: string };
+type Category = { id: number; name: string; restaurant_id: string };
+type ExtraGroup = { key: number; name: string; required: boolean; max_select: number; type: string; extras: { key: number; name: string; price: number }[] };
 type MenuItem = {
-  id: number; categoryId: number; name: string;
-  price: string; isBestSeller: boolean; extras: Extra[];
+  id: number;
+  name: string;
+  description: string | null;
+  price: number;
+  category_id: number;
+  restaurant_id: string;
+  image_url: string | null;
+  extra_groups: { type: string; item_extras: { price: number }[] }[];
 };
 
 /* ── Helpers ── */
+function safeMinPrice(extras: { price: number }[] | undefined): number | null {
+  const prices = (extras ?? []).map((e) => e.price).filter((p) => typeof p === "number" && isFinite(p));
+  return prices.length > 0 ? Math.min(...prices) : null;
+}
+
+function displayPrice(basePrice: number, groups: { type: string; item_extras: { price: number }[] }[]): string {
+  const variantGroup = (groups ?? []).find((g) => g.type === "variant");
+  const min = safeMinPrice(variantGroup?.item_extras);
+  return min !== null ? `يبدأ من ${min} ج.م` : `${basePrice} ج.م`;
+}
+
 function formatHours(opens: string | null, closes: string | null) {
   if (!opens || !closes) return "—";
   const fmt = (t: string) => {
@@ -276,15 +293,20 @@ const inputCls = "w-full rounded-xl px-3 py-2.5 text-sm outline-none";
 const inputSty = { background: C.bg, border: `1px solid ${C.border}`, color: C.text };
 
 const emptyRestForm: RestForm = { name: "", description: "", phone: "", opens_at: "10:00", closes_at: "23:00" };
-const emptyItemForm = { name: "", price: "", categoryId: 0, isBestSeller: false };
+const emptyItemForm = { name: "", description: "", price: "", category_id: 0 };
 
-let nextId = 100;
-const uid = () => ++nextId;
-
-/* ── Image upload to Supabase Storage ── */
-async function uploadImage(file: File, prefix: string): Promise<string | null> {
-  const ext  = file.name.split(".").pop() ?? "jpg";
-  const path = `${prefix}-${Date.now()}.${ext}`;
+/* ── Image upload to Supabase Storage ──
+   bucket : "restaurants" (shared — no strong reason to split)
+   folder : optional subfolder, e.g. "menu-items"
+   prefix : filename prefix, e.g. "card", "cover", "item"
+   Usage  :
+     uploadImage(file, "card")                     // restaurants/card-{ts}.jpg
+     uploadImage(file, "item", "menu-items")        // restaurants/menu-items/item-{ts}.jpg
+── */
+async function uploadImage(file: File, prefix: string, folder?: string): Promise<string | null> {
+  const ext      = file.name.split(".").pop() ?? "jpg";
+  const filename = `${prefix}-${Date.now()}.${ext}`;
+  const path     = folder ? `${folder}/${filename}` : filename;
   const { error } = await supabase.storage
     .from("restaurants")
     .upload(path, file, { upsert: true });
@@ -320,28 +342,37 @@ export default function AdminRestaurantsPage() {
   const [coverError,   setCoverError]   = useState<string | null>(null);
 
   /* ── Crop state ── */
-  type CropTarget = { src: string; aspect: number; field: "image" | "cover"; compress: CompressOptions };
+  type CropTarget = { src: string; aspect: number; field: "image" | "cover" | "item"; compress: CompressOptions };
   const [cropState, setCropState] = useState<CropTarget | null>(null);
 
   /* ── Menu view state ── */
   const [selectedRest, setSelectedRest] = useState<Restaurant | null>(null);
   const [categories,   setCategories]   = useState<Category[]>([]);
   const [menuItems,    setMenuItems]    = useState<MenuItem[]>([]);
+  const [catLoading,   setCatLoading]   = useState(false);
 
   /* ── Category modal ── */
   const [showCatModal, setShowCatModal] = useState(false);
   const [editCat,      setEditCat]      = useState<Category | null>(null);
   const [catName,      setCatName]      = useState("");
+  const [catSaving,    setCatSaving]    = useState(false);
+  const [catError,     setCatError]     = useState<string | null>(null);
 
   /* ── Item modal ── */
   const [showItemModal, setShowItemModal] = useState(false);
   const [editItem,      setEditItem]      = useState<MenuItem | null>(null);
   const [itemForm,      setItemForm]      = useState(emptyItemForm);
+  const [itemSaving,        setItemSaving]        = useState(false);
+  const [isUploadingImage,  setIsUploadingImage]  = useState(false);
+  const [itemError,         setItemError]         = useState<string | null>(null);
+  const [itemImageFile,     setItemImageFile]      = useState<File | null>(null);
+  const [itemImagePreview,setItemImagePreview]= useState<string | null>(null);
+  const [itemImageError,  setItemImageError]  = useState<string | null>(null);
+  const [extraGroups,      setExtraGroups]      = useState<ExtraGroup[]>([]);
+  const [collapsedGroups,  setCollapsedGroups]  = useState<Set<number>>(new Set());
+  const [groupNameErrors,  setGroupNameErrors]  = useState<Set<number>>(new Set());
+  const [toastMsg,         setToastMsg]         = useState<string | null>(null);
 
-  /* ── Extras modal ── */
-  const [extrasTarget, setExtrasTarget] = useState<MenuItem | null>(null);
-  const [draftExtras,  setDraftExtras]  = useState<Extra[]>([]);
-  const [extraForm,    setExtraForm]    = useState({ name: "", price: "" });
 
   /* ── Fetch from Supabase ── */
   async function fetchRestaurants() {
@@ -453,9 +484,12 @@ export default function AdminRestaurantsPage() {
     if (cropState.field === "image") {
       setImageFile(file);
       setImagePreview(preview);
-    } else {
+    } else if (cropState.field === "cover") {
       setCoverFile(file);
       setCoverPreview(preview);
+    } else {
+      setItemImageFile(file);
+      setItemImagePreview(preview);
     }
     setCropState(null);
   }
@@ -540,75 +574,469 @@ export default function AdminRestaurantsPage() {
   }
 
   /* ── Menu view ── */
-  function openMenu(r: Restaurant) { setSelectedRest(r); }
-  function closeMenu()             { setSelectedRest(null); }
+  async function fetchMenuItems(restaurantId: string) {
+    const { data, error } = await supabase
+      .from("menu_items")
+      .select("id, name, description, price, category_id, restaurant_id, image_url, extra_groups(type, item_extras(price))")
+      .eq("restaurant_id", restaurantId)
+      .order("id", { ascending: true });
+    if (error) { console.error("Fetch menu items error:", error.message, error); return; }
+    if (data) {
+      type RawGroup = { type: string; item_extras: { price: number }[] };
+      setMenuItems(
+        (data as (typeof data[0] & { extra_groups: RawGroup[] })[]).map((item) => ({
+          id:            item.id,
+          name:          item.name,
+          description:   item.description,
+          price:         item.price,
+          category_id:   item.category_id,
+          restaurant_id: item.restaurant_id,
+          image_url:     item.image_url ?? null,
+          extra_groups:  item.extra_groups ?? [],
+        })),
+      );
+    }
+  }
 
-  /* ── Category actions ── */
-  function openAddCat()             { setEditCat(null);  setCatName("");       setShowCatModal(true); }
-  function openEditCat(c: Category) { setEditCat(c);     setCatName(c.name);  setShowCatModal(true); }
-  function saveCat() {
+  async function openMenu(r: Restaurant) {
+    setSelectedRest(r);
+    setCategories([]);
+    setMenuItems([]);
+    setCatLoading(true);
+    const [catsResult] = await Promise.all([
+      supabase
+        .from("categories")
+        .select("id, name, restaurant_id")
+        .eq("restaurant_id", r.id)
+        .order("id", { ascending: true }),
+      fetchMenuItems(r.id),
+    ]);
+    if (catsResult.error) console.error("Fetch categories error:", catsResult.error.message, catsResult.error);
+    if (catsResult.data) setCategories(catsResult.data);
+    setCatLoading(false);
+  }
+  function closeMenu() {
+    setSelectedRest(null);
+    setCategories([]);
+    setMenuItems([]);
+  }
+
+  /* ── Category modal helpers ── */
+  function openAddCat()             { setEditCat(null); setCatName(""); setCatError(null); setShowCatModal(true); }
+  function openEditCat(c: Category) { setEditCat(c);    setCatName(c.name); setCatError(null); setShowCatModal(true); }
+  function closeCatModal()          { setShowCatModal(false); setCatError(null); }
+
+  /* ── Category CRUD ── */
+  async function saveCat() {
     if (!catName.trim() || !selectedRest) return;
+    setCatSaving(true);
+    setCatError(null);
+
     if (editCat) {
+      const { error } = await supabase
+        .from("categories")
+        .update({ name: catName.trim() })
+        .eq("id", editCat.id);
+      if (error) {
+        console.error("Update category error:", error.message, error);
+        setCatError("حدث خطأ أثناء حفظ القسم");
+        setCatSaving(false);
+        return;
+      }
       setCategories((p) => p.map((c) => c.id === editCat.id ? { ...c, name: catName.trim() } : c));
     } else {
-      setCategories((p) => [...p, { id: uid(), restaurantId: selectedRest.id, name: catName.trim() }]);
+      const { data, error } = await supabase
+        .from("categories")
+        .insert([{ name: catName.trim(), restaurant_id: selectedRest.id }])
+        .select("id, name, restaurant_id")
+        .maybeSingle();
+      if (error) {
+        console.error("Insert category error:", error.message, error);
+        setCatError("حدث خطأ أثناء حفظ القسم");
+        setCatSaving(false);
+        return;
+      }
+      if (data) setCategories((p) => [...p, data]);
     }
-    setShowCatModal(false);
-  }
-  function deleteCat(id: number) {
-    setCategories((p) => p.filter((c) => c.id !== id));
-    setMenuItems((p) => p.filter((i) => i.categoryId !== id));
+
+    setCatSaving(false);
+    closeCatModal();
   }
 
-  /* ── Item actions ── */
+  async function deleteCat(id: number) {
+    const { error } = await supabase
+      .from("categories")
+      .delete()
+      .eq("id", id);
+    if (error) { console.error("Delete category error:", error.message, error); return; }
+    setCategories((p) => p.filter((c) => c.id !== id));
+    setMenuItems((p)  => p.filter((i) => i.category_id !== id));
+  }
+
+  /* ── Item modal helpers ── */
   function openAddItem(catId: number) {
     setEditItem(null);
-    setItemForm({ ...emptyItemForm, categoryId: catId });
+    setItemForm({ ...emptyItemForm, category_id: catId });
+    setExtraGroups([]);
+    setCollapsedGroups(new Set()); setGroupNameErrors(new Set());
+    setItemError(null);
+    setItemImageFile(null); setItemImagePreview(null); setItemImageError(null);
+    setIsUploadingImage(false);
     setShowItemModal(true);
   }
-  function openEditItem(item: MenuItem) {
-    setEditItem(item);
-    setItemForm({ name: item.name, price: item.price, categoryId: item.categoryId, isBestSeller: item.isBestSeller });
-    setShowItemModal(true);
-  }
-  function saveItem() {
-    if (!itemForm.name.trim() || !itemForm.price.trim()) return;
-    if (editItem) {
-      setMenuItems((p) => p.map((i) => i.id === editItem.id
-        ? { ...i, name: itemForm.name.trim(), price: itemForm.price.trim(), categoryId: itemForm.categoryId, isBestSeller: itemForm.isBestSeller }
-        : i
-      ));
-    } else {
-      setMenuItems((p) => [...p, {
-        id: uid(), categoryId: itemForm.categoryId,
-        name: itemForm.name.trim(), price: itemForm.price.trim(),
-        isBestSeller: itemForm.isBestSeller, extras: [],
-      }]);
-    }
+  function closeItemModal() {
     setShowItemModal(false);
+    setExtraGroups([]);
+    setCollapsedGroups(new Set()); setGroupNameErrors(new Set());
+    setItemError(null);
+    setItemImageFile(null); setItemImagePreview(null); setItemImageError(null);
+    setIsUploadingImage(false);
   }
-  function deleteItem(id: number) { setMenuItems((p) => p.filter((i) => i.id !== id)); }
+  function toggleGroupCollapse(key: number) {
+    setCollapsedGroups((prev) => {
+      const next = new Set(prev);
+      next.has(key) ? next.delete(key) : next.add(key);
+      return next;
+    });
+  }
+  function showToast(msg: string) {
+    setToastMsg(msg);
+    setTimeout(() => setToastMsg(null), 2800);
+  }
+  const SUGGESTED_NAMES: Record<string, string> = { variant: "الحجم", checkbox: "إضافات" };
 
-  /* ── Extras actions ── */
-  function openExtras(item: MenuItem) {
-    setExtrasTarget(item);
-    setDraftExtras([...item.extras]);
-    setExtraForm({ name: "", price: "" });
+  function handleGroupTypeChange(key: number, newType: string) {
+    const group = extraGroups.find((g) => g.key === key);
+    if (!group) return;
+
+    /* Auto-swap suggested name only if the current name is still the other type's suggestion */
+    const currentSuggested = SUGGESTED_NAMES[group.type] ?? "";
+    const autoName = group.name.trim() === "" || group.name === currentSuggested
+      ? (SUGGESTED_NAMES[newType] ?? group.name)
+      : group.name;
+
+    if (newType === "variant") {
+      if (group.extras.length > 1) {
+        const confirmed = window.confirm("سيتم تحويل المجموعة لاختيار واحد فقط — هل تريد المتابعة؟");
+        if (!confirmed) return;
+        updateExtraGroup(key, { type: "variant", required: true, max_select: 1, name: autoName, extras: [group.extras[0]] });
+      } else {
+        updateExtraGroup(key, { type: "variant", required: true, max_select: 1, name: autoName });
+      }
+      showToast("تم تحويل المجموعة إلى اختيار واحد");
+    } else {
+      updateExtraGroup(key, { type: newType, name: autoName });
+    }
+    /* Clear name error for this group since we just set a valid name */
+    setGroupNameErrors((prev) => { const next = new Set(prev); next.delete(key); return next; });
   }
-  function addExtra() {
-    if (!extraForm.name.trim()) return;
-    setDraftExtras((p) => [...p, { id: uid(), name: extraForm.name.trim(), price: extraForm.price.trim() || "0 ج.م" }]);
-    setExtraForm({ name: "", price: "" });
+
+  /* ── Focus management ── */
+  const pendingFocusKey = useRef<string | null>(null);
+
+  useEffect(() => {
+    if (!pendingFocusKey.current) return;
+    const el = document.querySelector<HTMLInputElement>(`[data-focus-key="${pendingFocusKey.current}"]`);
+    if (el) { el.focus(); el.select(); }
+    pendingFocusKey.current = null;
+  });
+
+  /* ── Extra group handlers (local state only) ── */
+  function addExtraGroup() {
+    const key = Date.now();
+    setExtraGroups((p) => [...p, { key, name: "إضافات", required: false, max_select: 1, type: "checkbox", extras: [] }]);
+    setCollapsedGroups((prev) => { const next = new Set(prev); next.delete(key); return next; });
+    pendingFocusKey.current = `group-name-${key}`;
   }
-  function removeExtra(id: number) { setDraftExtras((p) => p.filter((e) => e.id !== id)); }
-  function saveExtras() {
-    if (!extrasTarget) return;
-    setMenuItems((p) => p.map((i) => i.id === extrasTarget.id ? { ...i, extras: draftExtras } : i));
-    setExtrasTarget(null);
+  function removeExtraGroup(key: number) {
+    setExtraGroups((p) => p.filter((g) => g.key !== key));
   }
+  function updateExtraGroup(key: number, patch: Partial<ExtraGroup>) {
+    setExtraGroups((p) => p.map((g) => g.key === key ? { ...g, ...patch } : g));
+  }
+  function addExtraToGroup(groupKey: number) {
+    const extraKey = Date.now();
+    pendingFocusKey.current = `extra-name-${groupKey}-${extraKey}`;
+    setExtraGroups((p) => p.map((g) =>
+      g.key === groupKey
+        ? { ...g, extras: [...g.extras, { key: extraKey, name: "", price: 0 }] }
+        : g,
+    ));
+  }
+  function removeExtraFromGroup(groupKey: number, extraKey: number) {
+    setExtraGroups((p) => p.map((g) =>
+      g.key === groupKey
+        ? { ...g, extras: g.extras.filter((e) => e.key !== extraKey) }
+        : g,
+    ));
+  }
+  function updateExtraInGroup(groupKey: number, extraKey: number, patch: { name?: string; price?: number }) {
+    setExtraGroups((p) => p.map((g) =>
+      g.key === groupKey
+        ? { ...g, extras: g.extras.map((e) => e.key === extraKey ? { ...e, ...patch } : e) }
+        : g,
+    ));
+  }
+
+  /* ── Insert extra groups + item_extras one group at a time (guarantees correct FK mapping) ── */
+  async function insertGroupsAndExtras(menuItemId: number): Promise<boolean> {
+    /* ── ENTRY: log raw closure state before any filtering ── */
+    console.log("[insertGroupsAndExtras] called with menuItemId:", menuItemId);
+    console.log("[insertGroupsAndExtras] extraGroups from closure:", JSON.stringify(extraGroups));
+
+    const validGroups = extraGroups.filter((g) => g.name.trim());
+    console.log("[insertGroupsAndExtras] validGroups after name filter:", validGroups.length, validGroups.map(g => g.name));
+
+    if (validGroups.length === 0) {
+      console.log("[insertGroupsAndExtras] no valid groups → early return true (nothing to insert)");
+      return true;
+    }
+
+    try {
+      for (const g of validGroups) {
+        /* 1. Insert the group and get its real DB id */
+        const groupPayload = {
+          name:         g.name.trim(),
+          menu_item_id: menuItemId,
+          required:     g.required,
+          max_select:   g.max_select,
+          type:         g.type || "checkbox",
+        };
+        console.log("[insertGroupsAndExtras] inserting extra_group payload:", JSON.stringify(groupPayload));
+
+        const { data: groupRow, error: groupError } = await supabase
+          .from("extra_groups")
+          .insert(groupPayload)
+          .select("id")
+          .maybeSingle();
+
+        if (groupError || !groupRow) {
+          console.error("[insertGroupsAndExtras] extra_group INSERT FAILED:", groupError?.message, groupError);
+          setItemError("حدث خطأ أثناء حفظ مجموعة الإضافات");
+          return false;
+        }
+        console.log("[insertGroupsAndExtras] extra_group inserted OK — id:", groupRow.id);
+
+        /* 2. Insert this group's extras using the exact group id we just got */
+        const validExtras = g.extras.filter((e) => e.name.trim());
+        console.log("[insertGroupsAndExtras] group", groupRow.id, "— validExtras:", validExtras.length, validExtras.map(e => e.name));
+
+        if (validExtras.length === 0) {
+          console.log("[insertGroupsAndExtras] no extras for group", groupRow.id, "→ skip item_extras insert");
+          continue;
+        }
+
+        const extrasPayload = validExtras.map((e) => ({
+          name:     e.name.trim(),
+          price:    e.price,
+          group_id: groupRow.id,
+        }));
+        console.log("[insertGroupsAndExtras] inserting item_extras payload:", JSON.stringify(extrasPayload));
+
+        const { error: extrasError } = await supabase
+          .from("item_extras")
+          .insert(extrasPayload);
+
+        if (extrasError) {
+          console.error("[insertGroupsAndExtras] item_extras INSERT FAILED:", extrasError.message, extrasError, "| group_id:", groupRow.id);
+          setItemError("حدث خطأ أثناء حفظ الاختيارات");
+          return false;
+        }
+        console.log("[insertGroupsAndExtras] item_extras inserted OK —", validExtras.length, "rows for group_id:", groupRow.id);
+      }
+    } catch (err) {
+      console.error("[insertGroupsAndExtras] UNEXPECTED EXCEPTION:", err);
+      setItemError("خطأ غير متوقع أثناء حفظ الإضافات");
+      return false;
+    }
+
+    console.log("[insertGroupsAndExtras] all groups and extras inserted successfully");
+    return true;
+  }
+
+  /* ── Open edit item modal ── */
+  async function openEditItem(item: MenuItem) {
+    setEditItem(item);
+    setItemForm({
+      name:        item.name,
+      description: item.description ?? "",
+      price:       String(item.price),
+      category_id: item.category_id,
+    });
+    setItemError(null);
+    setItemImageFile(null);
+    setItemImagePreview(item.image_url ?? null);
+    setItemImageError(null);
+    setExtraGroups([]);
+    setCollapsedGroups(new Set()); setGroupNameErrors(new Set());
+    setShowItemModal(true);
+
+    /* Fetch extra groups + their extras in one query */
+    const { data: dbGroups, error: groupsErr } = await supabase
+      .from("extra_groups")
+      .select("id, name, required, max_select, type, item_extras(id, name, price)")
+      .eq("menu_item_id", item.id)
+      .order("id", { ascending: true });
+
+    if (groupsErr) {
+      console.error("Fetch extra groups error:", groupsErr.message, groupsErr);
+      return;
+    }
+    if (!dbGroups || dbGroups.length === 0) return;
+
+    setExtraGroups(dbGroups.map((g) => ({
+      key:        g.id,
+      name:       g.name,
+      required:   g.required,
+      max_select: g.max_select,
+      type:       g.type ?? "checkbox",
+      extras:     (g.item_extras ?? []).map((e) => ({ key: e.id, name: e.name, price: e.price })),
+    })));
+  }
+
+  /* ── Create / edit menu item ── */
+  async function saveItem() {
+    if (!selectedRest) return;
+
+    if (!itemForm.name.trim()) { setItemError("اسم الوجبة مطلوب"); return; }
+    const priceNum = Number(itemForm.price);
+    if (!itemForm.price.trim() || isNaN(priceNum) || priceNum <= 0) {
+      setItemError("السعر مطلوب ويجب أن يكون رقماً أكبر من صفر");
+      return;
+    }
+    if (!itemForm.category_id) { setItemError("يجب اختيار القسم"); return; }
+    const unnamedGroups = extraGroups.filter((g) => !g.name.trim());
+    if (unnamedGroups.length > 0) {
+      setGroupNameErrors(new Set(unnamedGroups.map((g) => g.key)));
+      setItemError("كل مجموعة لازم يكون ليها اسم");
+      return;
+    }
+    const emptyVariant = extraGroups.find((g) => g.type === "variant" && g.extras.length === 0);
+    if (emptyVariant) {
+      setItemError(`لازم تضيف اختيار واحد على الأقل للحجم في "${emptyVariant.name || "مجموعة بدون اسم"}"`);
+      return;
+    }
+
+    setItemSaving(true);
+    setItemError(null);
+
+    let image_url: string | null = editItem?.image_url ?? null;
+    if (itemImageFile) {
+      setIsUploadingImage(true);
+      const uploaded = await uploadImage(itemImageFile, "item", "menu-items");
+      setIsUploadingImage(false);
+      if (!uploaded) {
+        showToast("فشل رفع الصورة");
+        setItemSaving(false);
+        return;
+      }
+      image_url = uploaded;
+    }
+
+    const itemPayload = {
+      name:        itemForm.name.trim(),
+      description: itemForm.description.trim() || null,
+      price:       priceNum,
+      category_id: itemForm.category_id,
+      image_url,
+    };
+
+    console.log("[saveItem] groups to save:", extraGroups.length, extraGroups.map(g => ({ name: g.name, type: g.type, extras: g.extras.length })));
+
+    /* ── EDIT ── */
+    if (editItem) {
+      console.log("[saveItem] EDIT path — menu_item id:", editItem.id);
+
+      const { error: updateError } = await supabase
+        .from("menu_items")
+        .update(itemPayload)
+        .eq("id", editItem.id);
+
+      if (updateError) {
+        console.error("[saveItem] update menu_item failed:", updateError.message, updateError);
+        setItemError("حدث خطأ أثناء التعديل");
+        setItemSaving(false);
+        return;
+      }
+      console.log("[saveItem] menu_item updated OK");
+
+      /* Delete old item_extras first (FK), then extra_groups */
+      const { data: oldGroups, error: fetchOldErr } = await supabase
+        .from("extra_groups")
+        .select("id")
+        .eq("menu_item_id", editItem.id);
+
+      if (fetchOldErr) {
+        console.error("[saveItem] fetch old groups failed:", fetchOldErr.message, fetchOldErr);
+        setItemError("حدث خطأ أثناء التعديل");
+        setItemSaving(false);
+        return;
+      }
+
+      if (oldGroups && oldGroups.length > 0) {
+        const { error: delExtrasErr } = await supabase
+          .from("item_extras")
+          .delete()
+          .in("group_id", oldGroups.map((g) => g.id));
+        if (delExtrasErr) console.error("[saveItem] delete old item_extras failed:", delExtrasErr.message);
+      }
+
+      const { error: delGroupsErr } = await supabase
+        .from("extra_groups")
+        .delete()
+        .eq("menu_item_id", editItem.id);
+      if (delGroupsErr) console.error("[saveItem] delete old extra_groups failed:", delGroupsErr.message);
+
+      console.log("[saveItem] old groups/extras cleared — calling insertGroupsAndExtras");
+      const ok = await insertGroupsAndExtras(editItem.id);
+      if (!ok) { setItemSaving(false); return; }
+
+      if (selectedRest) await fetchMenuItems(selectedRest.id);
+      setItemSaving(false);
+      closeItemModal();
+      return;
+    }
+
+    /* ── CREATE ── */
+    console.log("[saveItem] CREATE path");
+
+    const { data, error } = await supabase
+      .from("menu_items")
+      .insert([{ ...itemPayload, restaurant_id: selectedRest.id }])
+      .select("id, name, description, price, category_id, restaurant_id")
+      .maybeSingle();
+
+    if (error || !data) {
+      console.error("[saveItem] insert menu_item failed:", error?.message, error);
+      setItemError("حدث خطأ أثناء حفظ الوجبة");
+      setItemSaving(false);
+      return;
+    }
+    console.log("[saveItem] menu_item inserted id:", data.id, "— calling insertGroupsAndExtras");
+
+    const ok = await insertGroupsAndExtras(data.id);
+    if (!ok) { setItemSaving(false); return; }
+
+    if (selectedRest) await fetchMenuItems(selectedRest.id);
+    setItemSaving(false);
+    closeItemModal();
+  }
+
+  async function deleteItem(id: number) {
+    const { data: groups } = await supabase
+      .from("extra_groups").select("id").eq("menu_item_id", id);
+    if (groups && groups.length > 0) {
+      await supabase.from("item_extras").delete().in("group_id", groups.map((g) => g.id));
+      await supabase.from("extra_groups").delete().eq("menu_item_id", id);
+    }
+    const { error } = await supabase.from("menu_items").delete().eq("id", id);
+    if (error) { console.error("Delete menu item error:", error.message, error); return; }
+    setMenuItems((p) => p.filter((i) => i.id !== id));
+  }
+
 
   /* ── Derived ── */
-  const restCats = selectedRest ? categories.filter((c) => c.restaurantId === selectedRest.id) : [];
+  const restCats = categories;
 
   /* ════════════════════ LOADING ════════════════════ */
   if (loading) {
@@ -654,7 +1082,12 @@ export default function AdminRestaurantsPage() {
             </div>
 
             {/* Categories */}
-            {restCats.length === 0 ? (
+            {catLoading ? (
+              <div className="rounded-2xl flex items-center justify-center py-14"
+                style={{ background: C.card, border: `1px solid ${C.border}` }}>
+                <p className="text-sm animate-pulse" style={{ color: C.muted }}>جاري التحميل...</p>
+              </div>
+            ) : restCats.length === 0 ? (
               <div className="rounded-2xl flex flex-col items-center gap-3 py-14"
                 style={{ background: C.card, border: `1px solid ${C.border}` }}>
                 <span style={{ fontSize: 40 }}>📂</span>
@@ -663,7 +1096,7 @@ export default function AdminRestaurantsPage() {
             ) : (
               <div className="flex flex-col gap-4">
                 {restCats.map((cat) => {
-                  const items = menuItems.filter((i) => i.categoryId === cat.id);
+                  const items = menuItems.filter((i) => i.category_id === cat.id);
                   return (
                     <div key={cat.id} className="rounded-2xl overflow-hidden"
                       style={{ background: C.card, border: `1px solid ${C.border}` }}>
@@ -700,29 +1133,51 @@ export default function AdminRestaurantsPage() {
                         <div className="divide-y" style={{ borderColor: C.border }}>
                           {items.map((item) => (
                             <div key={item.id} className="flex items-center gap-3 px-4 py-3 flex-wrap">
-                              <div className="flex-1 flex flex-col gap-0.5 min-w-[140px]">
-                                <div className="flex items-center gap-2">
-                                  <span className="text-sm font-semibold" style={{ color: C.text }}>{item.name}</span>
-                                  {item.isBestSeller && (
-                                    <span className="text-[10px] px-1.5 py-0.5 rounded-full font-bold"
-                                      style={{ background: `${C.orange}22`, color: C.orange }}>
-                                      ⭐ الأكثر طلباً
-                                    </span>
-                                  )}
+                              {item.image_url ? (
+                                // eslint-disable-next-line @next/next/no-img-element
+                                <img src={item.image_url} alt={item.name}
+                                  className="w-10 h-10 rounded-xl object-cover flex-shrink-0"
+                                  style={{ border: `1px solid ${C.border}` }} />
+                              ) : (
+                                <div className="w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0 text-base"
+                                  style={{ background: `${C.teal}18`, border: `1px solid ${C.border}` }}>
+                                  🍽
                                 </div>
-                                <span className="text-xs font-bold" style={{ color: C.teal }}>{item.price}</span>
-                                {item.extras.length > 0 && (
-                                  <span className="text-[10px]" style={{ color: C.muted }}>
-                                    {item.extras.length} إضافة متاحة
-                                  </span>
+                              )}
+                              <div className="flex-1 flex flex-col gap-0.5 min-w-[140px]">
+                                <span className="text-sm font-semibold" style={{ color: C.text }}>{item.name}</span>
+                                {item.description && (
+                                  <span className="text-xs line-clamp-1" style={{ color: C.muted }}>{item.description}</span>
                                 )}
+                                <span className="text-xs font-bold" style={{ color: C.teal }}>
+                                  {displayPrice(item.price, item.extra_groups ?? [])}
+                                </span>
+                                {(() => {
+                                  const groups = item.extra_groups ?? [];
+                                  const hasVariant  = groups.some((g) => g.type === "variant");
+                                  const extraItems  = groups
+                                    .filter((g) => g.type !== "variant")
+                                    .reduce((n, g) => n + (g.item_extras?.length ?? 0), 0);
+                                  if (groups.length === 0) return null;
+                                  return (
+                                    <div className="flex items-center gap-1 flex-wrap">
+                                      {hasVariant && (
+                                        <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-md"
+                                          style={{ background: `${C.orange}22`, color: C.orange }}>
+                                          أحجام
+                                        </span>
+                                      )}
+                                      {extraItems > 0 && (
+                                        <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-md"
+                                          style={{ background: `${C.teal}22`, color: C.teal }}>
+                                          إضافات ({extraItems})
+                                        </span>
+                                      )}
+                                    </div>
+                                  );
+                                })()}
                               </div>
                               <div className="flex items-center gap-2 flex-wrap">
-                                <button onClick={() => openExtras(item)}
-                                  className="px-2.5 py-1 rounded-lg text-xs font-bold transition-opacity hover:opacity-80"
-                                  style={{ background: `${C.teal}22`, color: C.teal }}>
-                                  إضافات ({item.extras.length})
-                                </button>
                                 <button onClick={() => openEditItem(item)}
                                   className="px-2.5 py-1 rounded-lg text-xs font-bold transition-opacity hover:opacity-80"
                                   style={{ background: `${C.yellow}22`, color: C.yellow }}>
@@ -1054,14 +1509,14 @@ export default function AdminRestaurantsPage() {
       {showCatModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4"
           style={{ background: "rgba(0,0,0,0.7)" }}
-          onClick={(e) => { if (e.target === e.currentTarget) setShowCatModal(false); }}
+          onClick={(e) => { if (e.target === e.currentTarget) closeCatModal(); }}
         >
           <div className="w-full max-w-sm rounded-2xl" style={{ background: C.card, border: `1px solid ${C.border}` }}>
             <div className="flex items-center justify-between px-5 py-4 border-b" style={{ borderColor: C.border }}>
               <h2 className="text-base font-black" style={{ color: C.text }}>
                 {editCat ? "تعديل القسم" : "إضافة قسم"}
               </h2>
-              <button onClick={() => setShowCatModal(false)}
+              <button onClick={closeCatModal}
                 className="w-8 h-8 rounded-full flex items-center justify-center hover:opacity-70"
                 style={{ background: C.bg, color: C.muted }}>✕</button>
             </div>
@@ -1072,13 +1527,18 @@ export default function AdminRestaurantsPage() {
                   placeholder="مثال: برجر، بيتزا، مشروبات..."
                   className={inputCls} style={inputSty} />
               </Field>
+              {catError && (
+                <p className="text-xs font-semibold" style={{ color: C.red }}>{catError}</p>
+              )}
             </div>
             <div className="flex gap-3 px-5 py-4 border-t" style={{ borderColor: C.border }}>
-              <button onClick={saveCat}
-                className="flex-1 py-2.5 rounded-xl text-sm font-bold hover:opacity-90"
-                style={{ background: C.teal, color: "#fff" }}>حفظ</button>
-              <button onClick={() => setShowCatModal(false)}
-                className="flex-1 py-2.5 rounded-xl text-sm font-bold hover:opacity-80"
+              <button onClick={saveCat} disabled={catSaving}
+                className="flex-1 py-2.5 rounded-xl text-sm font-bold hover:opacity-90 disabled:opacity-50"
+                style={{ background: C.teal, color: "#fff" }}>
+                {catSaving ? "جاري الحفظ..." : "حفظ"}
+              </button>
+              <button onClick={closeCatModal} disabled={catSaving}
+                className="flex-1 py-2.5 rounded-xl text-sm font-bold hover:opacity-80 disabled:opacity-50"
                 style={{ background: C.bg, color: C.muted, border: `1px solid ${C.border}` }}>إلغاء</button>
             </div>
           </div>
@@ -1089,129 +1549,310 @@ export default function AdminRestaurantsPage() {
       {showItemModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4"
           style={{ background: "rgba(0,0,0,0.7)" }}
-          onClick={(e) => { if (e.target === e.currentTarget) setShowItemModal(false); }}
+          onClick={(e) => { if (e.target === e.currentTarget) closeItemModal(); }}
         >
-          <div className="w-full max-w-sm rounded-2xl" style={{ background: C.card, border: `1px solid ${C.border}` }}>
-            <div className="flex items-center justify-between px-5 py-4 border-b" style={{ borderColor: C.border }}>
-              <h2 className="text-base font-black" style={{ color: C.text }}>
-                {editItem ? "تعديل الوجبة" : "إضافة وجبة"}
-              </h2>
-              <button onClick={() => setShowItemModal(false)}
+          <div className="w-full max-w-sm rounded-2xl flex flex-col max-h-[90vh]" style={{ background: C.card, border: `1px solid ${C.border}` }}>
+            <div className="flex items-center justify-between px-5 py-4 border-b flex-shrink-0" style={{ borderColor: C.border }}>
+              <h2 className="text-base font-black" style={{ color: C.text }}>{editItem ? "تعديل وجبة" : "إضافة وجبة"}</h2>
+              <button onClick={closeItemModal}
                 className="w-8 h-8 rounded-full flex items-center justify-center hover:opacity-70"
                 style={{ background: C.bg, color: C.muted }}>✕</button>
             </div>
-            <div className="px-5 py-4 flex flex-col gap-4" dir="rtl">
+            <div className="flex-1 overflow-y-auto px-5 py-4 flex flex-col gap-4" dir="rtl">
               <Field label="اسم الوجبة" required>
                 <input type="text" value={itemForm.name}
                   onChange={(e) => setItemForm({ ...itemForm, name: e.target.value })}
                   placeholder="مثال: برجر دبل تشيز"
                   className={inputCls} style={inputSty} />
               </Field>
-              <Field label="السعر" required>
-                <input type="text" value={itemForm.price}
+              <Field label="الوصف">
+                <textarea value={itemForm.description}
+                  onChange={(e) => setItemForm({ ...itemForm, description: e.target.value })}
+                  placeholder="وصف مختصر للوجبة..." rows={2}
+                  className="w-full rounded-xl px-3 py-2.5 text-sm outline-none resize-none"
+                  style={inputSty} />
+              </Field>
+              <Field label="السعر (ج.م)" required>
+                <input type="number" min="0" step="0.5" value={itemForm.price}
                   onChange={(e) => setItemForm({ ...itemForm, price: e.target.value })}
-                  placeholder="مثال: 85 ج.م"
-                  className={inputCls} style={inputSty} />
+                  placeholder="85"
+                  className={inputCls} style={{ ...inputSty, colorScheme: "dark" }} />
               </Field>
               <Field label="القسم" required>
-                <select value={itemForm.categoryId}
-                  onChange={(e) => setItemForm({ ...itemForm, categoryId: Number(e.target.value) })}
+                <select value={itemForm.category_id}
+                  onChange={(e) => setItemForm({ ...itemForm, category_id: Number(e.target.value) })}
                   className="w-full rounded-xl px-3 py-2.5 text-sm outline-none"
                   style={{ ...inputSty, colorScheme: "dark" }}>
                   <option value={0} disabled>اختر القسم</option>
                   {restCats.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
                 </select>
               </Field>
-              <label className="flex items-center gap-2.5 cursor-pointer select-none">
-                <div
-                  onClick={() => setItemForm({ ...itemForm, isBestSeller: !itemForm.isBestSeller })}
-                  className="w-5 h-5 rounded flex items-center justify-center flex-shrink-0 transition-colors"
-                  style={{
-                    background: itemForm.isBestSeller ? C.orange : C.bg,
-                    border: `2px solid ${itemForm.isBestSeller ? C.orange : C.border}`,
-                  }}
-                >
-                  {itemForm.isBestSeller && <span style={{ color: "#fff", fontSize: 11 }}>✓</span>}
+              <ImageUploadField
+                label="صورة الوجبة"
+                preview={itemImagePreview}
+                onPickFile={(src) => setCropState({ src, aspect: 1, field: "item", compress: COMPRESS.image })}
+                maxSize={3 * 1024 * 1024}
+                maxSizeMsg="حجم الصورة أكبر من 3MB"
+                sizeError={itemImageError}
+                onSizeError={setItemImageError}
+                aspect={1}
+                helperText="PNG أو JPG - بحد أقصى 3MB - مربع 1:1"
+              />
+              {/* ── Extra groups ── */}
+              <div className="flex flex-col gap-3">
+
+                {/* Section header */}
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-bold tracking-wide uppercase" style={{ color: C.muted }}>
+                    مجموعات الإضافات
+                  </span>
+                  <button
+                    type="button"
+                    onClick={addExtraGroup}
+                    className="flex items-center gap-1 px-3 py-1 rounded-lg text-sm font-bold transition-opacity hover:opacity-80"
+                    style={{ background: `${C.teal}22`, color: C.teal }}
+                  >
+                    + إضافة مجموعة
+                  </button>
                 </div>
-                <span className="text-sm" style={{ color: C.text }}>⭐ الأكثر طلباً</span>
-              </label>
+
+                {extraGroups.length === 0 && (
+                  <p className="text-xs text-center py-3 rounded-xl" style={{ color: C.muted, background: C.bg }}>
+                    لا توجد مجموعات — اضغط لإضافة
+                  </p>
+                )}
+
+                {/* Groups list */}
+                <div className="flex flex-col space-y-4">
+                  {extraGroups.map((g) => {
+                    const isCollapsed = collapsedGroups.has(g.key);
+                    const liveMin     = g.type === "variant" ? safeMinPrice(g.extras) : null;
+                    return (
+                      <div key={g.key} className="rounded-2xl overflow-hidden"
+                        style={{ background: C.bg, border: `1px solid ${C.border}` }}>
+
+                        {/* Clickable header — toggles collapse */}
+                        <div
+                          className="flex items-center gap-2 px-3 py-2.5 cursor-pointer select-none"
+                          style={{ borderBottom: isCollapsed ? "none" : `1px solid ${C.border}`, background: `${C.teal}0a` }}
+                          onClick={() => toggleGroupCollapse(g.key)}
+                        >
+                          {/* Chevron */}
+                          <span className="text-xs flex-shrink-0 transition-transform"
+                            style={{ color: C.muted, transform: isCollapsed ? "rotate(-90deg)" : "rotate(0deg)", display: "inline-block" }}>
+                            ▾
+                          </span>
+
+                          <span className="text-[10px] font-bold px-2 py-0.5 rounded-full flex-shrink-0"
+                            style={{
+                              background: g.type === "variant" ? `${C.orange}22` : `${C.teal}22`,
+                              color:      g.type === "variant" ? C.orange        : C.teal,
+                            }}>
+                            {g.type === "variant" ? "اختيار إجباري" : "اختياري"}
+                          </span>
+
+                          {/* Name input — isolated from collapse toggle */}
+                          <div className="flex-1 flex flex-col min-w-0" onClick={(e) => e.stopPropagation()} onMouseDown={(e) => e.stopPropagation()}>
+                            <div className="flex items-center gap-0.5">
+                              <input
+                                type="text"
+                                value={g.name}
+                                data-focus-key={`group-name-${g.key}`}
+                                onChange={(e) => {
+                                  const v = e.target.value;
+                                  updateExtraGroup(g.key, { name: v });
+                                  if (v.trim()) setGroupNameErrors((prev) => { const next = new Set(prev); next.delete(g.key); return next; });
+                                }}
+                                onKeyDown={(e) => e.stopPropagation()}
+                                placeholder={SUGGESTED_NAMES[g.type] ?? "اسم المجموعة"}
+                                className="flex-1 bg-transparent text-sm font-semibold outline-none min-w-0"
+                                style={{
+                                  color: C.text,
+                                  borderBottom: groupNameErrors.has(g.key) ? `1px solid ${C.red}` : "1px solid transparent",
+                                }}
+                              />
+                              <span style={{ color: C.red, fontSize: 12, lineHeight: 1 }}>*</span>
+                            </div>
+                            {groupNameErrors.has(g.key) && (
+                              <span className="text-[10px] mt-0.5" style={{ color: C.red }}>اسم المجموعة مطلوب</span>
+                            )}
+                          </div>
+
+                          {/* Live pricing preview (variant groups only) */}
+                          {liveMin !== null && (
+                            <span className="text-xs font-bold flex-shrink-0 mt-1"
+                              style={{ color: C.orange }}>
+                              يبدأ من {liveMin} ج.م
+                            </span>
+                          )}
+
+                          <button
+                            type="button"
+                            onClick={(e) => { e.stopPropagation(); removeExtraGroup(g.key); }}
+                            className="w-7 h-7 rounded-lg flex items-center justify-center flex-shrink-0 text-xs hover:opacity-80"
+                            style={{ background: `${C.red}18`, color: C.red }}
+                          >✕</button>
+                        </div>
+
+                        {/* Collapsible body */}
+                        {!isCollapsed && (
+                          <>
+                            {/* Type selector */}
+                            <div className="flex items-center gap-1 px-3 py-2"
+                              style={{ borderBottom: `1px solid ${C.border}` }}>
+                              {([
+                                { value: "checkbox", label: "إضافات اختيارية" },
+                                { value: "variant",  label: "حجم / نوع"        },
+                              ] as { value: string; label: string }[]).map((opt) => {
+                                const active = g.type === opt.value;
+                                return (
+                                  <button
+                                    key={opt.value}
+                                    type="button"
+                                    onClick={() => handleGroupTypeChange(g.key, opt.value)}
+                                    className="flex-1 py-1.5 rounded-lg text-xs font-bold transition-all"
+                                    style={{
+                                      background: active
+                                        ? (opt.value === "variant" ? `${C.orange}33` : `${C.teal}33`)
+                                        : "transparent",
+                                      color: active
+                                        ? (opt.value === "variant" ? C.orange : C.teal)
+                                        : C.muted,
+                                      border: `1px solid ${active
+                                        ? (opt.value === "variant" ? `${C.orange}66` : `${C.teal}66`)
+                                        : "transparent"}`,
+                                    }}
+                                  >
+                                    {opt.label}
+                                  </button>
+                                );
+                              })}
+                            </div>
+
+                            {/* Controls row — hidden for variant (required+max locked) */}
+                            {g.type !== "variant" && (
+                              <div className="flex items-center gap-4 px-3 py-2 flex-wrap"
+                                style={{ borderBottom: `1px solid ${C.border}` }}>
+                                <label className="flex items-center gap-2 cursor-pointer select-none">
+                                  <div
+                                    onClick={() => updateExtraGroup(g.key, { required: !g.required })}
+                                    className="w-4 h-4 rounded flex items-center justify-center flex-shrink-0 transition-colors"
+                                    style={{
+                                      background: g.required ? C.teal : "transparent",
+                                      border: `2px solid ${g.required ? C.teal : C.border}`,
+                                    }}
+                                  >
+                                    {g.required && <span style={{ color: "#fff", fontSize: 9, lineHeight: 1 }}>✓</span>}
+                                  </div>
+                                  <span className="text-xs" style={{ color: C.text }}>مطلوب</span>
+                                </label>
+
+                                <div className="flex items-center gap-2 mr-auto">
+                                  <span className="text-xs" style={{ color: C.muted }}>الحد الأقصى</span>
+                                  <input
+                                    type="number"
+                                    min={1}
+                                    value={g.max_select}
+                                    onChange={(e) => updateExtraGroup(g.key, { max_select: Math.max(1, Number(e.target.value)) })}
+                                    className="w-14 rounded-lg px-2 py-1 text-sm text-center outline-none"
+                                    style={{ ...inputSty, colorScheme: "dark" }}
+                                  />
+                                </div>
+                              </div>
+                            )}
+
+                            {/* Extras list */}
+                            <div className="px-3 py-3 flex flex-col gap-2">
+                              <div className="flex items-center justify-between mb-1">
+                                <span className="text-[11px] font-semibold" style={{ color: C.muted }}>
+                                  الاختيارات
+                                  {g.extras.length > 0 && (
+                                    <span className="mr-1.5 px-1.5 py-0.5 rounded-full text-[10px]"
+                                      style={{ background: `${C.border}88`, color: C.muted }}>
+                                      {g.extras.length}
+                                    </span>
+                                  )}
+                                </span>
+                                <button
+                                  type="button"
+                                  onClick={() => addExtraToGroup(g.key)}
+                                  className="px-3 py-1 rounded-lg text-sm font-bold hover:opacity-80 transition-opacity"
+                                  style={{ background: `${C.orange}30`, color: C.orange }}
+                                >
+                                  + إضافة اختيار
+                                </button>
+                              </div>
+
+                              {g.extras.length === 0 && (
+                                <p className="text-[11px] text-center py-2 rounded-lg"
+                                  style={{ color: C.muted, background: `${C.border}44` }}>
+                                  لا يوجد اختيارات بعد
+                                </p>
+                              )}
+
+                              <div className="flex flex-col space-y-2">
+                                {g.extras.map((ex) => (
+                                  <div key={ex.key} className="flex items-center gap-2 px-2 py-1.5 rounded-xl"
+                                    style={{ background: C.card, border: `1px solid ${C.border}` }}>
+                                    <input
+                                      type="text"
+                                      value={ex.name}
+                                      data-focus-key={`extra-name-${g.key}-${ex.key}`}
+                                      onChange={(e) => { const v = e.target.value; updateExtraInGroup(g.key, ex.key, { name: v }); }}
+                                      placeholder="مثال: كبير، جبنة إضافية..."
+                                      className="flex-1 bg-transparent text-sm outline-none min-w-0"
+                                      style={{ color: C.text }}
+                                    />
+                                    <div className="flex items-center gap-1 flex-shrink-0">
+                                      <input
+                                        type="number"
+                                        min={0}
+                                        step={0.5}
+                                        value={ex.price}
+                                        onChange={(e) => { const v = e.target.value; updateExtraInGroup(g.key, ex.key, { price: Math.max(0, Number(v)) }); }}
+                                        className="w-16 rounded-lg px-2 py-1 text-sm text-center outline-none"
+                                        style={{ ...inputSty, colorScheme: "dark" }}
+                                      />
+                                      <span className="text-[11px]" style={{ color: C.muted }}>ج.م</span>
+                                    </div>
+                                    <button
+                                      type="button"
+                                      onClick={() => removeExtraFromGroup(g.key, ex.key)}
+                                      className="w-6 h-6 rounded-md flex items-center justify-center text-xs hover:opacity-80 flex-shrink-0"
+                                      style={{ background: `${C.red}18`, color: C.red }}
+                                    >✕</button>
+                                  </div>
+                                ))}
+                              </div>
+                            </div>
+                          </>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {itemError && (
+                <p className="text-xs font-semibold" style={{ color: C.red }}>{itemError}</p>
+              )}
             </div>
             <div className="flex gap-3 px-5 py-4 border-t" style={{ borderColor: C.border }}>
-              <button onClick={saveItem}
-                className="flex-1 py-2.5 rounded-xl text-sm font-bold hover:opacity-90"
-                style={{ background: C.teal, color: "#fff" }}>حفظ</button>
-              <button onClick={() => setShowItemModal(false)}
-                className="flex-1 py-2.5 rounded-xl text-sm font-bold hover:opacity-80"
+              <button onClick={saveItem} disabled={itemSaving || isUploadingImage}
+                className="flex-1 py-2.5 rounded-xl text-sm font-bold hover:opacity-90 disabled:opacity-50"
+                style={{ background: C.teal, color: "#fff" }}>
+                {isUploadingImage
+                  ? <span className="flex items-center justify-center gap-2"><span className="animate-spin inline-block">⏳</span>جاري رفع الصورة...</span>
+                  : itemSaving ? "جاري الحفظ..." : "حفظ"}
+              </button>
+              <button onClick={closeItemModal} disabled={itemSaving}
+                className="flex-1 py-2.5 rounded-xl text-sm font-bold hover:opacity-80 disabled:opacity-50"
                 style={{ background: C.bg, color: C.muted, border: `1px solid ${C.border}` }}>إلغاء</button>
             </div>
           </div>
         </div>
       )}
 
-      {/* ════════ MODAL: الإضافات ════════ */}
-      {extrasTarget && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4"
-          style={{ background: "rgba(0,0,0,0.7)" }}
-          onClick={(e) => { if (e.target === e.currentTarget) setExtrasTarget(null); }}
-        >
-          <div className="w-full max-w-sm rounded-2xl flex flex-col max-h-[85vh]"
-            style={{ background: C.card, border: `1px solid ${C.border}` }}>
-
-            <div className="flex items-center justify-between px-5 py-4 border-b flex-shrink-0"
-              style={{ borderColor: C.border }}>
-              <div>
-                <h2 className="text-base font-black" style={{ color: C.text }}>إضافات الوجبة</h2>
-                <p className="text-xs mt-0.5" style={{ color: C.muted }}>{extrasTarget.name}</p>
-              </div>
-              <button onClick={() => setExtrasTarget(null)}
-                className="w-8 h-8 rounded-full flex items-center justify-center hover:opacity-70"
-                style={{ background: C.bg, color: C.muted }}>✕</button>
-            </div>
-
-            <div className="flex-1 overflow-y-auto px-5 py-4 flex flex-col gap-3" dir="rtl">
-              {draftExtras.length === 0 ? (
-                <p className="text-center text-xs py-4" style={{ color: C.muted }}>لا يوجد إضافات بعد</p>
-              ) : (
-                draftExtras.map((ex) => (
-                  <div key={ex.id} className="flex items-center gap-2 px-3 py-2 rounded-xl"
-                    style={{ background: C.bg, border: `1px solid ${C.border}` }}>
-                    <span className="flex-1 text-sm" style={{ color: C.text }}>{ex.name}</span>
-                    <span className="text-xs font-bold" style={{ color: C.teal }}>{ex.price}</span>
-                    <button onClick={() => removeExtra(ex.id)}
-                      className="text-xs px-2 py-0.5 rounded-lg hover:opacity-80"
-                      style={{ background: `${C.red}22`, color: C.red }}>حذف</button>
-                  </div>
-                ))
-              )}
-
-              <div className="flex gap-2 mt-1">
-                <input type="text" value={extraForm.name}
-                  onChange={(e) => setExtraForm({ ...extraForm, name: e.target.value })}
-                  placeholder="اسم الإضافة"
-                  className="flex-1 rounded-xl px-3 py-2 text-sm outline-none"
-                  style={inputSty} />
-                <input type="text" value={extraForm.price}
-                  onChange={(e) => setExtraForm({ ...extraForm, price: e.target.value })}
-                  placeholder="السعر"
-                  className="w-24 rounded-xl px-3 py-2 text-sm outline-none"
-                  style={inputSty} />
-                <button onClick={addExtra}
-                  className="px-3 py-2 rounded-xl text-sm font-bold hover:opacity-90"
-                  style={{ background: C.teal, color: "#fff" }}>+</button>
-              </div>
-            </div>
-
-            <div className="flex gap-3 px-5 py-4 border-t flex-shrink-0" style={{ borderColor: C.border }}>
-              <button onClick={saveExtras}
-                className="flex-1 py-2.5 rounded-xl text-sm font-bold hover:opacity-90"
-                style={{ background: C.teal, color: "#fff" }}>حفظ</button>
-              <button onClick={() => setExtrasTarget(null)}
-                className="flex-1 py-2.5 rounded-xl text-sm font-bold hover:opacity-80"
-                style={{ background: C.bg, color: C.muted, border: `1px solid ${C.border}` }}>إلغاء</button>
-            </div>
-          </div>
-        </div>
-      )}
 
       {/* ════════ CROP MODAL ════════ */}
       {cropState && (
@@ -1222,6 +1863,16 @@ export default function AdminRestaurantsPage() {
           onConfirm={handleCropConfirm}
           onCancel={handleCropCancel}
         />
+      )}
+
+      {/* ════════ TOAST ════════ */}
+      {toastMsg && (
+        <div
+          className="fixed bottom-6 left-1/2 -translate-x-1/2 z-[90] px-4 py-2.5 rounded-xl text-sm font-bold shadow-lg pointer-events-none"
+          style={{ background: C.orange, color: "#fff", whiteSpace: "nowrap" }}
+        >
+          {toastMsg}
+        </div>
       )}
     </>
   );

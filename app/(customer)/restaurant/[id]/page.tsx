@@ -2,36 +2,42 @@
 
 import Image from "next/image";
 import Link from "next/link";
-import { useState } from "react";
-import MealBottomSheet, { sampleMeal } from "@/components/customer/MealBottomSheet";
+import { useState, useEffect } from "react";
+import { useParams } from "next/navigation";
+import { supabase } from "@/lib/supabase";
+import MealBottomSheet from "@/components/customer/MealBottomSheet";
 
-/* ── بيانات وهمية ── */
-const restaurant = {
-  name: "بيت البرجر",
-  desc: "برجر أمريكي وسندويتشات مميزة بأجود الخامات",
-  rating: 4.3,
-  reviews: 59,
-  coverImg: "https://images.unsplash.com/photo-1552566626-52f8b828add9?w=800&h=300&fit=crop",
-};
+/* ── DB types ── */
+type ItemExtra  = { id: number; name: string; price: number };
+type ExtraGroup = { id: number; name: string; type: string; required: boolean; max_select: number; item_extras: ItemExtra[] };
+type MenuItem   = { id: number; name: string; description: string | null; price: number; category_id: number; image_url: string | null; extra_groups: ExtraGroup[] };
+type Category   = { id: number; name: string; restaurant_id: string; menu_items: MenuItem[] };
+type Restaurant = { id: string; name: string; description: string | null; cover_image_url: string | null; image_url: string | null };
 
-const categories = ["الكشري", "الطواجن"];
+/* ── MealBottomSheet meal shape ── */
+type SheetMeal = { id: number; name: string; basePrice: number; img: string; extras?: { id: number; name: string; price: number }[]; sizes?: { id: number; name: string }[] };
 
-const meals: Record<string, { id: number; name: string; desc: string; price: number; img: string; hasExtras: boolean }[]> = {
-  "الكشري": [
-    { id: 5, name: "كشري كبير", desc: "أرز ومكرونة وعدس بصوص الطماطم والدقة", price: 25, img: "https://images.unsplash.com/photo-1512058564366-18510be2db19?w=200&h=200&fit=crop", hasExtras: false },
-    { id: 6, name: "كشري وسط",  desc: "حجم وسط مثالي لشخص واحد",              price: 18, img: "https://images.unsplash.com/photo-1512058564366-18510be2db19?w=200&h=200&fit=crop", hasExtras: true  },
-  ],
-  "الطواجن": [
-    { id: 7, name: "طاجن لحمة بالخضار", desc: "لحم بقري مع خضروات طازجة في طاجن فخاري", price: 80, img: "https://images.unsplash.com/photo-1574484284002-952d92456975?w=200&h=200&fit=crop", hasExtras: true  },
-    { id: 8, name: "طاجن فراخ",          desc: "دجاج بالبصل والطماطم والتوابل الشرقية",  price: 70, img: "https://images.unsplash.com/photo-1574484284002-952d92456975?w=200&h=200&fit=crop", hasExtras: false },
-  ],
-};
+function toSheetMeal(item: MenuItem): SheetMeal {
+  const extras = item.extra_groups
+    .filter((g) => g.type !== "variant")
+    .flatMap((g) => g.item_extras.map((e) => ({ id: e.id, name: e.name, price: e.price })));
+  const variantGroup = item.extra_groups.find((g) => g.type === "variant");
+  const sizes = variantGroup?.item_extras.map((e) => ({ id: e.id, name: e.name, price: e.price }));
+  return {
+    id: item.id,
+    name: item.name,
+    basePrice: item.price,
+    img: item.image_url ?? "https://images.unsplash.com/photo-1546069901-ba9599a7e63c?w=400&h=400&fit=crop",
+    extras: extras.length > 0 ? extras : undefined,
+    sizes: sizes && sizes.length > 0 ? sizes : undefined,
+  };
+}
 
 function formatPrice(p: number) {
   return `${p} ج`;
 }
 
-/* عداد الكمية للوجبات بدون إضافات */
+/* ── Quantity counter for items without extras ── */
 function QuantityCounter({ price }: { price: number }) {
   const [qty, setQty] = useState(0);
   return (
@@ -74,12 +80,77 @@ function QuantityCounter({ price }: { price: number }) {
 }
 
 export default function RestaurantPage() {
-  const [activeTab, setActiveTab]   = useState("الكشري");
-  const [sheetOpen, setSheetOpen]   = useState(false);
+  const params     = useParams();
+  const id         = params.id as string;
 
-  /* وهمي: عدد عناصر السلة والسعر الكلي */
+  const [restaurant,  setRestaurant]  = useState<Restaurant | null>(null);
+  const [categories,  setCategories]  = useState<Category[]>([]);
+  const [loading,     setLoading]     = useState(true);
+  const [error,       setError]       = useState<string | null>(null);
+  const [activeTab,   setActiveTab]   = useState<string>("");
+  const [sheetMeal,   setSheetMeal]   = useState<SheetMeal | null>(null);
+
+  /* ── dummy cart ── */
   const cartItems = 2;
   const cartTotal = "١١٠ ج";
+
+  useEffect(() => {
+    if (!id) return;
+    async function fetchData() {
+      setLoading(true);
+      setError(null);
+
+      const [restResult, catsResult] = await Promise.all([
+        supabase.from("restaurants").select("id, name, description, cover_image_url, image_url").eq("id", id).single(),
+        supabase.from("categories")
+          .select("id, name, restaurant_id, menu_items(id, name, description, price, category_id, image_url, extra_groups(id, name, type, required, max_select, item_extras(id, name, price)))")
+          .eq("restaurant_id", id)
+          .order("id"),
+      ]);
+
+      if (restResult.error || !restResult.data) {
+        setError("تعذّر تحميل بيانات المطعم");
+        setLoading(false);
+        return;
+      }
+
+      setRestaurant(restResult.data);
+
+      if (!catsResult.error && catsResult.data) {
+        const cats = catsResult.data as Category[];
+        setCategories(cats);
+        if (cats.length > 0) setActiveTab(cats[0].name);
+      }
+
+      setLoading(false);
+    }
+
+    fetchData();
+  }, [id]);
+
+  const coverSrc = restaurant?.cover_image_url ?? restaurant?.image_url
+    ?? "https://images.unsplash.com/photo-1552566626-52f8b828add9?w=800&h=300&fit=crop";
+
+  const activeMeals = categories.find((c) => c.name === activeTab)?.menu_items ?? [];
+
+  /* ── Loading ── */
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-[var(--color-surface)] flex items-center justify-center">
+        <p className="text-[var(--color-muted)] text-sm">جاري التحميل...</p>
+      </div>
+    );
+  }
+
+  /* ── Error ── */
+  if (error || !restaurant) {
+    return (
+      <div className="min-h-screen bg-[var(--color-surface)] flex flex-col items-center justify-center gap-3 px-6 text-center">
+        <p className="text-[var(--color-secondary)] font-bold">{error ?? "المطعم غير موجود"}</p>
+        <Link href="/restaurants" className="text-sm text-[var(--color-primary)] underline">العودة للقائمة</Link>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-[var(--color-surface)]">
@@ -88,7 +159,7 @@ export default function RestaurantPage() {
         {/* ── Header: صورة الغلاف ── */}
         <div className="relative w-full h-52">
           <Image
-            src={restaurant.coverImg}
+            src={coverSrc}
             alt={restaurant.name}
             fill
             className="object-cover"
@@ -96,7 +167,7 @@ export default function RestaurantPage() {
           />
           <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-black/20 to-transparent" />
 
-          {/* زرار الرجوع — يمين (RTL) */}
+          {/* زرار الرجوع */}
           <Link
             href="/restaurants"
             className="absolute top-10 right-4 w-9 h-9 rounded-full bg-white/20 backdrop-blur-sm flex items-center justify-center"
@@ -117,17 +188,18 @@ export default function RestaurantPage() {
 
           {/* ── معلومات المطعم ── */}
           <section className="bg-white px-4 pt-4 pb-0 border-b border-[var(--color-border)]">
-            <p className="text-sm text-[var(--color-muted)]">{restaurant.desc}</p>
+            {restaurant.description && (
+              <p className="text-sm text-[var(--color-muted)]">{restaurant.description}</p>
+            )}
 
             <div className="flex items-center gap-1.5 mt-2">
               <svg width="14" height="14" viewBox="0 0 24 24" fill="var(--color-primary)">
                 <path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z" />
               </svg>
-              <span className="text-sm font-semibold text-[var(--color-secondary)]">{restaurant.rating}</span>
-              <span className="text-xs text-[var(--color-muted)]">({restaurant.reviews} تقييم)</span>
+              <span className="text-sm font-semibold text-[var(--color-secondary)]">4.5</span>
+              <span className="text-xs text-[var(--color-muted)]">(تقييمات)</span>
             </div>
 
-            {/* تابات المعلومات — نفس التصميم بدون فرق */}
             <div className="flex mt-3">
               <button className="flex-1 text-sm font-medium text-[var(--color-secondary)] py-2.5 border-b-2 border-[var(--color-border)] text-center">
                 معلومات المطعم
@@ -139,54 +211,73 @@ export default function RestaurantPage() {
           </section>
 
           {/* ── تابات الأقسام ── */}
-          <div className="bg-white sticky top-0 z-10 border-b border-[var(--color-border)]">
-            <div className="flex gap-1 overflow-x-auto px-4 py-2 scrollbar-hide">
-              {categories.map((cat) => (
-                <button
-                  key={cat}
-                  onClick={() => setActiveTab(cat)}
-                  className={`flex-shrink-0 px-4 py-1.5 rounded-full text-sm font-medium transition-colors ${
-                    activeTab === cat
-                      ? "bg-[var(--color-primary)] text-white"
-                      : "bg-[var(--color-surface)] text-[var(--color-secondary)]"
-                  }`}
-                >
-                  {cat}
-                </button>
-              ))}
+          {categories.length > 0 && (
+            <div className="bg-white sticky top-0 z-10 border-b border-[var(--color-border)]">
+              <div className="flex gap-1 overflow-x-auto px-4 py-2 scrollbar-hide">
+                {categories.map((cat) => (
+                  <button
+                    key={cat.id}
+                    onClick={() => setActiveTab(cat.name)}
+                    className={`flex-shrink-0 px-4 py-1.5 rounded-full text-sm font-medium transition-colors ${
+                      activeTab === cat.name
+                        ? "bg-[var(--color-primary)] text-white"
+                        : "bg-[var(--color-surface)] text-[var(--color-secondary)]"
+                    }`}
+                  >
+                    {cat.name}
+                  </button>
+                ))}
+              </div>
             </div>
-          </div>
+          )}
 
           {/* ── قائمة الوجبات ── */}
           <section className="px-4 pt-3 bg-white">
             <div className="flex flex-col divide-y divide-[var(--color-border)]">
-              {meals[activeTab]?.map((meal) =>
-                meal.hasExtras ? (
-                  /* وجبة بإضافات: تفتح الـ bottom sheet */
-                  <button key={meal.id} onClick={() => setSheetOpen(true)} className="flex items-start gap-3 py-3 w-full text-right">
+              {activeMeals.map((meal) => {
+                const hasExtras = meal.extra_groups.length > 0;
+                return hasExtras ? (
+                  <button
+                    key={meal.id}
+                    onClick={() => setSheetMeal(toSheetMeal(meal))}
+                    className="flex items-start gap-3 py-3 w-full text-right"
+                  >
                     <div className="relative w-20 h-20 flex-shrink-0 rounded-xl overflow-hidden">
-                      <Image src={meal.img} alt={meal.name} fill className="object-cover" />
+                      <Image
+                        src={meal.image_url ?? "https://images.unsplash.com/photo-1546069901-ba9599a7e63c?w=200&h=200&fit=crop"}
+                        alt={meal.name}
+                        fill
+                        className="object-cover"
+                      />
                     </div>
                     <div className="flex-1 min-w-0">
                       <p className="text-sm font-bold text-[var(--color-secondary)]">{meal.name}</p>
-                      <p className="text-xs text-[var(--color-muted)] mt-0.5 line-clamp-2 leading-relaxed">{meal.desc}</p>
+                      <p className="text-xs text-[var(--color-muted)] mt-0.5 line-clamp-2 leading-relaxed">{meal.description}</p>
                       <p className="text-sm font-bold text-[var(--color-primary)] mt-1.5">{formatPrice(meal.price)}</p>
                     </div>
                   </button>
                 ) : (
-                  /* وجبة بدون إضافات: عداد مباشر */
                   <div key={meal.id} className="flex items-start gap-3 py-3">
                     <div className="relative w-20 h-20 flex-shrink-0 rounded-xl overflow-hidden">
-                      <Image src={meal.img} alt={meal.name} fill className="object-cover" />
+                      <Image
+                        src={meal.image_url ?? "https://images.unsplash.com/photo-1546069901-ba9599a7e63c?w=200&h=200&fit=crop"}
+                        alt={meal.name}
+                        fill
+                        className="object-cover"
+                      />
                     </div>
                     <div className="flex-1 min-w-0">
                       <p className="text-sm font-bold text-[var(--color-secondary)]">{meal.name}</p>
-                      <p className="text-xs text-[var(--color-muted)] mt-0.5 line-clamp-2 leading-relaxed">{meal.desc}</p>
+                      <p className="text-xs text-[var(--color-muted)] mt-0.5 line-clamp-2 leading-relaxed">{meal.description}</p>
                       <p className="text-sm font-bold text-[var(--color-primary)] mt-1.5">{formatPrice(meal.price)}</p>
                       <QuantityCounter price={meal.price} />
                     </div>
                   </div>
-                )
+                );
+              })}
+
+              {activeMeals.length === 0 && (
+                <p className="py-6 text-center text-sm text-[var(--color-muted)]">لا توجد وجبات في هذا القسم</p>
               )}
             </div>
           </section>
@@ -198,15 +289,12 @@ export default function RestaurantPage() {
           <div className="fixed bottom-0 right-0 left-0 z-20">
             <div className="mx-auto w-full max-w-[430px] px-4 pb-6 pt-2">
               <button className="w-full bg-[var(--color-primary)] rounded-2xl px-4 py-3.5 flex items-center justify-between shadow-xl active:scale-[0.98] transition-transform">
-                {/* يمين: عداد + نص */}
                 <div className="flex items-center gap-2">
                   <span className="bg-[var(--color-primary-dark)] text-white text-xs font-bold w-6 h-6 rounded-full flex items-center justify-center flex-shrink-0">
                     {cartItems}
                   </span>
                   <span className="text-white text-base font-bold">سلة المشتريات</span>
                 </div>
-
-                {/* يسار: السعر */}
                 <span className="text-white text-lg font-black">{cartTotal}</span>
               </button>
             </div>
@@ -216,8 +304,8 @@ export default function RestaurantPage() {
       </div>
 
       {/* ── MealBottomSheet ── */}
-      {sheetOpen && (
-        <MealBottomSheet meal={sampleMeal} onClose={() => setSheetOpen(false)} />
+      {sheetMeal && (
+        <MealBottomSheet meal={sheetMeal} onClose={() => setSheetMeal(null)} />
       )}
 
     </div>
