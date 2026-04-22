@@ -21,11 +21,12 @@ type Shift = {
   num:       number;
   startTime: string;
   endTime:   string;
+  isActive:  boolean;
 };
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 function fromRow(r: any): Shift {
-  return { id: r.id, num: r.num, startTime: r.start_time.slice(0, 5), endTime: r.end_time.slice(0, 5) };
+  return { id: r.id, num: r.num, startTime: r.start_time.slice(0, 5), endTime: r.end_time.slice(0, 5), isActive: r.is_active };
 }
 
 function fmt(t: string) {
@@ -38,6 +39,17 @@ function fmt(t: string) {
 function toMinutes(t: string) {
   const [h, m] = t.split(":").map(Number);
   return h * 60 + m;
+}
+
+/* Returns true if point falls inside [start, end) on a 24h circle */
+function inRange(start: string, end: string, point: string): boolean {
+  const s = toMinutes(start), e = toMinutes(end), p = toMinutes(point);
+  return s < e ? p >= s && p < e : p >= s || p < e;
+}
+
+/* Two shifts overlap when either start point falls inside the other's range */
+function shiftsOverlap(s1: string, e1: string, s2: string, e2: string): boolean {
+  return inRange(s1, e1, s2) || inRange(s2, e2, s1);
 }
 
 function isActiveShift(startTime: string, endTime: string, now: Date): boolean {
@@ -58,8 +70,9 @@ export default function AdminShiftsPage() {
   const [error,   setError]   = useState<string | null>(null);
   const [saving,  setSaving]  = useState(false);
   const [delId,   setDelId]   = useState<number | null>(null);
-  const [modal,   setModal]   = useState(false);
-  const [form,    setForm]    = useState(emptyForm);
+  const [modal,      setModal]      = useState(false);
+  const [form,       setForm]       = useState(emptyForm);
+  const [toggleErr,  setToggleErr]  = useState<string | null>(null);
   const [formErr, setFormErr] = useState<string | null>(null);
 
   /* live clock — re-evaluates active shift every minute */
@@ -77,7 +90,7 @@ export default function AdminShiftsPage() {
     setError(null);
     const { data, error } = await supabase
       .from("shifts")
-      .select("id, num, start_time, end_time")
+      .select("id, num, start_time, end_time, is_active")
       .order("num");
     if (error) setError("تعذّر تحميل الورديات");
     else setRows((data ?? []).map(fromRow));
@@ -94,13 +107,17 @@ export default function AdminShiftsPage() {
     if (form.startTime === form.endTime) {
       setFormErr("وقت البداية والنهاية لا يمكن أن يكونا متساويين"); return;
     }
+    const conflict = rows.filter((r) => r.isActive).find((r) => shiftsOverlap(form.startTime, form.endTime, r.startTime, r.endTime));
+    if (conflict) {
+      setFormErr(`الوردية تتداخل مع وردية ${conflict.num}`); return;
+    }
     setSaving(true);
     setFormErr(null);
     const nextNum = rows.length + 1;
     const { data, error } = await supabase
       .from("shifts")
       .insert({ num: nextNum, start_time: `${form.startTime}:00`, end_time: `${form.endTime}:00` })
-      .select("id, num, start_time, end_time")
+      .select("id, num, start_time, end_time, is_active")
       .single();
     if (error) { setFormErr("فشل الحفظ، حاول مرة أخرى"); setSaving(false); return; }
     setRows((p) => [...p, fromRow(data)]);
@@ -108,17 +125,32 @@ export default function AdminShiftsPage() {
     setModal(false);
   }
 
-  /* ── Delete ── */
-  async function handleDelete(id: number) {
-    setDelId(id);
-    const { error } = await supabase.from("shifts").delete().eq("id", id);
-    if (!error) setRows((p) => p.filter((r) => r.id !== id));
+  /* ── Toggle active ── */
+  async function handleToggle(s: Shift) {
+    const next = !s.isActive;
+    setToggleErr(null);
+    if (next) {
+      const conflict = rows.find((r) => r.id !== s.id && r.isActive && shiftsOverlap(s.startTime, s.endTime, r.startTime, r.endTime));
+      if (conflict) { setToggleErr("لا يمكن تشغيل وردية متداخلة مع وردية نشطة"); return; }
+    }
+    setDelId(s.id);
+    setRows((p) => p.map((r) => r.id === s.id ? { ...r, isActive: next } : r));
+    const { error } = await supabase.from("shifts").update({ is_active: next }).eq("id", s.id);
+    if (error) setRows((p) => p.map((r) => r.id === s.id ? { ...r, isActive: s.isActive } : r));
     setDelId(null);
   }
 
   return (
     <>
       <div className="flex flex-col gap-5">
+
+        {/* ── Toggle error ── */}
+        {toggleErr && (
+          <div className="px-4 py-2.5 rounded-xl text-xs font-semibold"
+            style={{ background: `${C.red}22`, color: C.red }}>
+            {toggleErr}
+          </div>
+        )}
 
         {/* ── Top bar ── */}
         <div className="flex items-end justify-between gap-3">
@@ -178,14 +210,16 @@ export default function AdminShiftsPage() {
                     </td>
                   </tr>
                 ) : rows.map((s, i) => {
-                  const active  = isActiveShift(s.startTime, s.endTime, now);
-                  const isDel   = delId === s.id;
+                  const timeActive = isActiveShift(s.startTime, s.endTime, now);
+                  const active     = s.isActive && timeActive;
+                  const isToggling = delId === s.id;
                   return (
                     <tr key={s.id}
                       style={{
-                        borderBottom:    i < rows.length - 1 ? `1px solid ${C.border}` : "none",
-                        background:      active ? `${C.green}0a` : "transparent",
-                        transition:      "background 0.3s",
+                        borderBottom: i < rows.length - 1 ? `1px solid ${C.border}` : "none",
+                        background:   active ? `${C.green}0a` : "transparent",
+                        opacity:      s.isActive ? 1 : 0.5,
+                        transition:   "background 0.3s, opacity 0.3s",
                       }}>
 
                       {/* رقم الوردية */}
@@ -211,7 +245,12 @@ export default function AdminShiftsPage() {
 
                       {/* الحالة */}
                       <td className="px-4 py-3">
-                        {active ? (
+                        {!s.isActive ? (
+                          <span className="px-2.5 py-1 rounded-full text-[10px] font-bold whitespace-nowrap"
+                            style={{ background: `${C.border}55`, color: C.muted }}>
+                            غير نشط
+                          </span>
+                        ) : active ? (
                           <span className="px-2.5 py-1 rounded-full text-[10px] font-bold whitespace-nowrap flex items-center gap-1 w-fit"
                             style={{ background: `${C.green}22`, color: C.green }}>
                             <span className="w-1.5 h-1.5 rounded-full animate-pulse inline-block" style={{ background: C.green }} />
@@ -219,8 +258,8 @@ export default function AdminShiftsPage() {
                           </span>
                         ) : (
                           <span className="px-2.5 py-1 rounded-full text-[10px] font-bold whitespace-nowrap"
-                            style={{ background: `${C.border}55`, color: C.muted }}>
-                            غير نشطة
+                            style={{ background: `${C.green}22`, color: C.green }}>
+                            نشط
                           </span>
                         )}
                       </td>
@@ -228,12 +267,15 @@ export default function AdminShiftsPage() {
                       {/* إجراءات */}
                       <td className="px-4 py-3">
                         <button
-                          onClick={() => handleDelete(s.id)}
-                          disabled={isDel}
+                          onClick={() => handleToggle(s)}
+                          disabled={isToggling}
                           className="px-3 py-1.5 rounded-lg text-xs font-bold hover:opacity-80 transition-opacity whitespace-nowrap disabled:opacity-40"
-                          style={{ background: `${C.red}22`, color: C.red }}
+                          style={{
+                            background: s.isActive ? `${C.red}22`  : `${C.green}22`,
+                            color:      s.isActive ? C.red         : C.green,
+                          }}
                         >
-                          {isDel ? "..." : "إنهاء"}
+                          {isToggling ? "..." : s.isActive ? "إيقاف" : "تشغيل"}
                         </button>
                       </td>
                     </tr>
