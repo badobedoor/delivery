@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { supabasePublic } from "@/lib/supabasePublic";
 
 const C = {
@@ -34,24 +34,64 @@ function formatDate(iso: string | null): string {
 }
 
 export default function AdminUsersPage() {
-  const [users,   setUsers]   = useState<User[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [search,  setSearch]  = useState("");
+  const [users,    setUsers]    = useState<User[]>([]);
+  const [loading,  setLoading]  = useState(true);
+  const [search,     setSearch]     = useState("");
+  const [orderSort,  setOrderSort]  = useState<"desc" | "asc" | null>(null);
+  const [fromDate, setFromDate] = useState("");
+  const [toDate,   setToDate]   = useState("");
+  const [dateErr,  setDateErr]  = useState<string | null>(null);
+  const rawRef = useRef<User[]>([]);
+  const today  = new Date().toISOString().slice(0, 10);
+
+  async function fetchOrderCounts(from: string, to: string): Promise<Record<string, number>> {
+    let q = supabasePublic.from("orders").select("user_id");
+    if (from) q = q.gte("created_at", from);
+    if (to)   q = q.lte("created_at", `${to}T23:59:59`);
+    const { data } = await q;
+    const map: Record<string, number> = {};
+    for (const r of data ?? []) if (r.user_id) map[r.user_id] = (map[r.user_id] ?? 0) + 1;
+    return map;
+  }
 
   async function fetchUsers() {
     setLoading(true);
 
-    const { data, error } = await supabasePublic
-      .from("users")
-      .select("*")
-      .order("created_at", { ascending: false });
+    const [usersRes, countMap] = await Promise.all([
+      supabasePublic.from("users").select("*").order("created_at", { ascending: false }),
+      fetchOrderCounts(fromDate, toDate),
+    ]);
 
-    if (error) console.error("USERS ERROR:", error.message, error);
-    if (data) setUsers(data);
+    if (usersRes.error) console.error("USERS ERROR:", usersRes.error.message, usersRes.error);
+
+    if (usersRes.data) {
+      rawRef.current = usersRes.data;
+      setUsers(usersRes.data.map((u) => ({ ...u, total_orders: countMap[u.id] ?? 0 })));
+    }
     setLoading(false);
   }
 
   useEffect(() => { fetchUsers(); }, []);
+
+  function handleFilter() {
+    setDateErr(null);
+    if ((fromDate && !toDate) || (!fromDate && toDate)) {
+      setDateErr("يجب تحديد تاريخ البداية والنهاية"); return;
+    }
+    if (fromDate && toDate && fromDate > toDate) {
+      setDateErr("تاريخ البداية يجب أن يكون قبل تاريخ النهاية"); return;
+    }
+    fetchOrderCounts(fromDate, toDate).then((countMap) => {
+      setUsers(rawRef.current.map((u) => ({ ...u, total_orders: countMap[u.id] ?? 0 })));
+    });
+  }
+
+  function handleClear() {
+    setFromDate(""); setToDate(""); setDateErr(null);
+    fetchOrderCounts("", "").then((countMap) => {
+      setUsers(rawRef.current.map((u) => ({ ...u, total_orders: countMap[u.id] ?? 0 })));
+    });
+  }
 
   async function handleToggleBlock(userId: string, currentStatus: boolean) {
     const { error } = await supabasePublic
@@ -67,13 +107,17 @@ export default function AdminUsersPage() {
     fetchUsers();
   }
 
-  const filtered = users.filter(
-    (u) =>
+  const filtered = users
+    .filter((u) =>
       !search.trim() ||
       (u.name  ?? "").includes(search) ||
       (u.email ?? "").includes(search) ||
       (u.phone ?? "").includes(search),
-  );
+    )
+    .sort((a, b) =>
+      orderSort === "desc" ? b.total_orders - a.total_orders :
+      orderSort === "asc"  ? a.total_orders - b.total_orders : 0
+    );
 
   const activeCount = users.filter((u) => !u.is_blocked).length;
   const bannedCount = users.filter((u) =>  u.is_blocked).length;
@@ -102,6 +146,53 @@ export default function AdminUsersPage() {
             <p className="text-xs"             style={{ color: C.muted  }}>{s.label}</p>
           </div>
         ))}
+      </div>
+
+      {/* ── Date range ── */}
+      <div className="flex flex-col gap-2">
+        <div className="flex items-end gap-3">
+          <div className="flex-1 flex flex-col gap-1">
+            <label className="text-xs font-semibold" style={{ color: C.muted }}>من</label>
+            <input
+              type="date"
+              value={fromDate}
+              max={today}
+              onChange={(e) => { setFromDate(e.target.value); setDateErr(null); }}
+              className="w-full rounded-xl px-3 py-2.5 text-sm outline-none"
+              style={{ background: C.card, border: `1px solid ${C.border}`, color: C.text, colorScheme: "dark" }}
+            />
+          </div>
+          <div className="flex-1 flex flex-col gap-1">
+            <label className="text-xs font-semibold" style={{ color: C.muted }}>إلى</label>
+            <input
+              type="date"
+              value={toDate}
+              max={today}
+              onChange={(e) => { setToDate(e.target.value); setDateErr(null); }}
+              className="w-full rounded-xl px-3 py-2.5 text-sm outline-none"
+              style={{ background: C.card, border: `1px solid ${C.border}`, color: C.text, colorScheme: "dark" }}
+            />
+          </div>
+          <button
+            onClick={handleFilter}
+            className="px-4 py-2.5 rounded-xl text-xs font-bold hover:opacity-90 transition-opacity whitespace-nowrap"
+            style={{ background: C.teal, color: "#fff" }}
+          >
+            فلترة
+          </button>
+          {(fromDate || toDate) && (
+            <button
+              onClick={handleClear}
+              className="px-3 py-2.5 rounded-xl text-xs font-bold hover:opacity-80 transition-opacity whitespace-nowrap"
+              style={{ background: `${C.border}66`, color: C.muted }}
+            >
+              مسح
+            </button>
+          )}
+        </div>
+        {dateErr && (
+          <p className="text-xs font-semibold px-1" style={{ color: C.red }}>{dateErr}</p>
+        )}
       </div>
 
       {/* ── Search ── */}
@@ -133,7 +224,6 @@ export default function AdminUsersPage() {
                   { label: "الإيميل",         hide: " hidden lg:table-cell" },
                   { label: "الموبايل",        hide: " hidden sm:table-cell" },
                   { label: "تاريخ التسجيل",  hide: " hidden xl:table-cell" },
-                  { label: "عدد الطلبات",    hide: " hidden md:table-cell" },
                   { label: "الحالة",          hide: ""                      },
                   { label: "إجراءات",         hide: ""                      },
                 ].map(({ label, hide }) => (
@@ -143,6 +233,16 @@ export default function AdminUsersPage() {
                     {label}
                   </th>
                 ))}
+                <th
+                  className="hidden md:table-cell px-4 py-3 text-right font-semibold text-xs whitespace-nowrap cursor-pointer select-none"
+                  style={{ color: C.muted }}
+                  onClick={() => setOrderSort((s) => s === "desc" ? "asc" : "desc")}
+                >
+                  <span className="inline-flex items-center gap-1">
+                    عدد الطلبات
+                    {orderSort && <span style={{ color: C.teal }}>{orderSort === "desc" ? "↓" : "↑"}</span>}
+                  </span>
+                </th>
               </tr>
             </thead>
             <tbody>

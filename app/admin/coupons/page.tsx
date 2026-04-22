@@ -53,9 +53,9 @@ const emptyForm = {
   type:                 "قيمة ثابتة" as CouponType,
   value:                "",
   applies:              "توصيل" as AppliesTo,
-  minOrder:             "",
-  usage_limit_total:    "",
-  usage_limit_per_user: "",
+  minOrder:             "0",
+  usage_limit_total:    "1",
+  usage_limit_per_user: "1",
   expiry:               "",
   active:               true,
 };
