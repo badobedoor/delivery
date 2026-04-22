@@ -1,6 +1,7 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
+import { supabase } from "@/lib/supabase";
 
 const C = {
   bg:     "#0F172A",
@@ -17,78 +18,122 @@ const C = {
 type Area = {
   id: number;
   name: string;
-  fee: number;
-  active: boolean;
+  delivery_fee: number;
+  is_active: boolean;
 };
 
-const seed: Area[] = [
-  { id: 1, name: "المعادي",       fee: 15, active: true  },
-  { id: 2, name: "الزمالك",       fee: 20, active: true  },
-  { id: 3, name: "مصر الجديدة",   fee: 18, active: true  },
-  { id: 4, name: "مدينة نصر",    fee: 12, active: true  },
-  { id: 5, name: "الدقي",         fee: 20, active: false },
-  { id: 6, name: "وسط البلد",    fee: 10, active: false },
-];
-
 type ModalMode = "add" | "edit";
-const emptyForm = { name: "", fee: "", active: true };
+const emptyForm = { name: "", delivery_fee: "", is_active: true };
 
 export default function AdminAreasPage() {
-  const [rows,      setRows]      = useState<Area[]>(seed);
-  const [search,    setSearch]    = useState("");
-  const [modal,     setModal]     = useState<{ open: boolean; mode: ModalMode; id?: number }>({ open: false, mode: "add" });
-  const [form,      setForm]      = useState(emptyForm);
-  const [deleteId,  setDeleteId]  = useState<number | null>(null);
+  const [rows,    setRows]    = useState<Area[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error,   setError]   = useState<string | null>(null);
+  const [saving,  setSaving]  = useState(false);
+  const [search,  setSearch]  = useState("");
 
-  const filtered = rows.filter(
-    (r) => !search.trim() || r.name.includes(search.trim())
-  );
+  const [modal,    setModal]    = useState<{ open: boolean; mode: ModalMode; id?: number }>({ open: false, mode: "add" });
+  const [form,     setForm]     = useState(emptyForm);
+  const [formErr,  setFormErr]  = useState<string | null>(null);
+  const [deleteId, setDeleteId] = useState<number | null>(null);
+  const [deleting, setDeleting] = useState(false);
+  const [feeSort,  setFeeSort]  = useState<"asc" | "desc">("asc");
 
-  /* ── open add modal ── */
+  /* ── Fetch ── */
+  useEffect(() => {
+    fetchAreas();
+  }, []);
+
+  async function fetchAreas() {
+    setLoading(true);
+    setError(null);
+    const { data, error } = await supabase
+      .from("areas")
+      .select("id, name, delivery_fee, is_active")
+      .order("name");
+    if (error) setError("تعذّر تحميل الأحياء");
+    else setRows(data ?? []);
+    setLoading(false);
+  }
+
+  const filtered = rows
+    .filter((r) => !search.trim() || r.name.includes(search.trim()))
+    .sort((a, b) => feeSort === "asc" ? a.delivery_fee - b.delivery_fee : b.delivery_fee - a.delivery_fee);
+
+  /* ── Modal helpers ── */
   function openAdd() {
     setForm(emptyForm);
+    setFormErr(null);
     setModal({ open: true, mode: "add" });
   }
 
-  /* ── open edit modal pre-filled ── */
   function openEdit(area: Area) {
-    setForm({ name: area.name, fee: String(area.fee), active: area.active });
+    setForm({ name: area.name, delivery_fee: String(area.delivery_fee), is_active: area.is_active });
+    setFormErr(null);
     setModal({ open: true, mode: "edit", id: area.id });
   }
 
   function closeModal() {
     setModal({ open: false, mode: "add" });
+    setFormErr(null);
   }
 
-  function handleSave() {
-    if (!form.name.trim() || !form.fee) return;
-    const fee = Number(form.fee);
-    if (isNaN(fee) || fee < 0) return;
+  /* ── Save (add / edit) ── */
+  async function handleSave() {
+    const name = form.name.trim();
+    const fee  = Number(form.delivery_fee);
+    if (!name)              { setFormErr("اسم الحي مطلوب");            return; }
+    if (!form.delivery_fee) { setFormErr("سعر التوصيل مطلوب");        return; }
+    if (isNaN(fee) || fee < 0) { setFormErr("سعر التوصيل غير صحيح"); return; }
+
+    setSaving(true);
+    setFormErr(null);
 
     if (modal.mode === "add") {
-      const next: Area = { id: Date.now(), name: form.name.trim(), fee, active: form.active };
-      setRows((prev) => [next, ...prev]);
+      const { data, error } = await supabase
+        .from("areas")
+        .insert({ name, delivery_fee: fee, is_active: form.is_active })
+        .select("id, name, delivery_fee, is_active")
+        .single();
+      if (error) { setFormErr("فشل الحفظ، حاول مرة أخرى"); setSaving(false); return; }
+      setRows((prev) => [data, ...prev].sort((a, b) => a.name.localeCompare(b.name, "ar")));
     } else {
+      const { error } = await supabase
+        .from("areas")
+        .update({ name, delivery_fee: fee, is_active: form.is_active })
+        .eq("id", modal.id!);
+      if (error) { setFormErr("فشل التعديل، حاول مرة أخرى"); setSaving(false); return; }
       setRows((prev) =>
         prev.map((r) =>
-          r.id === modal.id ? { ...r, name: form.name.trim(), fee, active: form.active } : r
+          r.id === modal.id ? { ...r, name, delivery_fee: fee, is_active: form.is_active } : r
         )
       );
     }
+
+    setSaving(false);
     closeModal();
   }
 
-  function toggleActive(id: number) {
-    setRows((prev) => prev.map((r) => (r.id === id ? { ...r, active: !r.active } : r)));
+  /* ── Toggle active ── */
+  async function toggleActive(area: Area) {
+    const next = !area.is_active;
+    setRows((prev) => prev.map((r) => (r.id === area.id ? { ...r, is_active: next } : r)));
+    const { error } = await supabase
+      .from("areas")
+      .update({ is_active: next })
+      .eq("id", area.id);
+    if (error) setRows((prev) => prev.map((r) => (r.id === area.id ? { ...r, is_active: area.is_active } : r)));
   }
 
-  function confirmDelete(id: number) {
-    setDeleteId(id);
-  }
-
-  function handleDelete() {
+  /* ── Delete ── */
+  async function handleDelete() {
+    if (deleteId === null) return;
+    setDeleting(true);
+    const { error } = await supabase.from("areas").delete().eq("id", deleteId);
+    if (error) { setDeleting(false); return; }
     setRows((prev) => prev.filter((r) => r.id !== deleteId));
     setDeleteId(null);
+    setDeleting(false);
   }
 
   return (
@@ -133,7 +178,24 @@ export default function AdminAreasPage() {
             <table className="w-full">
               <thead>
                 <tr style={{ borderBottom: `1px solid ${C.border}` }}>
-                  {["اسم الحي", "سعر التوصيل", "الحالة", "إجراءات"].map((col) => (
+                  {["اسم الحي"].concat([]).map((col) => (
+                    <th key={col}
+                      className="px-4 py-3 text-right font-semibold text-xs whitespace-nowrap"
+                      style={{ color: C.muted }}>
+                      {col}
+                    </th>
+                  ))}
+                  <th
+                    className="px-4 py-3 text-right font-semibold text-xs whitespace-nowrap cursor-pointer select-none"
+                    style={{ color: C.muted }}
+                    onClick={() => setFeeSort((s) => s === "asc" ? "desc" : "asc")}
+                  >
+                    <span className="inline-flex items-center gap-1">
+                      سعر التوصيل
+                      <span style={{ color: C.teal }}>{feeSort === "asc" ? "↑" : "↓"}</span>
+                    </span>
+                  </th>
+                  {["الحالة", "إجراءات"].map((col) => (
                     <th key={col}
                       className="px-4 py-3 text-right font-semibold text-xs whitespace-nowrap"
                       style={{ color: C.muted }}>
@@ -143,7 +205,20 @@ export default function AdminAreasPage() {
                 </tr>
               </thead>
               <tbody>
-                {filtered.length === 0 ? (
+                {loading ? (
+                  <tr>
+                    <td colSpan={4} className="px-4 py-12 text-center text-sm" style={{ color: C.muted }}>
+                      جاري التحميل...
+                    </td>
+                  </tr>
+                ) : error ? (
+                  <tr>
+                    <td colSpan={4} className="px-4 py-12 text-center text-sm" style={{ color: C.red }}>
+                      {error}
+                      <button onClick={fetchAreas} className="mr-2 underline" style={{ color: C.teal }}>إعادة المحاولة</button>
+                    </td>
+                  </tr>
+                ) : filtered.length === 0 ? (
                   <tr>
                     <td colSpan={4} className="px-4 py-12 text-center text-sm" style={{ color: C.muted }}>
                       لا توجد أحياء مطابقة
@@ -162,21 +237,21 @@ export default function AdminAreasPage() {
                       {/* سعر التوصيل */}
                       <td className="px-4 py-3">
                         <span className="text-sm font-semibold" style={{ color: C.teal }}>
-                          {area.fee} ج.م
+                          {area.delivery_fee} ج.م
                         </span>
                       </td>
 
                       {/* الحالة */}
                       <td className="px-4 py-3">
                         <button
-                          onClick={() => toggleActive(area.id)}
+                          onClick={() => toggleActive(area)}
                           className="px-2.5 py-1 rounded-full text-[10px] font-bold whitespace-nowrap transition-all"
                           style={{
-                            background: area.active ? `${C.green}22` : `${C.red}22`,
-                            color:      area.active ? C.green : C.red,
+                            background: area.is_active ? `${C.green}22` : `${C.red}22`,
+                            color:      area.is_active ? C.green : C.red,
                           }}
                         >
-                          {area.active ? "نشط" : "مش نشط"}
+                          {area.is_active ? "نشط" : "مش نشط"}
                         </button>
                       </td>
 
@@ -191,7 +266,7 @@ export default function AdminAreasPage() {
                             تعديل
                           </button>
                           <button
-                            onClick={() => confirmDelete(area.id)}
+                            onClick={() => setDeleteId(area.id)}
                             className="px-3 py-1.5 rounded-lg text-xs font-bold transition-opacity hover:opacity-80"
                             style={{ background: `${C.red}22`, color: C.red }}
                           >
@@ -207,7 +282,7 @@ export default function AdminAreasPage() {
           </div>
 
           <div className="px-4 py-3 border-t text-xs" style={{ borderColor: C.border, color: C.muted }}>
-            {filtered.length} حي
+            {loading ? "..." : `${filtered.length} حي`}
           </div>
         </div>
 
@@ -241,6 +316,13 @@ export default function AdminAreasPage() {
             {/* Body */}
             <div className="px-5 py-4 flex flex-col gap-4">
 
+              {formErr && (
+                <p className="text-xs font-semibold text-center py-1.5 rounded-lg"
+                  style={{ background: `${C.red}22`, color: C.red }}>
+                  {formErr}
+                </p>
+              )}
+
               {/* اسم الحي */}
               <div className="flex flex-col gap-1.5">
                 <label className="text-xs font-semibold" style={{ color: C.muted }}>
@@ -264,16 +346,11 @@ export default function AdminAreasPage() {
                 <input
                   type="number"
                   min={0}
-                  value={form.fee}
-                  onChange={(e) => setForm({ ...form, fee: e.target.value })}
+                  value={form.delivery_fee}
+                  onChange={(e) => setForm({ ...form, delivery_fee: e.target.value })}
                   placeholder="مثال: 15"
                   className="w-full rounded-xl px-3 py-2.5 text-sm outline-none"
-                  style={{
-                    background: C.bg,
-                    border: `1px solid ${C.border}`,
-                    color: C.text,
-                    colorScheme: "dark",
-                  }}
+                  style={{ background: C.bg, border: `1px solid ${C.border}`, color: C.text, colorScheme: "dark" }}
                 />
               </div>
 
@@ -281,36 +358,34 @@ export default function AdminAreasPage() {
               <div className="flex items-center justify-between">
                 <span className="text-xs font-semibold" style={{ color: C.muted }}>الحالة</span>
                 <button
-                  onClick={() => setForm({ ...form, active: !form.active })}
+                  onClick={() => setForm({ ...form, is_active: !form.is_active })}
                   className="flex items-center gap-2 px-3 py-1.5 rounded-full text-xs font-bold transition-all"
                   style={{
-                    background: form.active ? `${C.green}22` : `${C.red}22`,
-                    color:      form.active ? C.green : C.red,
+                    background: form.is_active ? `${C.green}22` : `${C.red}22`,
+                    color:      form.is_active ? C.green : C.red,
                   }}
                 >
-                  <span
-                    className="w-2 h-2 rounded-full"
-                    style={{ background: form.active ? C.green : C.red }}
-                  />
-                  {form.active ? "نشط" : "مش نشط"}
+                  <span className="w-2 h-2 rounded-full" style={{ background: form.is_active ? C.green : C.red }} />
+                  {form.is_active ? "نشط" : "مش نشط"}
                 </button>
               </div>
 
             </div>
 
             {/* Footer */}
-            <div className="flex gap-3 px-5 py-4 border-t"
-              style={{ borderColor: C.border }}>
+            <div className="flex gap-3 px-5 py-4 border-t" style={{ borderColor: C.border }}>
               <button
                 onClick={handleSave}
-                className="flex-1 py-2.5 rounded-xl text-sm font-bold transition-opacity hover:opacity-90"
+                disabled={saving}
+                className="flex-1 py-2.5 rounded-xl text-sm font-bold transition-opacity hover:opacity-90 disabled:opacity-50"
                 style={{ background: C.orange, color: "#fff" }}
               >
-                حفظ
+                {saving ? "جاري الحفظ..." : "حفظ"}
               </button>
               <button
                 onClick={closeModal}
-                className="flex-1 py-2.5 rounded-xl text-sm font-bold transition-opacity hover:opacity-80"
+                disabled={saving}
+                className="flex-1 py-2.5 rounded-xl text-sm font-bold transition-opacity hover:opacity-80 disabled:opacity-50"
                 style={{ background: C.bg, color: C.muted, border: `1px solid ${C.border}` }}
               >
                 إلغاء
@@ -342,14 +417,16 @@ export default function AdminAreasPage() {
             <div className="flex gap-3 px-5 py-4 border-t" style={{ borderColor: C.border }}>
               <button
                 onClick={handleDelete}
-                className="flex-1 py-2.5 rounded-xl text-sm font-bold transition-opacity hover:opacity-90"
+                disabled={deleting}
+                className="flex-1 py-2.5 rounded-xl text-sm font-bold transition-opacity hover:opacity-90 disabled:opacity-50"
                 style={{ background: C.red, color: "#fff" }}
               >
-                حذف
+                {deleting ? "جاري الحذف..." : "حذف"}
               </button>
               <button
                 onClick={() => setDeleteId(null)}
-                className="flex-1 py-2.5 rounded-xl text-sm font-bold transition-opacity hover:opacity-80"
+                disabled={deleting}
+                className="flex-1 py-2.5 rounded-xl text-sm font-bold transition-opacity hover:opacity-80 disabled:opacity-50"
                 style={{ background: C.bg, color: C.muted, border: `1px solid ${C.border}` }}
               >
                 إلغاء
