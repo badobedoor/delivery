@@ -1,6 +1,7 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
+import { supabase } from "@/lib/supabase";
 
 const C = {
   bg:     "#0F172A",
@@ -12,21 +13,20 @@ const C = {
   green:  "#22C55E",
   red:    "#EF4444",
   orange: "#F97316",
+  yellow: "#EAB308",
 };
-
 
 type Shift = {
   id:        number;
-  num:       number;   /* 1, 2, 3 */
+  num:       number;
   startTime: string;
   endTime:   string;
 };
 
-const seedShifts: Shift[] = [
-  { id: 1, num: 1, startTime: "07:00", endTime: "15:00" },
-  { id: 2, num: 2, startTime: "15:00", endTime: "23:00" },
-  { id: 3, num: 3, startTime: "23:00", endTime: "07:00" },
-];
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function fromRow(r: any): Shift {
+  return { id: r.id, num: r.num, startTime: r.start_time.slice(0, 5), endTime: r.end_time.slice(0, 5) };
+}
 
 function fmt(t: string) {
   const [h, m] = t.split(":").map(Number);
@@ -35,25 +35,85 @@ function fmt(t: string) {
   return `${hour}:${m.toString().padStart(2, "0")} ${suffix}`;
 }
 
+function toMinutes(t: string) {
+  const [h, m] = t.split(":").map(Number);
+  return h * 60 + m;
+}
+
+function isActiveShift(startTime: string, endTime: string, now: Date): boolean {
+  const cur   = now.getHours() * 60 + now.getMinutes();
+  const start = toMinutes(startTime);
+  const end   = toMinutes(endTime);
+  /* overnight shift: end < start (e.g. 23:00 → 07:00) */
+  return start < end
+    ? cur >= start && cur < end
+    : cur >= start || cur < end;
+}
+
 const emptyForm = { startTime: "07:00", endTime: "15:00" };
 
 export default function AdminShiftsPage() {
-  const [rows,  setRows]  = useState<Shift[]>(seedShifts);
-  const [modal, setModal] = useState(false);
-  const [form,  setForm]  = useState(emptyForm);
+  const [rows,    setRows]    = useState<Shift[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error,   setError]   = useState<string | null>(null);
+  const [saving,  setSaving]  = useState(false);
+  const [delId,   setDelId]   = useState<number | null>(null);
+  const [modal,   setModal]   = useState(false);
+  const [form,    setForm]    = useState(emptyForm);
+  const [formErr, setFormErr] = useState<string | null>(null);
 
-  function openModal() { setForm(emptyForm); setModal(true); }
+  /* live clock — re-evaluates active shift every minute */
+  const [now, setNow] = useState(() => new Date());
+  useEffect(() => {
+    const t = setInterval(() => setNow(new Date()), 60_000);
+    return () => clearInterval(t);
+  }, []);
 
-  function handleSave() {
+  /* ── Fetch ── */
+  useEffect(() => { fetchShifts(); }, []);
+
+  async function fetchShifts() {
+    setLoading(true);
+    setError(null);
+    const { data, error } = await supabase
+      .from("shifts")
+      .select("id, num, start_time, end_time")
+      .order("num");
+    if (error) setError("تعذّر تحميل الورديات");
+    else setRows((data ?? []).map(fromRow));
+    setLoading(false);
+  }
+
+  /* ── Add ── */
+  function openModal() { setForm(emptyForm); setFormErr(null); setModal(true); }
+
+  async function handleSave() {
+    if (!form.startTime || !form.endTime) {
+      setFormErr("وقت البداية والنهاية مطلوبان"); return;
+    }
+    if (form.startTime === form.endTime) {
+      setFormErr("وقت البداية والنهاية لا يمكن أن يكونا متساويين"); return;
+    }
+    setSaving(true);
+    setFormErr(null);
     const nextNum = rows.length + 1;
-    const next: Shift = {
-      id:        Date.now(),
-      num:       nextNum,
-      startTime: form.startTime,
-      endTime:   form.endTime,
-    };
-    setRows((prev) => [...prev, next]);
+    const { data, error } = await supabase
+      .from("shifts")
+      .insert({ num: nextNum, start_time: `${form.startTime}:00`, end_time: `${form.endTime}:00` })
+      .select("id, num, start_time, end_time")
+      .single();
+    if (error) { setFormErr("فشل الحفظ، حاول مرة أخرى"); setSaving(false); return; }
+    setRows((p) => [...p, fromRow(data)]);
+    setSaving(false);
     setModal(false);
+  }
+
+  /* ── Delete ── */
+  async function handleDelete(id: number) {
+    setDelId(id);
+    const { error } = await supabase.from("shifts").delete().eq("id", id);
+    if (!error) setRows((p) => p.filter((r) => r.id !== id));
+    setDelId(null);
   }
 
   return (
@@ -96,60 +156,95 @@ export default function AdminShiftsPage() {
                 </tr>
               </thead>
               <tbody>
-                {rows.length === 0 ? (
+                {loading ? (
+                  <tr>
+                    <td colSpan={5} className="px-4 py-12 text-center text-sm" style={{ color: C.muted }}>
+                      جاري التحميل...
+                    </td>
+                  </tr>
+                ) : error ? (
+                  <tr>
+                    <td colSpan={5} className="px-4 py-12 text-center text-sm" style={{ color: C.red }}>
+                      {error}
+                      <button onClick={fetchShifts} className="mr-2 underline" style={{ color: C.teal }}>
+                        إعادة المحاولة
+                      </button>
+                    </td>
+                  </tr>
+                ) : rows.length === 0 ? (
                   <tr>
                     <td colSpan={5} className="px-4 py-12 text-center text-sm" style={{ color: C.muted }}>
                       لا توجد ورديات
                     </td>
                   </tr>
-                ) : rows.map((s, i) => (
-                  <tr key={s.id}
-                    style={{ borderBottom: i < rows.length - 1 ? `1px solid ${C.border}` : "none" }}>
+                ) : rows.map((s, i) => {
+                  const active  = isActiveShift(s.startTime, s.endTime, now);
+                  const isDel   = delId === s.id;
+                  return (
+                    <tr key={s.id}
+                      style={{
+                        borderBottom:    i < rows.length - 1 ? `1px solid ${C.border}` : "none",
+                        background:      active ? `${C.green}0a` : "transparent",
+                        transition:      "background 0.3s",
+                      }}>
 
-                    {/* رقم الوردية */}
-                    <td className="px-4 py-3">
-                      <span className="text-sm font-black px-2.5 py-1 rounded-full"
-                        style={{ background: `${C.teal}20`, color: C.teal }}>
-                        وردية {s.num}
-                      </span>
-                    </td>
+                      {/* رقم الوردية */}
+                      <td className="px-4 py-3">
+                        <span className="text-sm font-black px-2.5 py-1 rounded-full"
+                          style={{
+                            background: active ? `${C.green}25` : `${C.teal}20`,
+                            color:      active ? C.green : C.teal,
+                          }}>
+                          وردية {s.num}
+                        </span>
+                      </td>
 
-                    {/* وقت البداية */}
-                    <td className="hidden sm:table-cell px-4 py-3 text-xs whitespace-nowrap" style={{ color: C.muted }}>
-                      🕐 {fmt(s.startTime)}
-                    </td>
+                      {/* وقت البداية */}
+                      <td className="hidden sm:table-cell px-4 py-3 text-xs whitespace-nowrap" style={{ color: C.muted }}>
+                        🕐 {fmt(s.startTime)}
+                      </td>
 
-                    {/* وقت النهاية */}
-                    <td className="hidden sm:table-cell px-4 py-3 text-xs whitespace-nowrap" style={{ color: C.muted }}>
-                      🕑 {fmt(s.endTime)}
-                    </td>
+                      {/* وقت النهاية */}
+                      <td className="hidden sm:table-cell px-4 py-3 text-xs whitespace-nowrap" style={{ color: C.muted }}>
+                        🕑 {fmt(s.endTime)}
+                      </td>
 
-                    {/* الحالة */}
-                    <td className="px-4 py-3">
-                      <span className="px-2.5 py-1 rounded-full text-[10px] font-bold whitespace-nowrap"
-                        style={{ background: `${C.green}22`, color: C.green }}>
-                        الوردية الحالية {s.num}
-                      </span>
-                    </td>
+                      {/* الحالة */}
+                      <td className="px-4 py-3">
+                        {active ? (
+                          <span className="px-2.5 py-1 rounded-full text-[10px] font-bold whitespace-nowrap flex items-center gap-1 w-fit"
+                            style={{ background: `${C.green}22`, color: C.green }}>
+                            <span className="w-1.5 h-1.5 rounded-full animate-pulse inline-block" style={{ background: C.green }} />
+                            الوردية الحالية
+                          </span>
+                        ) : (
+                          <span className="px-2.5 py-1 rounded-full text-[10px] font-bold whitespace-nowrap"
+                            style={{ background: `${C.border}55`, color: C.muted }}>
+                            غير نشطة
+                          </span>
+                        )}
+                      </td>
 
-                    {/* إجراءات */}
-                    <td className="px-4 py-3">
-                      <button
-                        onClick={() => setRows((p) => p.filter((r) => r.id !== s.id))}
-                        className="px-3 py-1.5 rounded-lg text-xs font-bold hover:opacity-80 transition-opacity whitespace-nowrap"
-                        style={{ background: `${C.red}22`, color: C.red }}
-                      >
-                        إنهاء
-                      </button>
-                    </td>
-                  </tr>
-                ))}
+                      {/* إجراءات */}
+                      <td className="px-4 py-3">
+                        <button
+                          onClick={() => handleDelete(s.id)}
+                          disabled={isDel}
+                          className="px-3 py-1.5 rounded-lg text-xs font-bold hover:opacity-80 transition-opacity whitespace-nowrap disabled:opacity-40"
+                          style={{ background: `${C.red}22`, color: C.red }}
+                        >
+                          {isDel ? "..." : "إنهاء"}
+                        </button>
+                      </td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>
 
           <div className="px-4 py-3 border-t text-xs" style={{ borderColor: C.border, color: C.muted }}>
-            {rows.length} وردية اليوم
+            {loading ? "..." : `${rows.length} وردية`}
           </div>
         </div>
 
@@ -174,7 +269,13 @@ export default function AdminShiftsPage() {
 
             <div className="px-5 py-4 flex flex-col gap-4">
 
-              {/* الأوقات */}
+              {formErr && (
+                <p className="text-xs font-semibold text-center py-1.5 rounded-lg"
+                  style={{ background: `${C.red}22`, color: C.red }}>
+                  {formErr}
+                </p>
+              )}
+
               <div className="grid grid-cols-2 gap-3">
                 <div className="flex flex-col gap-1.5">
                   <label className="text-xs font-semibold" style={{ color: C.muted }}>وقت البداية</label>
@@ -195,13 +296,13 @@ export default function AdminShiftsPage() {
             </div>
 
             <div className="flex gap-3 px-5 py-4 border-t" style={{ borderColor: C.border }}>
-              <button onClick={handleSave}
-                className="flex-1 py-2.5 rounded-xl text-sm font-bold hover:opacity-90 transition-opacity"
+              <button onClick={handleSave} disabled={saving}
+                className="flex-1 py-2.5 rounded-xl text-sm font-bold hover:opacity-90 transition-opacity disabled:opacity-50"
                 style={{ background: C.orange, color: "#fff" }}>
-                حفظ
+                {saving ? "جاري الحفظ..." : "حفظ"}
               </button>
-              <button onClick={() => setModal(false)}
-                className="flex-1 py-2.5 rounded-xl text-sm font-bold hover:opacity-80 transition-opacity"
+              <button onClick={() => setModal(false)} disabled={saving}
+                className="flex-1 py-2.5 rounded-xl text-sm font-bold hover:opacity-80 transition-opacity disabled:opacity-50"
                 style={{ background: C.bg, color: C.muted, border: `1px solid ${C.border}` }}>
                 إلغاء
               </button>

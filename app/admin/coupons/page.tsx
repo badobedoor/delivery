@@ -1,6 +1,7 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
+import { supabase } from "@/lib/supabase";
 
 const C = {
   bg:     "#0F172A",
@@ -18,34 +19,45 @@ type CouponType   = "قيمة ثابتة" | "نسبة مئوية";
 type AppliesTo    = "توصيل" | "أكل" | "الاتنين";
 
 type Coupon = {
-  id:       number;
-  code:     string;
-  type:     CouponType;
-  value:    number;
-  applies:  AppliesTo;
-  minOrder: number;
-  uses:     number;
-  expiry:   string;
-  active:   boolean;
+  id:                  number;
+  code:                string;
+  type:                CouponType;
+  value:               number;
+  applies:             AppliesTo;
+  minOrder:            number;
+  usage_limit_total:   number | null;
+  usage_limit_per_user: number | null;
+  expiry:              string;
+  active:              boolean;
 };
 
-const seed: Coupon[] = [
-  { id: 1, code: "HALA50",    type: "نسبة مئوية", value: 50, applies: "الاتنين", minOrder: 100, uses: 200, expiry: "2026-04-30", active: true  },
-  { id: 2, code: "FREESHIP",  type: "قيمة ثابتة", value: 20, applies: "توصيل",   minOrder: 0,   uses: 500, expiry: "2026-05-15", active: true  },
-  { id: 3, code: "PIZZA20",   type: "نسبة مئوية", value: 20, applies: "أكل",     minOrder: 80,  uses: 100, expiry: "2026-06-01", active: true  },
-  { id: 4, code: "WELCOME30", type: "قيمة ثابتة", value: 30, applies: "الاتنين", minOrder: 150, uses: 50,  expiry: "2026-03-31", active: false },
-  { id: 5, code: "EID25",     type: "نسبة مئوية", value: 25, applies: "أكل",     minOrder: 120, uses: 300, expiry: "2026-04-10", active: false },
-];
+/* ── DB row → Coupon ── */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function fromRow(r: any): Coupon {
+  return {
+    id:                   r.id,
+    code:                 r.code,
+    type:                 r.type         as CouponType,
+    value:                r.value,
+    applies:              r.applies_to   as AppliesTo,
+    minOrder:             r.min_order    ?? 0,
+    usage_limit_total:    r.usage_limit_total    ?? null,
+    usage_limit_per_user: r.usage_limit_per_user ?? null,
+    expiry:               r.expires_at   ?? "",
+    active:               r.is_active,
+  };
+}
 
 const emptyForm = {
-  code:     "",
-  type:     "قيمة ثابتة" as CouponType,
-  value:    "",
-  applies:  "الاتنين" as AppliesTo,
-  minOrder: "",
-  uses:     "",
-  expiry:   "",
-  active:   true,
+  code:                 "",
+  type:                 "قيمة ثابتة" as CouponType,
+  value:                "",
+  applies:              "توصيل" as AppliesTo,
+  minOrder:             "",
+  usage_limit_total:    "",
+  usage_limit_per_user: "",
+  expiry:               "",
+  active:               true,
 };
 
 function formatExpiry(d: string) {
@@ -56,10 +68,15 @@ function formatExpiry(d: string) {
 }
 
 export default function AdminCouponsPage() {
-  const [rows,     setRows]     = useState<Coupon[]>(seed);
+  const [rows,     setRows]     = useState<Coupon[]>([]);
+  const [loading,  setLoading]  = useState(true);
+  const [fetchErr, setFetchErr] = useState<string | null>(null);
+  const [saving,   setSaving]   = useState(false);
+  const [deleting, setDeleting] = useState(false);
   const [search,   setSearch]   = useState("");
   const [modal,    setModal]    = useState<{ open: boolean; id?: number }>({ open: false });
   const [form,     setForm]     = useState(emptyForm);
+  const [formErr,  setFormErr]  = useState<string | null>(null);
   const [deleteId, setDeleteId] = useState<number | null>(null);
 
   const isEdit   = modal.id !== undefined;
@@ -67,54 +84,122 @@ export default function AdminCouponsPage() {
     (r) => !search.trim() || r.code.toLowerCase().includes(search.toLowerCase())
   );
 
+  /* ── Fetch ── */
+  useEffect(() => { fetchCoupons(); }, []);
+
+  async function fetchCoupons() {
+    setLoading(true);
+    setFetchErr(null);
+    const { data, error } = await supabase
+      .from("coupons")
+      .select("id, code, type, value, applies_to, min_order, usage_limit_total, usage_limit_per_user, expires_at, is_active")
+      .order("id", { ascending: false });
+    if (error) setFetchErr("تعذّر تحميل الكوبونات");
+    else setRows((data ?? []).map(fromRow));
+    setLoading(false);
+  }
+
+  /* ── Modal helpers ── */
   function openAdd() {
     setForm(emptyForm);
+    setFormErr(null);
     setModal({ open: true });
   }
 
   function openEdit(c: Coupon) {
     setForm({
-      code:     c.code,
-      type:     c.type,
-      value:    String(c.value),
-      applies:  c.applies,
-      minOrder: String(c.minOrder),
-      uses:     String(c.uses),
-      expiry:   c.expiry,
-      active:   c.active,
+      code:                 c.code,
+      type:                 c.type,
+      value:                String(c.value),
+      applies:              c.applies,
+      minOrder:             String(c.minOrder),
+      usage_limit_total:    c.usage_limit_total    != null ? String(c.usage_limit_total)    : "",
+      usage_limit_per_user: c.usage_limit_per_user != null ? String(c.usage_limit_per_user) : "",
+      expiry:               c.expiry,
+      active:               c.active,
     });
+    setFormErr(null);
     setModal({ open: true, id: c.id });
   }
 
-  function closeModal() { setModal({ open: false }); }
+  function closeModal() { setModal({ open: false }); setFormErr(null); }
 
-  function handleSave() {
-    if (!form.code.trim() || !form.value) return;
-    const payload = {
-      code:     form.code.trim().toUpperCase(),
-      type:     form.type,
-      value:    Number(form.value),
-      applies:  form.applies,
-      minOrder: Number(form.minOrder) || 0,
-      uses:     Number(form.uses)     || 0,
-      expiry:   form.expiry,
-      active:   form.active,
-    };
-    if (!isEdit) {
-      setRows((p) => [{ id: Date.now(), ...payload }, ...p]);
-    } else {
-      setRows((p) => p.map((r) => r.id === modal.id ? { ...r, ...payload } : r));
+  /* ── Save (add / edit) ── */
+  async function handleSave() {
+    setFormErr(null);
+
+    if (!form.code.trim()) {
+      setFormErr("كود الكوبون مطلوب"); return;
     }
+    if (!form.value) {
+      setFormErr("القيمة مطلوبة"); return;
+    }
+    const value = Number(form.value);
+    if (isNaN(value) || value <= 0) {
+      setFormErr("القيمة يجب أن تكون رقمًا أكبر من صفر"); return;
+    }
+    if (form.type === "نسبة مئوية" && value > 100) {
+      setFormErr("نسبة الخصم لا يمكن أن تتجاوز 100%"); return;
+    }
+    if (form.minOrder && Number(form.minOrder) < 0) {
+      setFormErr("الحد الأدنى للطلب لا يمكن أن يكون سالبًا"); return;
+    }
+    if (form.usage_limit_total && Number(form.usage_limit_total) < 1) {
+      setFormErr("الحد الإجمالي للاستخدام يجب أن يكون 1 على الأقل"); return;
+    }
+    if (form.usage_limit_per_user && Number(form.usage_limit_per_user) < 1) {
+      setFormErr("حد الاستخدام للمستخدم يجب أن يكون 1 على الأقل"); return;
+    }
+
+    const dbPayload = {
+      code:                 form.code.trim().toUpperCase(),
+      type:                 form.type,
+      value,
+      applies_to:           form.applies,
+      min_order:            Number(form.minOrder) || 0,
+      usage_limit_total:    form.usage_limit_total    ? Number(form.usage_limit_total)    : null,
+      usage_limit_per_user: form.usage_limit_per_user ? Number(form.usage_limit_per_user) : null,
+      expires_at:           form.expiry || null,
+      is_active:            form.active,
+    };
+
+    setSaving(true);
+    if (!isEdit) {
+      const { data, error } = await supabase
+        .from("coupons")
+        .insert({ ...dbPayload, used_count: 0 })
+        .select("id, code, type, value, applies_to, min_order, usage_limit_total, usage_limit_per_user, expires_at, is_active")
+        .single();
+      if (error) { setFormErr("فشل الحفظ، حاول مرة أخرى"); setSaving(false); return; }
+      setRows((p) => [fromRow(data), ...p]);
+    } else {
+      const { error } = await supabase
+        .from("coupons")
+        .update(dbPayload)
+        .eq("id", modal.id!);
+      if (error) { setFormErr("فشل التعديل، حاول مرة أخرى"); setSaving(false); return; }
+      setRows((p) => p.map((r) => r.id === modal.id ? fromRow({ ...dbPayload, id: modal.id }) : r));
+    }
+    setSaving(false);
     closeModal();
   }
 
-  function toggleActive(id: number) {
-    setRows((p) => p.map((r) => r.id === id ? { ...r, active: !r.active } : r));
+  /* ── Toggle active ── */
+  async function toggleActive(c: Coupon) {
+    const next = !c.active;
+    setRows((p) => p.map((r) => r.id === c.id ? { ...r, active: next } : r));
+    const { error } = await supabase.from("coupons").update({ is_active: next }).eq("id", c.id);
+    if (error) setRows((p) => p.map((r) => r.id === c.id ? { ...r, active: c.active } : r));
   }
 
-  function handleDelete() {
-    setRows((p) => p.filter((r) => r.id !== deleteId));
+  /* ── Delete ── */
+  async function handleDelete() {
+    if (deleteId === null) return;
+    setDeleting(true);
+    const { error } = await supabase.from("coupons").delete().eq("id", deleteId);
+    if (!error) setRows((p) => p.filter((r) => r.id !== deleteId));
     setDeleteId(null);
+    setDeleting(false);
   }
 
   /* shared input style */
@@ -184,7 +269,20 @@ export default function AdminCouponsPage() {
                 </tr>
               </thead>
               <tbody>
-                {filtered.length === 0 ? (
+                {loading ? (
+                  <tr>
+                    <td colSpan={9} className="px-4 py-12 text-center text-sm" style={{ color: C.muted }}>
+                      جاري التحميل...
+                    </td>
+                  </tr>
+                ) : fetchErr ? (
+                  <tr>
+                    <td colSpan={9} className="px-4 py-12 text-center text-sm" style={{ color: C.red }}>
+                      {fetchErr}
+                      <button onClick={fetchCoupons} className="mr-2 underline" style={{ color: C.teal }}>إعادة المحاولة</button>
+                    </td>
+                  </tr>
+                ) : filtered.length === 0 ? (
                   <tr>
                     <td colSpan={9} className="px-4 py-12 text-center text-sm" style={{ color: C.muted }}>
                       لا توجد كوبونات مطابقة
@@ -226,7 +324,7 @@ export default function AdminCouponsPage() {
 
                     {/* عدد الاستخدام */}
                     <td className="hidden lg:table-cell px-3 py-3 text-xs whitespace-nowrap" style={{ color: C.muted }}>
-                      {c.uses > 0 ? c.uses : "—"}
+                      {c.usage_limit_total != null ? c.usage_limit_total : "—"}
                     </td>
 
                     {/* تاريخ الانتهاء */}
@@ -237,7 +335,7 @@ export default function AdminCouponsPage() {
                     {/* الحالة */}
                     <td className="px-3 py-3">
                       <button
-                        onClick={() => toggleActive(c.id)}
+                        onClick={() => toggleActive(c)}
                         className="px-2.5 py-1 rounded-full text-[10px] font-bold whitespace-nowrap transition-all"
                         style={{
                           background: c.active ? `${C.green}22` : `${C.red}22`,
@@ -270,7 +368,7 @@ export default function AdminCouponsPage() {
           </div>
 
           <div className="px-4 py-3 border-t text-xs" style={{ borderColor: C.border, color: C.muted }}>
-            {filtered.length} كوبون
+            {loading ? "..." : `${filtered.length} كوبون`}
           </div>
         </div>
 
@@ -299,6 +397,13 @@ export default function AdminCouponsPage() {
 
             {/* Body */}
             <div className="flex-1 overflow-y-auto px-5 py-4 flex flex-col gap-4">
+
+              {formErr && (
+                <p className="text-xs font-semibold text-center py-1.5 rounded-lg"
+                  style={{ background: `${C.red}22`, color: C.red }}>
+                  {formErr}
+                </p>
+              )}
 
               {/* الكود */}
               <div className="flex flex-col gap-1.5">
@@ -366,27 +471,41 @@ export default function AdminCouponsPage() {
                 </select>
               </div>
 
-              {/* الحد الأدنى + عدد الاستخدام */}
+              {/* الحد الأدنى للطلب */}
+              <div className="flex flex-col gap-1.5">
+                <label className="text-xs font-semibold" style={{ color: C.muted }}>الحد الأدنى للطلب (ج.م)</label>
+                <input
+                  type="number"
+                  min={0}
+                  value={form.minOrder}
+                  onChange={(e) => setForm({ ...form, minOrder: e.target.value })}
+                  placeholder="0 — بدون حد أدنى"
+                  className="w-full rounded-xl px-3 py-2.5 text-sm outline-none"
+                  style={inp}
+                />
+              </div>
+
+              {/* حدود الاستخدام */}
               <div className="flex gap-3">
                 <div className="flex-1 flex flex-col gap-1.5">
-                  <label className="text-xs font-semibold" style={{ color: C.muted }}>الحد الأدنى (ج.م)</label>
+                  <label className="text-xs font-semibold" style={{ color: C.muted }}>الحد الإجمالي للاستخدام</label>
                   <input
                     type="number"
-                    min={0}
-                    value={form.minOrder}
-                    onChange={(e) => setForm({ ...form, minOrder: e.target.value })}
-                    placeholder="0"
+                    min={1}
+                    value={form.usage_limit_total}
+                    onChange={(e) => setForm({ ...form, usage_limit_total: e.target.value })}
+                    placeholder="غير محدود"
                     className="w-full rounded-xl px-3 py-2.5 text-sm outline-none"
                     style={inp}
                   />
                 </div>
                 <div className="flex-1 flex flex-col gap-1.5">
-                  <label className="text-xs font-semibold" style={{ color: C.muted }}>عدد الاستخدام</label>
+                  <label className="text-xs font-semibold" style={{ color: C.muted }}>حد لكل مستخدم</label>
                   <input
                     type="number"
-                    min={0}
-                    value={form.uses}
-                    onChange={(e) => setForm({ ...form, uses: e.target.value })}
+                    min={1}
+                    value={form.usage_limit_per_user}
+                    onChange={(e) => setForm({ ...form, usage_limit_per_user: e.target.value })}
                     placeholder="غير محدود"
                     className="w-full rounded-xl px-3 py-2.5 text-sm outline-none"
                     style={inp}
@@ -427,13 +546,13 @@ export default function AdminCouponsPage() {
 
             {/* Footer */}
             <div className="flex gap-3 px-5 py-4 border-t flex-shrink-0" style={{ borderColor: C.border }}>
-              <button onClick={handleSave}
-                className="flex-1 py-2.5 rounded-xl text-sm font-bold hover:opacity-90 transition-opacity"
+              <button onClick={handleSave} disabled={saving}
+                className="flex-1 py-2.5 rounded-xl text-sm font-bold hover:opacity-90 transition-opacity disabled:opacity-50"
                 style={{ background: C.orange, color: "#fff" }}>
-                حفظ
+                {saving ? "جاري الحفظ..." : "حفظ"}
               </button>
-              <button onClick={closeModal}
-                className="flex-1 py-2.5 rounded-xl text-sm font-bold hover:opacity-80 transition-opacity"
+              <button onClick={closeModal} disabled={saving}
+                className="flex-1 py-2.5 rounded-xl text-sm font-bold hover:opacity-80 transition-opacity disabled:opacity-50"
                 style={{ background: C.bg, color: C.muted, border: `1px solid ${C.border}` }}>
                 إلغاء
               </button>
@@ -462,13 +581,13 @@ export default function AdminCouponsPage() {
             </div>
 
             <div className="flex gap-3 px-5 py-4 border-t" style={{ borderColor: C.border }}>
-              <button onClick={handleDelete}
-                className="flex-1 py-2.5 rounded-xl text-sm font-bold hover:opacity-90 transition-opacity"
+              <button onClick={handleDelete} disabled={deleting}
+                className="flex-1 py-2.5 rounded-xl text-sm font-bold hover:opacity-90 transition-opacity disabled:opacity-50"
                 style={{ background: C.red, color: "#fff" }}>
-                حذف
+                {deleting ? "جاري الحذف..." : "حذف"}
               </button>
-              <button onClick={() => setDeleteId(null)}
-                className="flex-1 py-2.5 rounded-xl text-sm font-bold hover:opacity-80 transition-opacity"
+              <button onClick={() => setDeleteId(null)} disabled={deleting}
+                className="flex-1 py-2.5 rounded-xl text-sm font-bold hover:opacity-80 transition-opacity disabled:opacity-50"
                 style={{ background: C.bg, color: C.muted, border: `1px solid ${C.border}` }}>
                 إلغاء
               </button>
