@@ -1,6 +1,9 @@
 "use client";
 
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
+import Cropper from "react-easy-crop";
+import type { Area } from "react-easy-crop";
+import imageCompression from "browser-image-compression";
 import { supabase } from "@/lib/supabase";
 
 const C = {
@@ -64,6 +67,93 @@ async function uploadAdImage(file: File): Promise<string | null> {
   if (error) { console.error("Ad upload error:", error.message); return null; }
   const { data } = supabase.storage.from("restaurants").getPublicUrl(path);
   return data.publicUrl;
+}
+
+/* ─────────────────────── Crop helpers ──────────────── */
+
+async function getCroppedImg(src: string, crop: Area): Promise<Blob> {
+  const image = new Image();
+  image.src = src;
+  await new Promise<void>((res) => { image.onload = () => res(); });
+  const canvas  = document.createElement("canvas");
+  canvas.width  = crop.width;
+  canvas.height = crop.height;
+  const ctx = canvas.getContext("2d")!;
+  ctx.drawImage(image, crop.x, crop.y, crop.width, crop.height, 0, 0, crop.width, crop.height);
+  return new Promise((res, rej) =>
+    canvas.toBlob((b) => (b ? res(b) : rej(new Error("canvas empty"))), "image/jpeg", 0.92),
+  );
+}
+
+type CompressOptions = { maxSizeMB: number; maxWidthOrHeight: number };
+
+const AD_COMPRESS: CompressOptions = { maxSizeMB: 1, maxWidthOrHeight: 1200 };
+const AD_ASPECT = 16 / 6;
+
+function CropModal({
+  src, onConfirm, onCancel,
+}: {
+  src: string; onConfirm: (blob: Blob) => void; onCancel: () => void;
+}) {
+  const [crop,          setCrop]          = useState({ x: 0, y: 0 });
+  const [zoom,          setZoom]          = useState(1);
+  const [croppedPixels, setCroppedPixels] = useState<Area | null>(null);
+  const [confirming,    setConfirming]    = useState(false);
+  const [status,        setStatus]        = useState<"crop" | "compress">("crop");
+
+  const onCropComplete = useCallback((_: Area, pixels: Area) => {
+    setCroppedPixels(pixels);
+  }, []);
+
+  async function handleConfirm() {
+    if (!croppedPixels) return;
+    setConfirming(true);
+    try {
+      const croppedBlob    = await getCroppedImg(src, croppedPixels);
+      setStatus("compress");
+      const croppedFile    = new File([croppedBlob], "crop.jpg", { type: "image/jpeg" });
+      const compressedFile = await imageCompression(croppedFile, {
+        ...AD_COMPRESS, useWebWorker: true, fileType: "image/jpeg", initialQuality: 0.92,
+      });
+      onConfirm(compressedFile);
+    } finally {
+      setConfirming(false);
+      setStatus("crop");
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 z-[70] flex flex-col" style={{ background: "#000" }}>
+      <div className="flex items-center justify-between px-4 py-3 flex-shrink-0"
+        style={{ borderBottom: `1px solid ${C.border}` }}>
+        <button onClick={onCancel} className="text-sm font-semibold px-3 py-1.5 rounded-lg"
+          style={{ color: C.muted, background: `${C.muted}18` }}>إلغاء</button>
+        <p className="text-sm font-black" style={{ color: C.text }}>اقتصاص الصورة</p>
+        <button onClick={handleConfirm} disabled={confirming}
+          className="text-sm font-bold px-3 py-1.5 rounded-lg disabled:opacity-50"
+          style={{ background: C.orange, color: "#fff" }}>
+          {confirming ? (status === "compress" ? "جاري تحسين..." : "...") : "تأكيد"}
+        </button>
+      </div>
+      <div className="relative flex-1">
+        <Cropper
+          image={src} crop={crop} zoom={zoom} aspect={AD_ASPECT}
+          onCropChange={setCrop} onZoomChange={setZoom} onCropComplete={onCropComplete}
+          style={{ containerStyle: { background: "#000" }, cropAreaStyle: { borderColor: C.orange } }}
+        />
+      </div>
+      <div className="flex items-center gap-3 px-6 py-4 flex-shrink-0"
+        style={{ borderTop: `1px solid ${C.border}` }}>
+        <span className="text-lg select-none">🔍</span>
+        <input type="range" min={1} max={3} step={0.01} value={zoom}
+          onChange={(e) => setZoom(Number(e.target.value))}
+          className="flex-1 accent-orange-500" />
+        <span className="text-xs font-mono w-8 text-center" style={{ color: C.muted }}>
+          {zoom.toFixed(1)}×
+        </span>
+      </div>
+    </div>
+  );
 }
 
 /* ─────────────────────── Validation ────────────────── */
@@ -149,7 +239,7 @@ function DeleteModal({ onConfirm, onClose }: { onConfirm: () => void; onClose: (
 function AdModal({
   title, form, onChange, onSave, onClose,
   errors, saving, saveError,
-  imagePreview, onImagePick, imageError,
+  imagePreview, onPickFile, onSizeError, imageError,
 }: {
   title:        string;
   form:         AdForm;
@@ -160,7 +250,8 @@ function AdModal({
   saving:       boolean;
   saveError:    string | null;
   imagePreview: string | null;
-  onImagePick:  (file: File) => void;
+  onPickFile:   (src: string) => void;
+  onSizeError:  (msg: string | null) => void;
   imageError:   string | null;
 }) {
   const fileRef = useRef<HTMLInputElement>(null);
@@ -172,7 +263,14 @@ function AdModal({
   function handleFile(e: React.ChangeEvent<HTMLInputElement>) {
     const f = e.target.files?.[0];
     e.target.value = "";
-    if (f) onImagePick(f);
+    if (!f) return;
+    if (f.size > 10 * 1024 * 1024) { onSizeError("حجم الصورة أكبر من 10MB"); return; }
+    onSizeError(null);
+    const reader = new FileReader();
+    reader.onload = () => {
+      if (typeof reader.result === "string") onPickFile(reader.result);
+    };
+    reader.readAsDataURL(f);
   }
 
   return (
@@ -336,6 +434,7 @@ export default function AdminAdvertisementsPage() {
   const [imageFile,    setImageFile]    = useState<File | null>(null);
   const [imagePreview, setImagePreview] = useState<string | null>(null);
   const [imageError,   setImageError]   = useState<string | null>(null);
+  const [cropSrc,      setCropSrc]      = useState<string | null>(null);
 
   /* ── Fetch ── */
   async function fetchAds() {
@@ -390,18 +489,21 @@ export default function AdminAdvertisementsPage() {
     setImageFile(null);
     setImagePreview(null);
     setImageError(null);
+    setCropSrc(null);
   }
 
-  function handleImagePick(file: File) {
-    if (file.size > 5 * 1024 * 1024) {
-      setImageError("حجم الصورة أكبر من 5MB");
-      return;
-    }
-    setImageError(null);
-    setErrors((p) => ({ ...p, image: undefined }));
+  function openCrop(src: string) { setCropSrc(src); }
+
+  function handleCropConfirm(blob: Blob) {
+    const file = new File([blob], `ad-${Date.now()}.jpg`, { type: "image/jpeg" });
     setImageFile(file);
-    setImagePreview(URL.createObjectURL(file));
+    setImagePreview(URL.createObjectURL(blob));
+    setErrors((p) => ({ ...p, image: undefined }));
+    setImageError(null);
+    setCropSrc(null);
   }
+
+  function handleCropCancel() { setCropSrc(null); }
 
   /* ── Save ── */
   async function handleSave() {
@@ -622,7 +724,8 @@ export default function AdminAdvertisementsPage() {
           saving={saving}
           saveError={saveError}
           imagePreview={imagePreview}
-          onImagePick={handleImagePick}
+          onPickFile={openCrop}
+          onSizeError={setImageError}
           imageError={imageError}
         />
       )}
@@ -632,6 +735,15 @@ export default function AdminAdvertisementsPage() {
         <DeleteModal
           onConfirm={handleDelete}
           onClose={() => setDeleteId(null)}
+        />
+      )}
+
+      {/* Crop modal — full screen, z-[70] above ad modal */}
+      {cropSrc && (
+        <CropModal
+          src={cropSrc}
+          onConfirm={handleCropConfirm}
+          onCancel={handleCropCancel}
         />
       )}
     </div>
