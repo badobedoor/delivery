@@ -108,34 +108,34 @@ function SearchBar({ value, onChange, placeholder }: {
   );
 }
 
-function Modal({ open, title, onClose, onSave, saving = false, disabled = false, children }: {
+function Modal({ open, title, onClose, onSave, saving = false, children }: {
   open: boolean; title: string; onClose: () => void; onSave: () => void;
-  saving?: boolean; disabled?: boolean; children: React.ReactNode;
+  saving?: boolean; children: React.ReactNode;
 }) {
   if (!open) return null;
   return (
     <div
       className="fixed inset-0 z-50 flex items-center justify-center p-4"
       style={{ background: "rgba(0,0,0,0.7)" }}
-      onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}
+      onClick={(e) => { if (!saving && e.target === e.currentTarget) onClose(); }}
     >
       <div className="w-full max-w-sm rounded-2xl flex flex-col"
         style={{ background: C.card, border: `1px solid ${C.border}` }}>
         <div className="flex items-center justify-between px-5 py-4 border-b" style={{ borderColor: C.border }}>
           <h2 className="text-base font-black" style={{ color: C.text }}>{title}</h2>
-          <button onClick={onClose}
-            className="w-8 h-8 rounded-full flex items-center justify-center text-sm hover:opacity-70"
+          <button onClick={onClose} disabled={saving}
+            className="w-8 h-8 rounded-full flex items-center justify-center text-sm hover:opacity-70 disabled:opacity-40"
             style={{ background: C.bg, color: C.muted }}>✕</button>
         </div>
         <div className="px-5 py-4 flex flex-col gap-4">{children}</div>
         <div className="flex gap-3 px-5 py-4 border-t" style={{ borderColor: C.border }}>
-          <button onClick={onSave} disabled={saving || disabled}
-            className="flex-1 py-2.5 rounded-xl text-sm font-bold hover:opacity-90 transition-opacity disabled:opacity-50"
+          <button onClick={onSave} disabled={saving}
+            className="flex-1 py-2.5 rounded-xl text-sm font-bold hover:opacity-90 transition-opacity disabled:opacity-60"
             style={{ background: C.orange, color: "#fff" }}>
-            {saving ? "جاري التشغيل..." : "تشغيل"}
+            {saving ? "جاري الحفظ..." : "حفظ"}
           </button>
           <button onClick={onClose} disabled={saving}
-            className="flex-1 py-2.5 rounded-xl text-sm font-bold hover:opacity-80 transition-opacity disabled:opacity-50"
+            className="flex-1 py-2.5 rounded-xl text-sm font-bold hover:opacity-80 transition-opacity disabled:opacity-40"
             style={{ background: C.bg, color: C.muted, border: `1px solid ${C.border}` }}>
             إلغاء
           </button>
@@ -156,8 +156,8 @@ function Field({ label, required, children }: { label: string; required?: boolea
   );
 }
 
-function TextInput({ value, onChange, placeholder, type = "text" }: {
-  value: string; onChange: (v: string) => void; placeholder?: string; type?: string;
+function TextInput({ value, onChange, placeholder, type = "text", hasError = false }: {
+  value: string; onChange: (v: string) => void; placeholder?: string; type?: string; hasError?: boolean;
 }) {
   return (
     <input
@@ -165,7 +165,7 @@ function TextInput({ value, onChange, placeholder, type = "text" }: {
       onChange={(e) => onChange(e.target.value)}
       placeholder={placeholder}
       className="w-full rounded-xl px-3 py-2.5 text-sm outline-none"
-      style={{ background: C.bg, border: `1px solid ${C.border}`, color: C.text }}
+      style={{ background: C.bg, border: `1px solid ${hasError ? C.red : C.border}`, color: C.text }}
     />
   );
 }
@@ -231,9 +231,7 @@ function DriversTab({ staffList, motos, shifts }: {
   );
 
   function openModal() { setForm(emptyAssignForm); setFormErrs({}); setSaveErr(null); setModal(true); }
-  function close()     { setModal(false); setFormErrs({}); setSaveErr(null); }
-
-  const isFormValid = !!form.driver_id && !!form.motorcycle_id && form.shift_ids.length > 0;
+  function close()     { if (saving) return; setModal(false); setFormErrs({}); setSaveErr(null); }
 
   function validate(): boolean {
     const errs: AssignFormErrs = {};
@@ -252,7 +250,7 @@ function DriversTab({ staffList, motos, shifts }: {
       errs.shift_ids = "اختر وردية واحدة على الأقل";
     } else {
       const duplicate = rows.some((r) =>
-        r.driver_id === form.driver_id &&
+        r.driver_id === Number(form.driver_id) &&
         form.shift_ids.includes(r.shift_id)
       );
       if (duplicate) errs.shift_ids = "هذا السائق يعمل بالفعل في هذه الوردية";
@@ -375,7 +373,7 @@ function DriversTab({ staffList, motos, shifts }: {
         </div>
       </div>
 
-      <Modal open={modal} title="تشغيل سائق" onClose={close} onSave={save} saving={saving} disabled={!isFormValid}>
+      <Modal open={modal} title="تشغيل سائق" onClose={close} onSave={save} saving={saving}>
         {saveErr && (
           <div className="px-4 py-2.5 rounded-xl text-xs font-semibold text-center"
             style={{ background: `${C.red}22`, color: C.red }}>
@@ -388,7 +386,12 @@ function DriversTab({ staffList, motos, shifts }: {
             value={form.driver_id}
             onChange={(e) => { setForm({ ...form, driver_id: e.target.value }); setFormErrs((p) => ({ ...p, driver_id: undefined })); }}
             className="w-full rounded-xl px-3 py-2.5 text-sm outline-none"
-            style={{ background: C.bg, border: `1px solid ${C.border}`, color: form.driver_id ? C.text : C.muted, colorScheme: "dark" }}
+            style={{
+              background: C.bg,
+              border: `1px solid ${formErrs.driver_id ? C.red : C.border}`,
+              color: form.driver_id ? C.text : C.muted,
+              colorScheme: "dark",
+            }}
           >
             <option value="">اختار سائق...</option>
             {staffList.map((s) => (
@@ -403,7 +406,12 @@ function DriversTab({ staffList, motos, shifts }: {
             value={form.motorcycle_id}
             onChange={(e) => { setForm({ ...form, motorcycle_id: e.target.value }); setFormErrs((p) => ({ ...p, motorcycle_id: undefined })); }}
             className="w-full rounded-xl px-3 py-2.5 text-sm outline-none"
-            style={{ background: C.bg, border: `1px solid ${C.border}`, color: form.motorcycle_id ? C.text : C.muted, colorScheme: "dark" }}
+            style={{
+              background: C.bg,
+              border: `1px solid ${formErrs.motorcycle_id ? C.red : C.border}`,
+              color: form.motorcycle_id ? C.text : C.muted,
+              colorScheme: "dark",
+            }}
           >
             <option value="">اختار موتسكل...</option>
             {motos.filter((m) => m.active).map((m) => (
@@ -415,7 +423,7 @@ function DriversTab({ staffList, motos, shifts }: {
 
         <Field label="الورديات" required>
           <div className="flex flex-col gap-2 rounded-xl px-3 py-3"
-            style={{ background: C.bg, border: `1px solid ${C.border}` }}>
+            style={{ background: C.bg, border: `1px solid ${formErrs.shift_ids ? C.red : C.border}` }}>
             {shifts.length === 0 ? (
               <p className="text-xs" style={{ color: C.muted }}>لا توجد ورديات</p>
             ) : shifts.map((s) => {
@@ -460,6 +468,8 @@ function MotosTab({ onRefresh }: { onRefresh: () => void }) {
   const [modal,   setModal]   = useState<{ open: boolean; id?: string }>({ open: false });
   const [saving,  setSaving]  = useState(false);
   const [form,    setForm]    = useState({ name: "", active: true });
+  const [nameErr, setNameErr] = useState("");
+  const [saveErr, setSaveErr] = useState<string | null>(null);
 
   useEffect(() => { fetchMotos(); }, []);
 
@@ -484,14 +494,15 @@ function MotosTab({ onRefresh }: { onRefresh: () => void }) {
   const isEdit   = modal.id !== undefined;
   const filtered = rows.filter((r) => !search.trim() || r.name.includes(search));
 
-  function openAdd()         { setForm({ name: "", active: true }); setModal({ open: true }); }
-  function openEdit(m: Moto) { setForm({ name: m.name, active: m.active }); setModal({ open: true, id: m.id }); }
-  function close()           { setModal({ open: false }); }
+  function openAdd()         { setForm({ name: "", active: true }); setNameErr(""); setSaveErr(null); setModal({ open: true }); }
+  function openEdit(m: Moto) { setForm({ name: m.name, active: m.active }); setNameErr(""); setSaveErr(null); setModal({ open: true, id: m.id }); }
+  function close()           { if (saving) return; setModal({ open: false }); setNameErr(""); setSaveErr(null); }
 
   async function save() {
-    if (!form.name.trim()) return;
+    if (!form.name.trim()) { setNameErr("اسم الموتسكل مطلوب"); return; }
     setSaving(true);
-    setOpErr(null);
+    setSaveErr(null);
+    setNameErr("");
     try {
       if (!isEdit) {
         const { error } = await supabase.from("motorcycles")
@@ -508,7 +519,7 @@ function MotosTab({ onRefresh }: { onRefresh: () => void }) {
       close();
     } catch (err) {
       console.error("saveMoto:", err);
-      setOpErr("فشل الحفظ، حاول مرة أخرى");
+      setSaveErr("فشل الحفظ، حاول مرة أخرى");
     } finally {
       setSaving(false);
     }
@@ -592,8 +603,20 @@ function MotosTab({ onRefresh }: { onRefresh: () => void }) {
 
       <Modal open={modal.open} title={isEdit ? "تعديل الموتسكل" : "إضافة موتسكل جديد"}
         onClose={close} onSave={save} saving={saving}>
+        {saveErr && (
+          <div className="px-4 py-2.5 rounded-xl text-xs font-semibold text-center"
+            style={{ background: `${C.red}22`, color: C.red }}>
+            {saveErr}
+          </div>
+        )}
         <Field label="اسم الموتسكل" required>
-          <TextInput value={form.name} onChange={(v) => setForm({ ...form, name: v })} placeholder="مثال: ياماها ٢٠٢٣ - XR150" />
+          <TextInput
+            value={form.name}
+            onChange={(v) => { setForm({ ...form, name: v }); setNameErr(""); }}
+            placeholder="مثال: ياماها ٢٠٢٣ - XR150"
+            hasError={!!nameErr}
+          />
+          {nameErr && <p className="text-xs font-semibold" style={{ color: C.red }}>{nameErr}</p>}
         </Field>
         <ActiveToggle active={form.active} onChange={(v) => setForm({ ...form, active: v })} />
       </Modal>

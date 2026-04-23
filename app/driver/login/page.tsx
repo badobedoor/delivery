@@ -51,7 +51,7 @@ export default function DriverLoginPage() {
 
     const { data, error } = await supabasePublic
       .from("delivery_staff")
-      .select("*")
+      .select("id, name, phone, password, is_active")
       .eq("phone", phone.trim())
       .eq("password", password)
       .eq("is_active", true)

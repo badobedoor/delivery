@@ -37,23 +37,65 @@ function EyeOffIcon() {
 }
 
 /* ══════════════════════════════════════════
+   Shared types & validation
+══════════════════════════════════════════ */
+
+type ModalForm   = { name: string; phone: string; password: string; active: boolean };
+type FieldErrors = { name?: string; phone?: string; password?: string };
+
+const emptyForm: ModalForm = { name: "", phone: "", password: "", active: true };
+
+function dbError(error: { code?: string; message?: string; details?: string }): string {
+  if (error.code === "23505") {
+    const text = `${error.message ?? ""} ${error.details ?? ""}`.toLowerCase();
+    if (text.includes("phone")) return "رقم الهاتف مستخدم بالفعل";
+    if (text.includes("name"))  return "هذا الاسم مستخدم بالفعل";
+    return "هذه البيانات مسجلة بالفعل";
+  }
+  return "حدث خطأ، حاول مرة أخرى";
+}
+
+function validate(form: ModalForm, isEdit: boolean): FieldErrors {
+  console.log("[team/validate] called — name:", JSON.stringify(form.name), "| password empty:", !form.password.trim(), "| isEdit:", isEdit);
+  const errs: FieldErrors = {};
+
+  if (!form.name.trim())
+    errs.name = "الاسم مطلوب";
+  else if (form.name.trim().length < 3)
+    errs.name = "الاسم لازم يكون 3 حروف على الأقل";
+
+  const phone = form.phone.replace(/[\s-]/g, "");
+  if (phone && !/^01[0125][0-9]{8}$/.test(phone))
+    errs.phone = "رقم الهاتف غير صحيح (مثال: 01012345678)";
+
+  if (!isEdit && !form.password.trim())
+    errs.password = "الباسورد مطلوب";
+  else if (form.password.trim() && form.password.trim().length < 6)
+    errs.password = "كلمة المرور لازم تكون 6 حروف على الأقل";
+
+  console.log("[team/validate] result:", Object.keys(errs).length === 0 ? "PASS ✓" : errs);
+  return errs;
+}
+
+/* ══════════════════════════════════════════
    Shared modal
 ══════════════════════════════════════════ */
 
-type ModalForm = { name: string; phone: string; password: string; active: boolean };
-const emptyForm: ModalForm = { name: "", phone: "", password: "", active: true };
-
 function TeamModal({
   open, title, isEdit, showStatus, form, setForm, onSave, onClose,
+  submitting, errors, generalError,
 }: {
-  open:       boolean;
-  title:      string;
-  isEdit:     boolean;
-  showStatus: boolean;
-  form:       ModalForm;
-  setForm:    (f: ModalForm) => void;
-  onSave:     () => void;
-  onClose:    () => void;
+  open:         boolean;
+  title:        string;
+  isEdit:       boolean;
+  showStatus:   boolean;
+  form:         ModalForm;
+  setForm:      (f: ModalForm) => void;
+  onSave:       () => void;
+  onClose:      () => void;
+  submitting:   boolean;
+  errors:       FieldErrors;
+  generalError: string;
 }) {
   const [showPw, setShowPw] = useState(false);
   if (!open) return null;
@@ -62,7 +104,7 @@ function TeamModal({
     <div
       className="fixed inset-0 z-50 flex items-center justify-center p-4"
       style={{ background: "rgba(0,0,0,0.7)" }}
-      onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}
+      onClick={(e) => { if (!submitting && e.target === e.currentTarget) onClose(); }}
     >
       <div className="w-full max-w-sm rounded-2xl flex flex-col max-h-[90vh]"
         style={{ background: C.card, border: `1px solid ${C.border}` }}>
@@ -71,13 +113,20 @@ function TeamModal({
         <div className="flex items-center justify-between px-5 py-4 border-b flex-shrink-0"
           style={{ borderColor: C.border }}>
           <h2 className="text-base font-black" style={{ color: C.text }}>{title}</h2>
-          <button onClick={onClose}
-            className="w-8 h-8 rounded-full flex items-center justify-center text-sm hover:opacity-70"
+          <button onClick={onClose} disabled={submitting}
+            className="w-8 h-8 rounded-full flex items-center justify-center text-sm hover:opacity-70 disabled:opacity-40"
             style={{ background: C.bg, color: C.muted }}>✕</button>
         </div>
 
         {/* body */}
         <div className="flex-1 overflow-y-auto px-5 py-4 flex flex-col gap-4">
+
+          {generalError && (
+            <div className="rounded-xl px-3 py-2.5 text-sm"
+              style={{ background: `${C.red}18`, border: `1px solid ${C.red}55`, color: C.red }}>
+              {generalError}
+            </div>
+          )}
 
           <div className="flex flex-col gap-1.5">
             <label className="text-xs font-semibold" style={{ color: C.muted }}>
@@ -89,8 +138,13 @@ function TeamModal({
               onChange={(e) => setForm({ ...form, name: e.target.value })}
               placeholder="الاسم الكامل"
               className="w-full rounded-xl px-3 py-2.5 text-sm outline-none"
-              style={{ background: C.bg, border: `1px solid ${C.border}`, color: C.text }}
+              style={{
+                background: C.bg,
+                border:     `1px solid ${errors.name ? C.red : C.border}`,
+                color:      C.text,
+              }}
             />
+            {errors.name && <p className="text-xs" style={{ color: C.red }}>{errors.name}</p>}
           </div>
 
           <div className="flex flex-col gap-1.5">
@@ -99,10 +153,11 @@ function TeamModal({
               type="tel"
               value={form.phone}
               onChange={(e) => setForm({ ...form, phone: e.target.value })}
-              placeholder="01XX-XXX-XXXX"
+              placeholder="01012345678"
               className="w-full rounded-xl px-3 py-2.5 text-sm outline-none"
-              style={{ background: C.bg, border: `1px solid ${C.border}`, color: C.text }}
+              style={{ background: C.bg, border: `1px solid ${errors.phone ? C.red : C.border}`, color: C.text }}
             />
+            {errors.phone && <p className="text-xs" style={{ color: C.red }}>{errors.phone}</p>}
           </div>
 
           <div className="flex flex-col gap-1.5">
@@ -120,7 +175,7 @@ function TeamModal({
                 className="w-full rounded-xl px-3 py-2.5 text-sm outline-none"
                 style={{
                   background:  C.bg,
-                  border:      `1px solid ${C.border}`,
+                  border:      `1px solid ${errors.password ? C.red : C.border}`,
                   color:       C.text,
                   paddingLeft: "40px",
                 }}
@@ -134,6 +189,7 @@ function TeamModal({
                 {showPw ? <EyeOffIcon /> : <EyeIcon />}
               </button>
             </div>
+            {errors.password && <p className="text-xs" style={{ color: C.red }}>{errors.password}</p>}
           </div>
 
           {showStatus && (
@@ -157,12 +213,22 @@ function TeamModal({
 
         {/* footer */}
         <div className="flex gap-3 px-5 py-4 border-t flex-shrink-0" style={{ borderColor: C.border }}>
-          <button onClick={onSave}
-            className="flex-1 py-2.5 rounded-xl text-sm font-bold hover:opacity-90 transition-opacity"
-            style={{ background: C.orange, color: "#fff" }}>حفظ</button>
-          <button onClick={onClose}
-            className="flex-1 py-2.5 rounded-xl text-sm font-bold hover:opacity-80 transition-opacity"
-            style={{ background: C.bg, color: C.muted, border: `1px solid ${C.border}` }}>إلغاء</button>
+          <button
+            onClick={onSave}
+            disabled={submitting}
+            className="flex-1 py-2.5 rounded-xl text-sm font-bold transition-opacity disabled:opacity-60"
+            style={{ background: C.orange, color: "#fff" }}
+          >
+            {submitting ? "جاري الحفظ..." : "حفظ"}
+          </button>
+          <button
+            onClick={onClose}
+            disabled={submitting}
+            className="flex-1 py-2.5 rounded-xl text-sm font-bold transition-opacity disabled:opacity-40"
+            style={{ background: C.bg, color: C.muted, border: `1px solid ${C.border}` }}
+          >
+            إلغاء
+          </button>
         </div>
 
       </div>
@@ -216,7 +282,6 @@ type DriverRow = {
   phone: string | null;
   password: string | null;
   is_active: boolean;
-  created_at: string;
 };
 
 /* ══════════════════════════════════════════
@@ -230,12 +295,44 @@ function AdminsTab({
   managers: StaffRow[];
   onRefresh: () => void;
 }) {
-  const [modal,    setModal]    = useState(false);
-  const [form,     setForm]     = useState(emptyForm);
-  const [deleteId, setDeleteId] = useState<number | null>(null);
+  const [modal,        setModal]        = useState(false);
+  const [form,         setForm]         = useState(emptyForm);
+  const [deleteId,     setDeleteId]     = useState<number | null>(null);
+  const [submitting,   setSubmitting]   = useState(false);
+  const [errors,       setErrors]       = useState<FieldErrors>({});
+  const [generalError, setGeneralError] = useState("");
+
+  function openModal() {
+    setForm(emptyForm);
+    setErrors({});
+    setGeneralError("");
+    setSubmitting(false);
+    setModal(true);
+  }
+
+  function closeModal() {
+    setModal(false);
+    setErrors({});
+    setGeneralError("");
+    setSubmitting(false);
+  }
+
+  function setFormAndClear(f: ModalForm) {
+    setForm(f);
+    if (Object.keys(errors).length > 0) setErrors({});
+  }
 
   async function handleSave() {
-    if (!form.name.trim() || !form.password.trim()) return;
+    console.log("[admins/handleSave] called — form:", { name: form.name, hasPassword: !!form.password.trim() });
+    const errs = validate(form, false);
+    if (Object.keys(errs).length > 0) {
+      console.log("[admins/handleSave] BLOCKED by validation:", errs);
+      setErrors(errs);
+      return;
+    }
+    console.log("[admins/handleSave] validation passed → Supabase insert");
+    setSubmitting(true);
+    setGeneralError("");
 
     const { error } = await supabasePublic
       .from("staff")
@@ -247,8 +344,16 @@ function AdminsTab({
         is_active: true,
       }]);
 
-    if (!error) {
+    if (error) {
+      console.log("[admins/handleSave] Supabase error:", error.message);
+      setGeneralError(dbError(error));
+      setSubmitting(false);
+    } else {
+      console.log("[admins/handleSave] success → modal closed");
       setForm(emptyForm);
+      setErrors({});
+      setGeneralError("");
+      setSubmitting(false);
       setModal(false);
       onRefresh();
     }
@@ -264,7 +369,7 @@ function AdminsTab({
     <>
       <div className="flex flex-col gap-4">
         <div className="flex justify-start">
-          <button onClick={() => { setForm(emptyForm); setModal(true); }}
+          <button onClick={openModal}
             className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-bold hover:opacity-90 transition-opacity"
             style={{ background: C.orange, color: "#fff" }}>
             <span className="text-base leading-none">+</span> إضافة مدير
@@ -339,8 +444,11 @@ function AdminsTab({
         </div>
       </div>
 
-      <TeamModal open={modal} title="إضافة مدير جديد" isEdit={false} showStatus={false}
-        form={form} setForm={setForm} onSave={handleSave} onClose={() => setModal(false)} />
+      <TeamModal
+        open={modal} title="إضافة مدير جديد" isEdit={false} showStatus={false}
+        form={form} setForm={setFormAndClear} onSave={handleSave} onClose={closeModal}
+        submitting={submitting} errors={errors} generalError={generalError}
+      />
       <DeleteModal open={deleteId !== null}
         onConfirm={() => deleteId !== null && handleDelete(deleteId)}
         onClose={() => setDeleteId(null)} />
@@ -359,26 +467,58 @@ function StaffTab({
   staff: StaffRow[];
   onRefresh: () => void;
 }) {
-  const [modal,    setModal]    = useState<{ open: boolean; id?: number }>({ open: false });
-  const [form,     setForm]     = useState(emptyForm);
-  const [deleteId, setDeleteId] = useState<number | null>(null);
-  const [search,   setSearch]   = useState("");
+  const [modal,        setModal]        = useState<{ open: boolean; id?: number }>({ open: false });
+  const [form,         setForm]         = useState(emptyForm);
+  const [deleteId,     setDeleteId]     = useState<number | null>(null);
+  const [search,       setSearch]       = useState("");
+  const [submitting,   setSubmitting]   = useState(false);
+  const [errors,       setErrors]       = useState<FieldErrors>({});
+  const [generalError, setGeneralError] = useState("");
 
   const isEdit   = modal.id !== undefined;
   const filtered = staff.filter((r) =>
     !search.trim() || r.name.includes(search) || (r.phone ?? "").includes(search),
   );
 
-  function openAdd() { setForm(emptyForm); setModal({ open: true }); }
+  function openAdd() {
+    setForm(emptyForm);
+    setErrors({});
+    setGeneralError("");
+    setSubmitting(false);
+    setModal({ open: true });
+  }
+
   function openEdit(r: StaffRow) {
     setForm({ name: r.name, phone: r.phone ?? "", password: "", active: r.is_active });
+    setErrors({});
+    setGeneralError("");
+    setSubmitting(false);
     setModal({ open: true, id: r.id });
   }
-  function closeModal() { setModal({ open: false }); }
+
+  function closeModal() {
+    setModal({ open: false });
+    setErrors({});
+    setGeneralError("");
+    setSubmitting(false);
+  }
+
+  function setFormAndClear(f: ModalForm) {
+    setForm(f);
+    if (Object.keys(errors).length > 0) setErrors({});
+  }
 
   async function handleSave() {
-    if (!form.name.trim()) return;
-    if (!isEdit && !form.password.trim()) return;
+    console.log("[staff/handleSave] called — form:", { name: form.name, hasPassword: !!form.password.trim(), isEdit });
+    const errs = validate(form, isEdit);
+    if (Object.keys(errs).length > 0) {
+      console.log("[staff/handleSave] BLOCKED by validation:", errs);
+      setErrors(errs);
+      return;
+    }
+    console.log("[staff/handleSave] validation passed → Supabase", isEdit ? "update" : "insert");
+    setSubmitting(true);
+    setGeneralError("");
 
     if (!isEdit) {
       const { error } = await supabasePublic
@@ -390,7 +530,17 @@ function StaffTab({
           role:      "staff",
           is_active: form.active,
         }]);
-      if (!error) { closeModal(); onRefresh(); }
+
+      if (error) {
+        console.log("[staff/handleSave] Supabase insert error:", error.message);
+        setGeneralError(dbError(error));
+        setSubmitting(false);
+      } else {
+        console.log("[staff/handleSave] insert success → modal closed");
+        setSubmitting(false);
+        closeModal();
+        onRefresh();
+      }
     } else {
       const update: Record<string, unknown> = {
         name:      form.name.trim(),
@@ -403,7 +553,17 @@ function StaffTab({
         .from("staff")
         .update(update)
         .eq("id", modal.id!);
-      if (!error) { closeModal(); onRefresh(); }
+
+      if (error) {
+        console.log("[staff/handleSave] Supabase update error:", error.message);
+        setGeneralError(dbError(error));
+        setSubmitting(false);
+      } else {
+        console.log("[staff/handleSave] update success → modal closed");
+        setSubmitting(false);
+        closeModal();
+        onRefresh();
+      }
     }
   }
 
@@ -505,9 +665,12 @@ function StaffTab({
         </div>
       </div>
 
-      <TeamModal open={modal.open} title={isEdit ? "تعديل موظف" : "إضافة موظف جديد"}
-        isEdit={isEdit} showStatus={true} form={form} setForm={setForm}
-        onSave={handleSave} onClose={closeModal} />
+      <TeamModal
+        open={modal.open} title={isEdit ? "تعديل موظف" : "إضافة موظف جديد"}
+        isEdit={isEdit} showStatus={true} form={form} setForm={setFormAndClear}
+        onSave={handleSave} onClose={closeModal}
+        submitting={submitting} errors={errors} generalError={generalError}
+      />
       <DeleteModal open={deleteId !== null}
         onConfirm={() => deleteId !== null && handleDelete(deleteId)}
         onClose={() => setDeleteId(null)} />
@@ -526,26 +689,58 @@ function DriversTab({
   drivers: DriverRow[];
   onRefresh: () => void;
 }) {
-  const [modal,    setModal]    = useState<{ open: boolean; id?: number }>({ open: false });
-  const [form,     setForm]     = useState(emptyForm);
-  const [deleteId, setDeleteId] = useState<number | null>(null);
-  const [search,   setSearch]   = useState("");
+  const [modal,        setModal]        = useState<{ open: boolean; id?: number }>({ open: false });
+  const [form,         setForm]         = useState(emptyForm);
+  const [deleteId,     setDeleteId]     = useState<number | null>(null);
+  const [search,       setSearch]       = useState("");
+  const [submitting,   setSubmitting]   = useState(false);
+  const [errors,       setErrors]       = useState<FieldErrors>({});
+  const [generalError, setGeneralError] = useState("");
 
   const isEdit   = modal.id !== undefined;
   const filtered = drivers.filter((r) =>
     !search.trim() || r.name.includes(search) || (r.phone ?? "").includes(search),
   );
 
-  function openAdd() { setForm(emptyForm); setModal({ open: true }); }
+  function openAdd() {
+    setForm(emptyForm);
+    setErrors({});
+    setGeneralError("");
+    setSubmitting(false);
+    setModal({ open: true });
+  }
+
   function openEdit(r: DriverRow) {
     setForm({ name: r.name, phone: r.phone ?? "", password: "", active: r.is_active });
+    setErrors({});
+    setGeneralError("");
+    setSubmitting(false);
     setModal({ open: true, id: r.id });
   }
-  function closeModal() { setModal({ open: false }); }
+
+  function closeModal() {
+    setModal({ open: false });
+    setErrors({});
+    setGeneralError("");
+    setSubmitting(false);
+  }
+
+  function setFormAndClear(f: ModalForm) {
+    setForm(f);
+    if (Object.keys(errors).length > 0) setErrors({});
+  }
 
   async function handleSave() {
-    if (!form.name.trim()) return;
-    if (!isEdit && !form.password.trim()) return;
+    console.log("[delivery/handleSave] called — form:", { name: form.name, hasPassword: !!form.password.trim(), isEdit });
+    const errs = validate(form, isEdit);
+    if (Object.keys(errs).length > 0) {
+      console.log("[delivery/handleSave] BLOCKED by validation:", errs);
+      setErrors(errs);
+      return;
+    }
+    console.log("[delivery/handleSave] validation passed → Supabase", isEdit ? "update" : "insert");
+    setSubmitting(true);
+    setGeneralError("");
 
     if (!isEdit) {
       const { error } = await supabasePublic
@@ -556,7 +751,17 @@ function DriversTab({
           password:  form.password,
           is_active: form.active,
         }]);
-      if (!error) { closeModal(); onRefresh(); }
+
+      if (error) {
+        console.log("[delivery/handleSave] Supabase insert error:", error.message);
+        setGeneralError(dbError(error));
+        setSubmitting(false);
+      } else {
+        console.log("[delivery/handleSave] insert success → modal closed");
+        setSubmitting(false);
+        closeModal();
+        onRefresh();
+      }
     } else {
       const update: Record<string, unknown> = {
         name:      form.name.trim(),
@@ -569,7 +774,17 @@ function DriversTab({
         .from("delivery_staff")
         .update(update)
         .eq("id", modal.id!);
-      if (!error) { closeModal(); onRefresh(); }
+
+      if (error) {
+        console.log("[delivery/handleSave] Supabase update error:", error.message);
+        setGeneralError(dbError(error));
+        setSubmitting(false);
+      } else {
+        console.log("[delivery/handleSave] update success → modal closed");
+        setSubmitting(false);
+        closeModal();
+        onRefresh();
+      }
     }
   }
 
@@ -607,12 +822,11 @@ function DriversTab({
               <thead>
                 <tr style={{ borderBottom: `1px solid ${C.border}` }}>
                   {[
-                    { label: "الاسم",         hide: "" },
-                    { label: "رقم الهاتف",    hide: " hidden sm:table-cell" },
-                    { label: "الباسورد",      hide: " hidden md:table-cell" },
-                    { label: "الحالة",         hide: "" },
-                    { label: "تاريخ الإنشاء", hide: " hidden lg:table-cell" },
-                    { label: "إجراءات",        hide: "" },
+                    { label: "الاسم",      hide: "" },
+                    { label: "رقم الهاتف", hide: " hidden sm:table-cell" },
+                    { label: "الباسورد",   hide: " hidden md:table-cell" },
+                    { label: "الحالة",      hide: "" },
+                    { label: "إجراءات",     hide: "" },
                   ].map(({ label, hide }) => (
                     <th key={label}
                       className={`px-4 py-3 text-right font-semibold text-xs whitespace-nowrap${hide}`}
@@ -622,7 +836,7 @@ function DriversTab({
               </thead>
               <tbody>
                 {filtered.length === 0 ? (
-                  <tr><td colSpan={6} className="px-4 py-12 text-center text-sm" style={{ color: C.muted }}>لا توجد نتائج</td></tr>
+                  <tr><td colSpan={5} className="px-4 py-12 text-center text-sm" style={{ color: C.muted }}>لا توجد نتائج</td></tr>
                 ) : filtered.map((r, i) => (
                   <tr key={r.id} style={{ borderBottom: i < filtered.length - 1 ? `1px solid ${C.border}` : "none" }}>
                     <td className="px-4 py-3">
@@ -647,9 +861,6 @@ function DriversTab({
                         {r.is_active ? "نشط" : "مش نشط"}
                       </span>
                     </td>
-                    <td className="hidden lg:table-cell px-4 py-3 text-xs whitespace-nowrap" style={{ color: C.muted }}>
-                      {new Date(r.created_at).toLocaleDateString("ar-EG")}
-                    </td>
                     <td className="px-4 py-3">
                       <div className="flex items-center gap-2">
                         <button onClick={() => openEdit(r)}
@@ -671,9 +882,12 @@ function DriversTab({
         </div>
       </div>
 
-      <TeamModal open={modal.open} title={isEdit ? "تعديل دلفري" : "إضافة دلفري جديد"}
-        isEdit={isEdit} showStatus={true} form={form} setForm={setForm}
-        onSave={handleSave} onClose={closeModal} />
+      <TeamModal
+        open={modal.open} title={isEdit ? "تعديل دلفري" : "إضافة دلفري جديد"}
+        isEdit={isEdit} showStatus={true} form={form} setForm={setFormAndClear}
+        onSave={handleSave} onClose={closeModal}
+        submitting={submitting} errors={errors} generalError={generalError}
+      />
       <DeleteModal open={deleteId !== null}
         onConfirm={() => deleteId !== null && handleDelete(deleteId)}
         onClose={() => setDeleteId(null)} />
@@ -705,7 +919,7 @@ export default function AdminTeamPage() {
   async function fetchDrivers() {
     const { data, error } = await supabasePublic
       .from("delivery_staff")
-      .select("*")
+      .select("id, name, phone, password, is_active")
       .order("name");
 
     if (error) {
