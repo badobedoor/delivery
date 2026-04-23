@@ -18,14 +18,14 @@ const C = {
 /* ─────────────────────── Types ─────────────────────── */
 
 type Assignment = {
-  id:              number;
-  driver_id:       number;
-  driver_name:     string;
-  motorcycle_id:   string;
+  id:             number;
+  driver_id:      number;
+  driver_name:    string;
+  motorcycle_id:  string;
   motorcycle_name: string;
-  shift_id:        number;
-  shift_num:       number;
-  is_active:       boolean;
+  shift_id:       number;
+  shift_num:      number;
+  is_active:      boolean;
 };
 
 type StaffMember = { id: number; name: string };
@@ -33,14 +33,19 @@ type Moto        = { id: string; name: string; active: boolean };
 type Shift       = { id: number; num: number };
 
 type AssignForm = {
-  driver_id:     string;
+  driver_id:    string;
   motorcycle_id: string;
-  shift_ids:     number[];
-  is_active:     boolean;
+  shift_ids:    number[];
+  is_active:    boolean;
 };
 type AssignFormErrs = Partial<Record<"driver_id" | "motorcycle_id" | "shift_ids", string>>;
 
-const emptyAssignForm: AssignForm = { driver_id: "", motorcycle_id: "", shift_ids: [], is_active: true };
+const emptyAssignForm: AssignForm = {
+  driver_id:    "",
+  motorcycle_id: "",
+  shift_ids:    [],
+  is_active:    true,
+};
 
 /* ─────────────────────── Row mappers ───────────────── */
 
@@ -51,7 +56,7 @@ function fromAssignmentRow(r: any): Assignment {
     driver_id:       r.driver_id,
     driver_name:     (r.delivery_staff as { name: string } | null)?.name ?? "—",
     motorcycle_id:   r.motorcycle_id ?? "",
-    motorcycle_name: (r.motorcycles   as { name: string } | null)?.name ?? "—",
+    motorcycle_name: (r.motorcycles  as { name: string } | null)?.name ?? "—",
     shift_id:        r.shift_id,
     shift_num:       (r.shifts as { num: number } | null)?.num ?? 0,
     is_active:       r.is_active ?? true,
@@ -72,18 +77,6 @@ function ErrorBanner({ msg, onDismiss }: { msg: string; onDismiss: () => void })
       <span>{msg}</span>
       <button onClick={onDismiss} className="ml-3 opacity-70 hover:opacity-100">✕</button>
     </div>
-  );
-}
-
-function StatusBadge({ active, onToggle }: { active: boolean; onToggle: () => void }) {
-  return (
-    <button
-      onClick={onToggle}
-      className="px-2.5 py-1 rounded-full text-[10px] font-bold whitespace-nowrap transition-all"
-      style={{ background: active ? `${C.green}22` : `${C.red}22`, color: active ? C.green : C.red }}
-    >
-      {active ? "نشط" : "مش نشط"}
-    </button>
   );
 }
 
@@ -108,87 +101,23 @@ function SearchBar({ value, onChange, placeholder }: {
   );
 }
 
-function Modal({ open, title, onClose, onSave, saving = false, children }: {
-  open: boolean; title: string; onClose: () => void; onSave: () => void;
-  saving?: boolean; children: React.ReactNode;
-}) {
-  if (!open) return null;
+function StatusBadge({ active, onToggle }: { active: boolean; onToggle: () => void }) {
   return (
-    <div
-      className="fixed inset-0 z-50 flex items-center justify-center p-4"
-      style={{ background: "rgba(0,0,0,0.7)" }}
-      onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}
+    <button
+      onClick={onToggle}
+      className="px-2.5 py-1 rounded-full text-[10px] font-bold whitespace-nowrap transition-all"
+      style={{ background: active ? `${C.green}22` : `${C.red}22`, color: active ? C.green : C.red }}
     >
-      <div className="w-full max-w-sm rounded-2xl flex flex-col"
-        style={{ background: C.card, border: `1px solid ${C.border}` }}>
-        <div className="flex items-center justify-between px-5 py-4 border-b" style={{ borderColor: C.border }}>
-          <h2 className="text-base font-black" style={{ color: C.text }}>{title}</h2>
-          <button onClick={onClose}
-            className="w-8 h-8 rounded-full flex items-center justify-center text-sm hover:opacity-70"
-            style={{ background: C.bg, color: C.muted }}>✕</button>
-        </div>
-        <div className="px-5 py-4 flex flex-col gap-4">{children}</div>
-        <div className="flex gap-3 px-5 py-4 border-t" style={{ borderColor: C.border }}>
-          <button onClick={onSave} disabled={saving}
-            className="flex-1 py-2.5 rounded-xl text-sm font-bold hover:opacity-90 transition-opacity disabled:opacity-50"
-            style={{ background: C.orange, color: "#fff" }}>
-            {saving ? "جاري الحفظ..." : "تشغيل"}
-          </button>
-          <button onClick={onClose} disabled={saving}
-            className="flex-1 py-2.5 rounded-xl text-sm font-bold hover:opacity-80 transition-opacity disabled:opacity-50"
-            style={{ background: C.bg, color: C.muted, border: `1px solid ${C.border}` }}>
-            إلغاء
-          </button>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function Field({ label, required, children }: { label: string; required?: boolean; children: React.ReactNode }) {
-  return (
-    <div className="flex flex-col gap-1.5">
-      <label className="text-xs font-semibold" style={{ color: C.muted }}>
-        {label}{required && <span style={{ color: C.red }}> *</span>}
-      </label>
-      {children}
-    </div>
-  );
-}
-
-function TextInput({ value, onChange, placeholder, type = "text" }: {
-  value: string; onChange: (v: string) => void; placeholder?: string; type?: string;
-}) {
-  return (
-    <input
-      type={type} value={value}
-      onChange={(e) => onChange(e.target.value)}
-      placeholder={placeholder}
-      className="w-full rounded-xl px-3 py-2.5 text-sm outline-none"
-      style={{ background: C.bg, border: `1px solid ${C.border}`, color: C.text }}
-    />
-  );
-}
-
-function ActiveToggle({ active, onChange }: { active: boolean; onChange: (v: boolean) => void }) {
-  return (
-    <div className="flex items-center justify-between">
-      <span className="text-xs font-semibold" style={{ color: C.muted }}>الحالة</span>
-      <button
-        onClick={() => onChange(!active)}
-        className="flex items-center gap-2 px-3 py-1.5 rounded-full text-xs font-bold transition-all"
-        style={{ background: active ? `${C.green}22` : `${C.red}22`, color: active ? C.green : C.red }}
-      >
-        <span className="w-2 h-2 rounded-full" style={{ background: active ? C.green : C.red }} />
-        {active ? "نشط" : "مش نشط"}
-      </button>
-    </div>
+      {active ? "نشط" : "مش نشط"}
+    </button>
   );
 }
 
 /* ─────────────────────── Tab 1: Assignments ────────── */
 
-function DriversTab({ staffList, motos, shifts }: {
+function AssignTab({
+  staffList, motos, shifts,
+}: {
   staffList: StaffMember[]; motos: Moto[]; shifts: Shift[];
 }) {
   const [rows,     setRows]     = useState<Assignment[]>([]);
@@ -235,17 +164,9 @@ function DriversTab({ staffList, motos, shifts }: {
 
   function validate(): boolean {
     const errs: AssignFormErrs = {};
-    if (!form.driver_id)             errs.driver_id    = "يجب اختيار سائق";
-    if (!form.motorcycle_id)         errs.motorcycle_id = "يجب اختيار موتسكل";
-    else if (form.shift_ids.length > 0) {
-      const conflict = rows.some((r) =>
-        r.motorcycle_id === form.motorcycle_id &&
-        r.is_active &&
-        form.shift_ids.includes(r.shift_id)
-      );
-      if (conflict) errs.motorcycle_id = "هذا الموتوسيكل مستخدم في نفس الوردية";
-    }
-    if (form.shift_ids.length === 0) errs.shift_ids    = "يجب اختيار وردية واحدة على الأقل";
+    if (!form.driver_id)                   errs.driver_id    = "يجب اختيار سائق";
+    if (!form.motorcycle_id)               errs.motorcycle_id = "يجب اختيار موتسكل";
+    if (form.shift_ids.length === 0)       errs.shift_ids    = "يجب اختيار وردية واحدة على الأقل";
     setFormErrs(errs);
     return Object.keys(errs).length === 0;
   }
@@ -257,10 +178,10 @@ function DriversTab({ staffList, motos, shifts }: {
     try {
       const { error } = await supabase.from("delivery_shifts").insert(
         form.shift_ids.map((sid) => ({
-          driver_id:     Number(form.driver_id),
+          driver_id:    Number(form.driver_id),
           motorcycle_id: form.motorcycle_id,
-          shift_id:      sid,
-          is_active:     form.is_active,
+          shift_id:     sid,
+          is_active:    form.is_active,
         }))
       );
       if (error) throw error;
@@ -299,9 +220,11 @@ function DriversTab({ staffList, motos, shifts }: {
 
         <div className="flex items-center gap-3">
           <SearchBar value={search} onChange={setSearch} placeholder="ابحث عن سائق أو موتسكل..." />
-          <button onClick={openModal}
+          <button
+            onClick={openModal}
             className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-bold flex-shrink-0 hover:opacity-90 transition-opacity"
-            style={{ background: C.orange, color: "#fff" }}>
+            style={{ background: C.orange, color: "#fff" }}
+          >
             <span className="text-base leading-none">+</span>
             <span className="hidden sm:inline">تشغيل سائق</span>
           </button>
@@ -363,77 +286,134 @@ function DriversTab({ staffList, motos, shifts }: {
         </div>
       </div>
 
-      <Modal open={modal} title="تشغيل سائق" onClose={close} onSave={save} saving={saving}>
-        {saveErr && (
-          <div className="px-4 py-2.5 rounded-xl text-xs font-semibold text-center"
-            style={{ background: `${C.red}22`, color: C.red }}>
-            {saveErr}
-          </div>
-        )}
+      {/* ── Add Assignment Modal ── */}
+      {modal && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center p-4"
+          style={{ background: "rgba(0,0,0,0.7)" }}
+          onClick={(e) => { if (e.target === e.currentTarget) close(); }}
+        >
+          <div className="w-full max-w-sm rounded-2xl flex flex-col"
+            style={{ background: C.card, border: `1px solid ${C.border}` }}>
 
-        <Field label="السائق" required>
-          <select
-            value={form.driver_id}
-            onChange={(e) => { setForm({ ...form, driver_id: e.target.value }); setFormErrs((p) => ({ ...p, driver_id: undefined })); }}
-            className="w-full rounded-xl px-3 py-2.5 text-sm outline-none"
-            style={{ background: C.bg, border: `1px solid ${C.border}`, color: form.driver_id ? C.text : C.muted, colorScheme: "dark" }}
-          >
-            <option value="">اختار سائق...</option>
-            {staffList.map((s) => (
-              <option key={s.id} value={s.id}>{s.name}</option>
-            ))}
-          </select>
-          {formErrs.driver_id && <p className="text-xs font-semibold" style={{ color: C.red }}>{formErrs.driver_id}</p>}
-        </Field>
+            <div className="flex items-center justify-between px-5 py-4 border-b" style={{ borderColor: C.border }}>
+              <h2 className="text-base font-black" style={{ color: C.text }}>تشغيل سائق جديد</h2>
+              <button onClick={close}
+                className="w-8 h-8 rounded-full flex items-center justify-center text-sm hover:opacity-70"
+                style={{ background: C.bg, color: C.muted }}>✕</button>
+            </div>
 
-        <Field label="الموتسكل" required>
-          <select
-            value={form.motorcycle_id}
-            onChange={(e) => { setForm({ ...form, motorcycle_id: e.target.value }); setFormErrs((p) => ({ ...p, motorcycle_id: undefined })); }}
-            className="w-full rounded-xl px-3 py-2.5 text-sm outline-none"
-            style={{ background: C.bg, border: `1px solid ${C.border}`, color: form.motorcycle_id ? C.text : C.muted, colorScheme: "dark" }}
-          >
-            <option value="">اختار موتسكل...</option>
-            {motos.filter((m) => m.active).map((m) => (
-              <option key={m.id} value={m.id}>🛵 {m.name}</option>
-            ))}
-          </select>
-          {formErrs.motorcycle_id && <p className="text-xs font-semibold" style={{ color: C.red }}>{formErrs.motorcycle_id}</p>}
-        </Field>
+            <div className="px-5 py-4 flex flex-col gap-4">
+              {saveErr && (
+                <div className="px-4 py-2.5 rounded-xl text-xs font-semibold text-center"
+                  style={{ background: `${C.red}22`, color: C.red }}>
+                  {saveErr}
+                </div>
+              )}
 
-        <Field label="الورديات" required>
-          <div className="flex flex-col gap-2 rounded-xl px-3 py-3"
-            style={{ background: C.bg, border: `1px solid ${C.border}` }}>
-            {shifts.length === 0 ? (
-              <p className="text-xs" style={{ color: C.muted }}>لا توجد ورديات</p>
-            ) : shifts.map((s) => {
-              const checked = form.shift_ids.includes(s.id);
-              return (
-                <label key={s.id} className="flex items-center gap-2 cursor-pointer select-none">
-                  <div
-                    onClick={() => {
-                      setForm({ ...form, shift_ids: checked ? form.shift_ids.filter((x) => x !== s.id) : [...form.shift_ids, s.id] });
-                      setFormErrs((p) => ({ ...p, shift_ids: undefined }));
-                    }}
-                    className="w-4 h-4 rounded flex items-center justify-center flex-shrink-0 transition-colors"
-                    style={{ background: checked ? C.teal : "transparent", border: `1.5px solid ${checked ? C.teal : C.border}` }}
-                  >
-                    {checked && (
-                      <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="3" strokeLinecap="round">
-                        <polyline points="20 6 9 17 4 12" />
-                      </svg>
-                    )}
-                  </div>
-                  <span className="text-sm" style={{ color: C.text }}>الوردية {s.num}</span>
+              {/* Driver */}
+              <div className="flex flex-col gap-1.5">
+                <label className="text-xs font-semibold" style={{ color: C.muted }}>
+                  السائق <span style={{ color: C.red }}>*</span>
                 </label>
-              );
-            })}
-          </div>
-          {formErrs.shift_ids && <p className="text-xs font-semibold" style={{ color: C.red }}>{formErrs.shift_ids}</p>}
-        </Field>
+                <select
+                  value={form.driver_id}
+                  onChange={(e) => { setForm({ ...form, driver_id: e.target.value }); setFormErrs((p) => ({ ...p, driver_id: undefined })); }}
+                  className="w-full rounded-xl px-3 py-2.5 text-sm outline-none"
+                  style={{ background: C.bg, border: `1px solid ${C.border}`, color: form.driver_id ? C.text : C.muted, colorScheme: "dark" }}
+                >
+                  <option value="">اختار سائق...</option>
+                  {staffList.map((s) => (
+                    <option key={s.id} value={s.id}>{s.name}</option>
+                  ))}
+                </select>
+                {formErrs.driver_id && <p className="text-xs font-semibold" style={{ color: C.red }}>{formErrs.driver_id}</p>}
+              </div>
 
-        <ActiveToggle active={form.is_active} onChange={(v) => setForm({ ...form, is_active: v })} />
-      </Modal>
+              {/* Motorcycle */}
+              <div className="flex flex-col gap-1.5">
+                <label className="text-xs font-semibold" style={{ color: C.muted }}>
+                  الموتسكل <span style={{ color: C.red }}>*</span>
+                </label>
+                <select
+                  value={form.motorcycle_id}
+                  onChange={(e) => { setForm({ ...form, motorcycle_id: e.target.value }); setFormErrs((p) => ({ ...p, motorcycle_id: undefined })); }}
+                  className="w-full rounded-xl px-3 py-2.5 text-sm outline-none"
+                  style={{ background: C.bg, border: `1px solid ${C.border}`, color: form.motorcycle_id ? C.text : C.muted, colorScheme: "dark" }}
+                >
+                  <option value="">اختار موتسكل...</option>
+                  {motos.filter((m) => m.active).map((m) => (
+                    <option key={m.id} value={m.id}>🛵 {m.name}</option>
+                  ))}
+                </select>
+                {formErrs.motorcycle_id && <p className="text-xs font-semibold" style={{ color: C.red }}>{formErrs.motorcycle_id}</p>}
+              </div>
+
+              {/* Shifts */}
+              <div className="flex flex-col gap-1.5">
+                <label className="text-xs font-semibold" style={{ color: C.muted }}>
+                  الورديات <span style={{ color: C.red }}>*</span>
+                </label>
+                <div className="flex flex-col gap-2 rounded-xl px-3 py-3"
+                  style={{ background: C.bg, border: `1px solid ${C.border}` }}>
+                  {shifts.length === 0 ? (
+                    <p className="text-xs" style={{ color: C.muted }}>لا توجد ورديات</p>
+                  ) : shifts.map((s) => {
+                    const checked = form.shift_ids.includes(s.id);
+                    return (
+                      <label key={s.id} className="flex items-center gap-2 cursor-pointer select-none">
+                        <div
+                          onClick={() => {
+                            setForm({ ...form, shift_ids: checked ? form.shift_ids.filter((x) => x !== s.id) : [...form.shift_ids, s.id] });
+                            setFormErrs((p) => ({ ...p, shift_ids: undefined }));
+                          }}
+                          className="w-4 h-4 rounded flex items-center justify-center flex-shrink-0 transition-colors"
+                          style={{ background: checked ? C.teal : "transparent", border: `1.5px solid ${checked ? C.teal : C.border}` }}
+                        >
+                          {checked && (
+                            <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="3" strokeLinecap="round">
+                              <polyline points="20 6 9 17 4 12" />
+                            </svg>
+                          )}
+                        </div>
+                        <span className="text-sm" style={{ color: C.text }}>الوردية {s.num}</span>
+                      </label>
+                    );
+                  })}
+                </div>
+                {formErrs.shift_ids && <p className="text-xs font-semibold" style={{ color: C.red }}>{formErrs.shift_ids}</p>}
+              </div>
+
+              {/* Status */}
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-semibold" style={{ color: C.muted }}>الحالة</span>
+                <button
+                  onClick={() => setForm({ ...form, is_active: !form.is_active })}
+                  className="flex items-center gap-2 px-3 py-1.5 rounded-full text-xs font-bold transition-all"
+                  style={{ background: form.is_active ? `${C.green}22` : `${C.red}22`, color: form.is_active ? C.green : C.red }}
+                >
+                  <span className="w-2 h-2 rounded-full" style={{ background: form.is_active ? C.green : C.red }} />
+                  {form.is_active ? "نشط" : "مش نشط"}
+                </button>
+              </div>
+            </div>
+
+            <div className="flex gap-3 px-5 py-4 border-t" style={{ borderColor: C.border }}>
+              <button onClick={save} disabled={saving}
+                className="flex-1 py-2.5 rounded-xl text-sm font-bold hover:opacity-90 transition-opacity disabled:opacity-50"
+                style={{ background: C.orange, color: "#fff" }}>
+                {saving ? "جاري الحفظ..." : "تشغيل"}
+              </button>
+              <button onClick={close} disabled={saving}
+                className="flex-1 py-2.5 rounded-xl text-sm font-bold hover:opacity-80 transition-opacity disabled:opacity-50"
+                style={{ background: C.bg, color: C.muted, border: `1px solid ${C.border}` }}>
+                إلغاء
+              </button>
+            </div>
+
+          </div>
+        </div>
+      )}
     </>
   );
 }
@@ -578,13 +558,62 @@ function MotosTab({ onRefresh }: { onRefresh: () => void }) {
         </div>
       </div>
 
-      <Modal open={modal.open} title={isEdit ? "تعديل الموتسكل" : "إضافة موتسكل جديد"}
-        onClose={close} onSave={save} saving={saving}>
-        <Field label="اسم الموتسكل" required>
-          <TextInput value={form.name} onChange={(v) => setForm({ ...form, name: v })} placeholder="مثال: ياماها ٢٠٢٣ - XR150" />
-        </Field>
-        <ActiveToggle active={form.active} onChange={(v) => setForm({ ...form, active: v })} />
-      </Modal>
+      {modal.open && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center p-4"
+          style={{ background: "rgba(0,0,0,0.7)" }}
+          onClick={(e) => { if (e.target === e.currentTarget) close(); }}
+        >
+          <div className="w-full max-w-sm rounded-2xl flex flex-col"
+            style={{ background: C.card, border: `1px solid ${C.border}` }}>
+            <div className="flex items-center justify-between px-5 py-4 border-b" style={{ borderColor: C.border }}>
+              <h2 className="text-base font-black" style={{ color: C.text }}>
+                {isEdit ? "تعديل الموتسكل" : "إضافة موتسكل جديد"}
+              </h2>
+              <button onClick={close}
+                className="w-8 h-8 rounded-full flex items-center justify-center text-sm hover:opacity-70"
+                style={{ background: C.bg, color: C.muted }}>✕</button>
+            </div>
+            <div className="px-5 py-4 flex flex-col gap-4">
+              <div className="flex flex-col gap-1.5">
+                <label className="text-xs font-semibold" style={{ color: C.muted }}>
+                  اسم الموتسكل <span style={{ color: C.red }}>*</span>
+                </label>
+                <input
+                  type="text" value={form.name}
+                  onChange={(e) => setForm({ ...form, name: e.target.value })}
+                  placeholder="مثال: ياماها ٢٠٢٣ - XR150"
+                  className="w-full rounded-xl px-3 py-2.5 text-sm outline-none"
+                  style={{ background: C.bg, border: `1px solid ${C.border}`, color: C.text }}
+                />
+              </div>
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-semibold" style={{ color: C.muted }}>الحالة</span>
+                <button
+                  onClick={() => setForm({ ...form, active: !form.active })}
+                  className="flex items-center gap-2 px-3 py-1.5 rounded-full text-xs font-bold transition-all"
+                  style={{ background: form.active ? `${C.green}22` : `${C.red}22`, color: form.active ? C.green : C.red }}
+                >
+                  <span className="w-2 h-2 rounded-full" style={{ background: form.active ? C.green : C.red }} />
+                  {form.active ? "نشط" : "مش نشط"}
+                </button>
+              </div>
+            </div>
+            <div className="flex gap-3 px-5 py-4 border-t" style={{ borderColor: C.border }}>
+              <button onClick={save} disabled={saving}
+                className="flex-1 py-2.5 rounded-xl text-sm font-bold hover:opacity-90 transition-opacity disabled:opacity-50"
+                style={{ background: C.orange, color: "#fff" }}>
+                {saving ? "جاري الحفظ..." : "حفظ"}
+              </button>
+              <button onClick={close} disabled={saving}
+                className="flex-1 py-2.5 rounded-xl text-sm font-bold hover:opacity-80 transition-opacity disabled:opacity-50"
+                style={{ background: C.bg, color: C.muted, border: `1px solid ${C.border}` }}>
+                إلغاء
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </>
   );
 }
@@ -594,7 +623,7 @@ function MotosTab({ onRefresh }: { onRefresh: () => void }) {
 const TABS = ["الدلفري", "الموتسكلات"] as const;
 type Tab = typeof TABS[number];
 
-export default function AdminDriversPage() {
+export default function AdminDeliveryPage() {
   const [tab,       setTab]       = useState<Tab>("الدلفري");
   const [staffList, setStaffList] = useState<StaffMember[]>([]);
   const [motos,     setMotos]     = useState<Moto[]>([]);
@@ -622,7 +651,6 @@ export default function AdminDriversPage() {
 
   return (
     <div className="flex flex-col gap-5">
-
       <div className="flex gap-1 p-1 rounded-xl self-start"
         style={{ background: C.card, border: `1px solid ${C.border}` }}>
         {TABS.map((t) => (
@@ -634,9 +662,8 @@ export default function AdminDriversPage() {
         ))}
       </div>
 
-      {tab === "الدلفري"     && <DriversTab staffList={staffList} motos={motos} shifts={shifts} />}
-      {tab === "الموتسكلات"  && <MotosTab   onRefresh={fetchShared} />}
-
+      {tab === "الدلفري"     && <AssignTab staffList={staffList} motos={motos} shifts={shifts} />}
+      {tab === "الموتسكلات"  && <MotosTab  onRefresh={fetchShared} />}
     </div>
   );
 }

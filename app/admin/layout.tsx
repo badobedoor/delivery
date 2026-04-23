@@ -7,7 +7,7 @@ import { useAuth }  from "@/hooks/useAuth";
 import { signOut }  from "@/lib/auth";
 
 /* Pages staff are allowed to visit */
-const STAFF_ALLOWED = ["/admin/orders", "/admin/restaurants", "/admin/drivers"];
+const STAFF_ALLOWED = ["/admin/orders", "/admin/restaurants", "/admin/delivery"];
 
 const C = {
   bg:     "#0F172A",
@@ -23,7 +23,7 @@ const allNavLinks = [
   { emoji: "📦", label: "الطلبات",    href: "/admin/orders"          },
   { emoji: "🍔", label: "المطاعم",    href: "/admin/restaurants"     },
   { emoji: "🗺️", label: "الأحياء",    href: "/admin/areas"           },
-  { emoji: "🛵", label: "الدلفري",    href: "/admin/drivers"         },
+  { emoji: "🛵", label: "الدلفري",    href: "/admin/delivery"        },
   { emoji: "🕐", label: "الورديات",   href: "/admin/shifts"          },
   { emoji: "🎟️", label: "الكوبونات",  href: "/admin/coupons"         },
   { emoji: "💰", label: "الحسابات",   href: "/admin/accounts"        },
@@ -39,7 +39,7 @@ const pageTitle: Record<string, string> = {
   "/admin/orders":         "الطلبات",
   "/admin/restaurants":    "المطاعم",
   "/admin/areas":          "الأحياء",
-  "/admin/drivers":        "الدلفري",
+  "/admin/delivery":       "الدلفري",
   "/admin/shifts":         "الورديات",
   "/admin/coupons":        "الكوبونات",
   "/admin/accounts":       "الحسابات",
@@ -195,9 +195,6 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
   const [collapsed,  setCollapsed]  = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
   const title = pageTitle[pathname] ?? "لوحة التحكم";
-
-  console.log("AUTH USER:", user);
-  console.log("AUTH LOADING:", authLoading);
 
   /* ── Staff route guard ── */
   useEffect(() => {

@@ -224,8 +224,6 @@ export default function AdminUsersPage() {
                   { label: "الإيميل",         hide: " hidden lg:table-cell" },
                   { label: "الموبايل",        hide: " hidden sm:table-cell" },
                   { label: "تاريخ التسجيل",  hide: " hidden xl:table-cell" },
-                  { label: "الحالة",          hide: ""                      },
-                  { label: "إجراءات",         hide: ""                      },
                 ].map(({ label, hide }) => (
                   <th key={label}
                     className={`px-4 py-3 text-right font-semibold text-xs whitespace-nowrap${hide}`}
@@ -243,6 +241,16 @@ export default function AdminUsersPage() {
                     {orderSort && <span style={{ color: C.teal }}>{orderSort === "desc" ? "↓" : "↑"}</span>}
                   </span>
                 </th>
+                {[
+                  { label: "الحالة",   hide: ""  },
+                  { label: "إجراءات",  hide: ""  },
+                ].map(({ label, hide }) => (
+                  <th key={label}
+                    className={`px-4 py-3 text-right font-semibold text-xs whitespace-nowrap${hide}`}
+                    style={{ color: C.muted }}>
+                    {label}
+                  </th>
+                ))}
               </tr>
             </thead>
             <tbody>

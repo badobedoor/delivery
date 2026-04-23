@@ -526,8 +526,6 @@ function DriversTab({
   drivers: DriverRow[];
   onRefresh: () => void;
 }) {
-  console.log("DRIVERS PROPS:", drivers);
-
   const [modal,    setModal]    = useState<{ open: boolean; id?: number }>({ open: false });
   const [form,     setForm]     = useState(emptyForm);
   const [deleteId, setDeleteId] = useState<number | null>(null);
@@ -550,16 +548,14 @@ function DriversTab({
     if (!isEdit && !form.password.trim()) return;
 
     if (!isEdit) {
-      const { data: inserted, error } = await supabasePublic
+      const { error } = await supabasePublic
         .from("delivery_staff")
         .insert([{
           name:      form.name.trim(),
           phone:     form.phone.trim() || null,
           password:  form.password,
           is_active: form.active,
-        }])
-        .select();
-      console.log("INSERT DRIVER RESULT:", inserted, "ERROR:", error);
+        }]);
       if (!error) { closeModal(); onRefresh(); }
     } else {
       const update: Record<string, unknown> = {
@@ -709,17 +705,14 @@ export default function AdminTeamPage() {
   async function fetchDrivers() {
     const { data, error } = await supabasePublic
       .from("delivery_staff")
-      .select("*");
-
-    console.log("FETCH DRIVERS:", data, error);
+      .select("*")
+      .order("name");
 
     if (error) {
-      console.error("DRIVER FETCH ERROR:", error);
+      console.error("fetchDrivers:", error);
     }
 
-    const result = data ?? [];
-    console.log("STATE DRIVERS:", result);
-    setDrivers(result);
+    setDrivers(data ?? []);
   }
 
   useEffect(() => {
