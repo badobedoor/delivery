@@ -283,8 +283,6 @@ function SectionTable<T extends { id: number; name: string; icon: string; order:
 }
 
 type TabId = "main" | "quick";
-let nextMainId  = 1;
-let nextQuickId = 1;
 
 export default function AdminSectionsPage() {
   const [tab,        setTab]        = useState<TabId>("main");
@@ -333,8 +331,6 @@ export default function AdminSectionsPage() {
       id: r.id, name: r.name, icon: r.icon ?? "", link: r.link ?? "", order: r.sort_order, active: r.is_active,
     }));
 
-    nextMainId  = main.length  + 1;
-    nextQuickId = quick.length + 1;
     setMainRows(main);
     setQuickRows(quick);
     setLoading(false);
@@ -400,7 +396,6 @@ export default function AdminSectionsPage() {
         const shifted = mainRows.map((r) => r.order >= pos ? { ...r, order: r.order + 1 } : r);
         setMainRows([...shifted, { id: data.id, name: data.name, icon: data.icon ?? "", order: data.sort_order, active: data.is_active }]
           .sort((a, b) => a.order - b.order));
-        nextMainId++;
         setMainModal(null);
 
       } else if (mainEditId !== null) {
@@ -484,7 +479,6 @@ export default function AdminSectionsPage() {
         snapshot.filter((r) => r.id !== row.id)
                 .map((r) => r.order > row.order ? { ...r, order: r.order - 1 } : r)
       );
-      nextMainId = Math.max(1, nextMainId - 1);
     } catch (err) {
       console.error("deleteMain error:", err);
       setMainRows(snapshot);
@@ -543,7 +537,6 @@ export default function AdminSectionsPage() {
         const shifted = quickRows.map((r) => r.order >= pos ? { ...r, order: r.order + 1 } : r);
         setQuickRows([...shifted, { id: data.id, name: data.name, icon: data.icon ?? "", link: data.link ?? "", order: data.sort_order, active: data.is_active }]
           .sort((a, b) => a.order - b.order));
-        nextQuickId++;
         setQuickModal(null);
 
       } else if (quickEditId !== null) {
@@ -626,7 +619,6 @@ export default function AdminSectionsPage() {
         snapshot.filter((r) => r.id !== row.id)
                 .map((r) => r.order > row.order ? { ...r, order: r.order - 1 } : r)
       );
-      nextQuickId = Math.max(1, nextQuickId - 1);
     } catch (err) {
       console.error("deleteQuick error:", err);
       setQuickRows(snapshot);
