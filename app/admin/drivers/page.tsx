@@ -48,8 +48,8 @@ const emptyAssignForm: AssignForm = { driver_id: "", motorcycle_id: "", shift_id
 function fromAssignmentRow(r: any): Assignment {
   return {
     id:              r.id,
-    driver_id:       r.driver_id,
-    driver_name:     (r.delivery_staff as { name: string } | null)?.name ?? "—",
+    driver_id:       r.delivery_id,
+    driver_name:     r.delivery_staff?.name || "—",
     motorcycle_id:   r.motorcycle_id ?? "",
     motorcycle_name: (r.motorcycles   as { name: string } | null)?.name ?? "—",
     shift_id:        r.shift_id,
@@ -210,12 +210,12 @@ function DriversTab({ staffList, motos, shifts }: {
       const { data, error } = await supabase
         .from("delivery_shifts")
         .select(`
-          id, driver_id, motorcycle_id, shift_id, is_active,
+          id, delivery_id, motorcycle_id, shift_id, is_active,
           delivery_staff ( name ),
           motorcycles ( name ),
           shifts ( num )
         `)
-        .order("driver_id");
+        .order("delivery_id");
       if (error) throw error;
       setRows((data ?? []).map(fromAssignmentRow));
     } catch (err) {
@@ -257,7 +257,7 @@ function DriversTab({ staffList, motos, shifts }: {
     try {
       const { error } = await supabase.from("delivery_shifts").insert(
         form.shift_ids.map((sid) => ({
-          driver_id:     Number(form.driver_id),
+          delivery_id:   form.driver_id,
           motorcycle_id: form.motorcycle_id,
           shift_id:      sid,
           is_active:     form.is_active,

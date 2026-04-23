@@ -7,7 +7,7 @@ import { useAuth }  from "@/hooks/useAuth";
 import { signOut }  from "@/lib/auth";
 
 /* Pages staff are allowed to visit */
-const STAFF_ALLOWED = ["/admin/orders", "/admin/restaurants", "/admin/delivery"];
+const STAFF_ALLOWED = ["/admin/orders", "/admin/restaurants", "/admin/drivers"];
 
 const C = {
   bg:     "#0F172A",
@@ -23,7 +23,7 @@ const allNavLinks = [
   { emoji: "📦", label: "الطلبات",    href: "/admin/orders"          },
   { emoji: "🍔", label: "المطاعم",    href: "/admin/restaurants"     },
   { emoji: "🗺️", label: "الأحياء",    href: "/admin/areas"           },
-  { emoji: "🛵", label: "الدلفري",    href: "/admin/delivery"        },
+  { emoji: "🛵", label: "الدلفري",    href: "/admin/drivers"        },
   { emoji: "🕐", label: "الورديات",   href: "/admin/shifts"          },
   { emoji: "🎟️", label: "الكوبونات",  href: "/admin/coupons"         },
   { emoji: "💰", label: "الحسابات",   href: "/admin/accounts"        },
@@ -39,7 +39,7 @@ const pageTitle: Record<string, string> = {
   "/admin/orders":         "الطلبات",
   "/admin/restaurants":    "المطاعم",
   "/admin/areas":          "الأحياء",
-  "/admin/delivery":       "الدلفري",
+  "/admin/drivers":       "الدلفري",
   "/admin/shifts":         "الورديات",
   "/admin/coupons":        "الكوبونات",
   "/admin/accounts":       "الحسابات",
