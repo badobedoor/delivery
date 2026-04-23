@@ -108,9 +108,9 @@ function SearchBar({ value, onChange, placeholder }: {
   );
 }
 
-function Modal({ open, title, onClose, onSave, saving = false, children }: {
+function Modal({ open, title, onClose, onSave, saving = false, disabled = false, children }: {
   open: boolean; title: string; onClose: () => void; onSave: () => void;
-  saving?: boolean; children: React.ReactNode;
+  saving?: boolean; disabled?: boolean; children: React.ReactNode;
 }) {
   if (!open) return null;
   return (
@@ -129,10 +129,10 @@ function Modal({ open, title, onClose, onSave, saving = false, children }: {
         </div>
         <div className="px-5 py-4 flex flex-col gap-4">{children}</div>
         <div className="flex gap-3 px-5 py-4 border-t" style={{ borderColor: C.border }}>
-          <button onClick={onSave} disabled={saving}
+          <button onClick={onSave} disabled={saving || disabled}
             className="flex-1 py-2.5 rounded-xl text-sm font-bold hover:opacity-90 transition-opacity disabled:opacity-50"
             style={{ background: C.orange, color: "#fff" }}>
-            {saving ? "جاري الحفظ..." : "تشغيل"}
+            {saving ? "جاري التشغيل..." : "تشغيل"}
           </button>
           <button onClick={onClose} disabled={saving}
             className="flex-1 py-2.5 rounded-xl text-sm font-bold hover:opacity-80 transition-opacity disabled:opacity-50"
@@ -233,11 +233,14 @@ function DriversTab({ staffList, motos, shifts }: {
   function openModal() { setForm(emptyAssignForm); setFormErrs({}); setSaveErr(null); setModal(true); }
   function close()     { setModal(false); setFormErrs({}); setSaveErr(null); }
 
+  const isFormValid = !!form.driver_id && !!form.motorcycle_id && form.shift_ids.length > 0;
+
   function validate(): boolean {
     const errs: AssignFormErrs = {};
     if (!form.driver_id)             errs.driver_id    = "يجب اختيار سائق";
-    if (!form.motorcycle_id)         errs.motorcycle_id = "يجب اختيار موتسكل";
-    else if (form.shift_ids.length > 0) {
+    if (!form.motorcycle_id) {
+      errs.motorcycle_id = "يجب اختيار موتوسيكل";
+    } else {
       const conflict = rows.some((r) =>
         r.motorcycle_id === form.motorcycle_id &&
         r.is_active &&
@@ -245,7 +248,15 @@ function DriversTab({ staffList, motos, shifts }: {
       );
       if (conflict) errs.motorcycle_id = "هذا الموتوسيكل مستخدم في نفس الوردية";
     }
-    if (form.shift_ids.length === 0) errs.shift_ids    = "يجب اختيار وردية واحدة على الأقل";
+    if (form.shift_ids.length === 0) {
+      errs.shift_ids = "اختر وردية واحدة على الأقل";
+    } else {
+      const duplicate = rows.some((r) =>
+        r.driver_id === form.driver_id &&
+        form.shift_ids.includes(r.shift_id)
+      );
+      if (duplicate) errs.shift_ids = "هذا السائق يعمل بالفعل في هذه الوردية";
+    }
     setFormErrs(errs);
     return Object.keys(errs).length === 0;
   }
@@ -266,9 +277,10 @@ function DriversTab({ staffList, motos, shifts }: {
       if (error) throw error;
       await fetchAssignments();
       close();
-    } catch (err) {
+    } catch (err: unknown) {
       console.error("saveAssign:", err);
-      setSaveErr("فشل الحفظ، حاول مرة أخرى");
+      const msg = err instanceof Error ? err.message : null;
+      setSaveErr(msg || "حدث خطأ أثناء الحفظ");
     } finally {
       setSaving(false);
     }
@@ -363,7 +375,7 @@ function DriversTab({ staffList, motos, shifts }: {
         </div>
       </div>
 
-      <Modal open={modal} title="تشغيل سائق" onClose={close} onSave={save} saving={saving}>
+      <Modal open={modal} title="تشغيل سائق" onClose={close} onSave={save} saving={saving} disabled={!isFormValid}>
         {saveErr && (
           <div className="px-4 py-2.5 rounded-xl text-xs font-semibold text-center"
             style={{ background: `${C.red}22`, color: C.red }}>
