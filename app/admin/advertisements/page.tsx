@@ -56,6 +56,10 @@ const emptyForm: AdForm = {
   is_active:   true,
 };
 
+const todayStr    = ()          => new Date().toISOString().split("T")[0];
+const daysFromNow = (n: number)  => new Date(Date.now() + n * 864e5).toISOString().split("T")[0];
+const fmtDate     = (d: string | null) => d ? d.split("T")[0] : "—";
+
 /* ─────────────────────── Image upload ──────────────── */
 
 async function uploadAdImage(file: File): Promise<string | null> {
@@ -158,7 +162,14 @@ function CropModal({
 
 /* ─────────────────────── Validation ────────────────── */
 
-function validate(form: AdForm, imageFile: File | null, isEdit: boolean, existingImage: string | null): AdErrors {
+function validate(
+  form:          AdForm,
+  imageFile:     File | null,
+  isEdit:        boolean,
+  existingImage: string | null,
+  rows:          Ad[],
+  editingId:     string | null,
+): AdErrors {
   const errs: AdErrors = {};
 
   if (!isEdit && !imageFile && !existingImage)
@@ -170,6 +181,8 @@ function validate(form: AdForm, imageFile: File | null, isEdit: boolean, existin
   const ord = Number(form.order_index);
   if (!form.order_index.trim() || isNaN(ord) || !Number.isInteger(ord) || ord < 1)
     errs.order_index = "الترتيب لازم يكون رقم صحيح أكبر من صفر";
+  else if (rows.some((r) => r.order_index === ord && r.id !== editingId))
+    errs.order_index = "ترتيب الإعلان مستخدم بالفعل";
 
   if (form.link.trim() && !/^https?:\/\/.+/.test(form.link.trim()))
     errs.link = "الرابط لازم يبدأ بـ http:// أو https://";
@@ -237,11 +250,12 @@ function DeleteModal({ onConfirm, onClose }: { onConfirm: () => void; onClose: (
 /* ─────────────────────── Ad modal ──────────────────── */
 
 function AdModal({
-  title, form, onChange, onSave, onClose,
+  title, isEdit, form, onChange, onSave, onClose,
   errors, saving, saveError,
   imagePreview, onPickFile, onSizeError, imageError,
 }: {
   title:        string;
+  isEdit:       boolean;
   form:         AdForm;
   onChange:     (f: AdForm) => void;
   onSave:       () => void;
@@ -370,19 +384,34 @@ function AdModal({
               <input
                 type="date"
                 value={form.starts_at}
-                onChange={(e) => set("starts_at", e.target.value)}
+                min={isEdit ? undefined : todayStr()}
+                onChange={(e) => {
+                  const newStart = e.target.value;
+                  const next: AdForm = { ...form, starts_at: newStart };
+                  if (form.ends_at && newStart > form.ends_at) next.ends_at = "";
+                  onChange(next);
+                }}
                 className="w-full rounded-xl px-3 py-2.5 text-sm outline-none"
                 style={iStyle(!!errors.starts_at)}
               />
             </Field>
-            <Field label="تاريخ النهاية" required error={errors.ends_at}>
+            <Field
+              label="تاريخ النهاية"
+              required
+              error={!form.starts_at ? undefined : errors.ends_at}
+            >
               <input
                 type="date"
                 value={form.ends_at}
+                min={form.starts_at || todayStr()}
+                disabled={!form.starts_at}
                 onChange={(e) => set("ends_at", e.target.value)}
-                className="w-full rounded-xl px-3 py-2.5 text-sm outline-none"
-                style={iStyle(!!errors.ends_at)}
+                className="w-full rounded-xl px-3 py-2.5 text-sm outline-none disabled:opacity-40 disabled:cursor-not-allowed"
+                style={iStyle(!!form.starts_at && !!errors.ends_at)}
               />
+              {!form.starts_at && (
+                <p className="text-xs" style={{ color: C.muted }}>اختر تاريخ البداية أولاً</p>
+              )}
             </Field>
           </div>
 
@@ -452,7 +481,10 @@ export default function AdminAdvertisementsPage() {
 
   /* ── Modal helpers ── */
   function openAdd() {
-    setForm(emptyForm);
+    const nextOrder = rows.length > 0
+      ? Math.max(...rows.map((r) => r.order_index)) + 1
+      : 1;
+    setForm({ ...emptyForm, order_index: String(nextOrder), starts_at: todayStr(), ends_at: daysFromNow(7) });
     setErrors({});
     setSaveError(null);
     setImageFile(null);
@@ -467,8 +499,8 @@ export default function AdminAdvertisementsPage() {
       link:        ad.link        ?? "",
       page:        ad.page,
       order_index: String(ad.order_index),
-      starts_at:   ad.starts_at   ?? "",
-      ends_at:     ad.ends_at     ?? "",
+      starts_at:   ad.starts_at ? ad.starts_at.split("T")[0] : "",
+      ends_at:     ad.ends_at   ? ad.ends_at.split("T")[0]   : "",
       is_active:   ad.is_active,
     });
     setErrors({});
@@ -508,7 +540,7 @@ export default function AdminAdvertisementsPage() {
   /* ── Save ── */
   async function handleSave() {
     const isEdit = modal === "edit";
-    const errs   = validate(form, imageFile, isEdit, editingAd?.image_url ?? null);
+    const errs   = validate(form, imageFile, isEdit, editingAd?.image_url ?? null, rows, editingAd?.id ?? null);
     if (Object.keys(errs).length > 0) { setErrors(errs); return; }
 
     setSaving(true);
@@ -670,11 +702,11 @@ export default function AdminAdvertisementsPage() {
 
                   {/* starts_at */}
                   <td className="hidden md:table-cell px-4 py-3 text-xs whitespace-nowrap"
-                    style={{ color: C.muted }}>{ad.starts_at ?? "—"}</td>
+                    style={{ color: C.muted }}>{fmtDate(ad.starts_at)}</td>
 
                   {/* ends_at */}
                   <td className="hidden md:table-cell px-4 py-3 text-xs whitespace-nowrap"
-                    style={{ color: C.muted }}>{ad.ends_at ?? "—"}</td>
+                    style={{ color: C.muted }}>{fmtDate(ad.ends_at)}</td>
 
                   {/* Status */}
                   <td className="px-4 py-3">
@@ -713,6 +745,7 @@ export default function AdminAdvertisementsPage() {
       {(modal === "add" || modal === "edit") && (
         <AdModal
           title={modal === "add" ? "إضافة إعلان" : "تعديل إعلان"}
+          isEdit={modal === "edit"}
           form={form}
           onChange={(f) => {
             setForm(f);
