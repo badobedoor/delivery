@@ -1,4 +1,8 @@
+"use client";
+
 import Link from "next/link";
+import { useEffect, useState } from "react";
+import { supabase } from "@/lib/supabase";
 
 const menuItems = [
   {
@@ -73,6 +77,17 @@ const menuItems = [
 ];
 
 export default function AccountPage() {
+  const [name, setName]           = useState("مرحبا");
+  const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
+
+  useEffect(() => {
+    supabase.auth.getUser().then(({ data: { user } }) => {
+      if (!user) return;
+      setName(user.user_metadata?.full_name || user.email || "مرحبا");
+      setAvatarUrl(user.user_metadata?.avatar_url ?? null);
+    });
+  }, []);
+
   return (
     <div className="min-h-screen bg-[var(--color-surface)]">
       <div className="mx-auto w-full max-w-[430px]">
@@ -83,16 +98,20 @@ export default function AccountPage() {
             {/* يمين: ترحيب */}
             <div>
               <h1 className="text-xl font-black text-[var(--color-secondary)]">مرحبا بك 👋</h1>
-              <p className="text-sm text-[var(--color-muted)] mt-0.5">أحمد محمد</p>
+              <p className="text-sm text-[var(--color-muted)] mt-0.5">{name}</p>
             </div>
 
             {/* يسار: صورة الحساب */}
-            <div className="w-14 h-14 rounded-full bg-[var(--color-border)] flex items-center justify-center flex-shrink-0">
-              <svg width="28" height="28" viewBox="0 0 24 24" fill="none"
-                stroke="var(--color-muted)" strokeWidth="1.5" strokeLinecap="round">
-                <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" />
-                <circle cx="12" cy="7" r="4" />
-              </svg>
+            <div className="w-14 h-14 rounded-full bg-[var(--color-border)] flex items-center justify-center flex-shrink-0 overflow-hidden">
+              {avatarUrl ? (
+                <img src={avatarUrl} alt="avatar" className="w-full h-full object-cover" referrerPolicy="no-referrer" />
+              ) : (
+                <svg width="28" height="28" viewBox="0 0 24 24" fill="none"
+                  stroke="var(--color-muted)" strokeWidth="1.5" strokeLinecap="round">
+                  <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" />
+                  <circle cx="12" cy="7" r="4" />
+                </svg>
+              )}
             </div>
           </div>
         </header>

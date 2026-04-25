@@ -1,13 +1,16 @@
 "use client";
 
 import Link from "next/link";
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
+import { supabase } from "@/lib/supabase";
 
-/* ── بيانات وهمية ── */
-const savedAddresses = [
-  { id: 1, label: "البيت", details: "المعادي — عمارة 5، شقة 12، الدور 3" },
-  { id: 2, label: "الشغل", details: "مصر الجديدة — عمارة 20، الدور 4" },
-];
+type Address = {
+  id: string;
+  label: string;
+  full_address: string;
+  area_id: string | null;
+};
 
 function BackArrow() {
   return (
@@ -22,9 +25,25 @@ function BackArrow() {
 }
 
 export default function AddressPage() {
-  /* غيّر لـ [] لرؤية حالة الفراغ */
-  const [addresses] = useState(savedAddresses);
-  const [selected, setSelected] = useState<number | null>(null);
+  const router = useRouter();
+  const [addresses, setAddresses] = useState<Address[]>([]);
+  const [loading, setLoading]     = useState(true);
+
+  useEffect(() => {
+    async function load() {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) { setLoading(false); return; }
+
+      const { data } = await supabase
+        .from("addresses")
+        .select("id, label, full_address, area_id")
+        .eq("user_id", user.id);
+
+      setAddresses(data ?? []);
+      setLoading(false);
+    }
+    load();
+  }, []);
 
   return (
     <div className="min-h-screen bg-[var(--color-surface)]">
@@ -49,7 +68,11 @@ export default function AddressPage() {
 
         <main className="px-4 pt-6 pb-10">
 
-          {addresses.length === 0 ? (
+          {loading ? (
+            <div className="flex justify-center pt-24">
+              <div className="w-6 h-6 border-2 border-[var(--color-primary)] border-t-transparent rounded-full animate-spin" />
+            </div>
+          ) : addresses.length === 0 ? (
             /* ── حالة فارغة ── */
             <div className="flex flex-col items-center justify-center pt-20 gap-4 text-center">
               <span className="text-7xl">📍</span>
@@ -70,22 +93,13 @@ export default function AddressPage() {
               {addresses.map((addr) => (
                 <button
                   key={addr.id}
-                  onClick={() => setSelected(addr.id)}
-                  className={`w-full flex items-start gap-3 bg-white rounded-2xl p-4 border-2 text-right transition-colors ${
-                    selected === addr.id
-                      ? "border-[var(--color-primary)]"
-                      : "border-[var(--color-border)]"
-                  }`}
+                  onClick={() => router.push(`/address/${addr.id}`)}
+                  className="w-full flex items-start gap-3 bg-white rounded-2xl p-4 border-2 border-[var(--color-border)] text-right transition-colors active:border-[var(--color-primary)]"
                 >
                   {/* أيقونة */}
-                  <div className={`w-9 h-9 rounded-full flex items-center justify-center flex-shrink-0 mt-0.5 ${
-                    selected === addr.id
-                      ? "bg-[var(--color-primary)]"
-                      : "bg-[var(--color-surface)]"
-                  }`}>
+                  <div className="w-9 h-9 rounded-full flex items-center justify-center flex-shrink-0 mt-0.5 bg-[var(--color-surface)]">
                     <svg width="16" height="16" viewBox="0 0 24 24" fill="none"
-                      stroke={selected === addr.id ? "white" : "var(--color-muted)"}
-                      strokeWidth="2" strokeLinecap="round">
+                      stroke="var(--color-muted)" strokeWidth="2" strokeLinecap="round">
                       <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z" />
                       <circle cx="12" cy="10" r="3" />
                     </svg>
@@ -94,26 +108,17 @@ export default function AddressPage() {
                   {/* النص */}
                   <div className="flex-1 min-w-0">
                     <p className="text-sm font-bold text-[var(--color-secondary)]">{addr.label}</p>
-                    <p className="text-xs text-[var(--color-muted)] mt-0.5 leading-relaxed">{addr.details}</p>
+                    <p className="text-xs text-[var(--color-muted)] mt-0.5 leading-relaxed">{addr.full_address}</p>
                   </div>
 
-                  {/* علامة اختيار */}
-                  {selected === addr.id && (
-                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none"
-                      stroke="var(--color-primary)" strokeWidth="2.5" strokeLinecap="round"
-                      className="flex-shrink-0 mt-0.5">
-                      <path d="M20 6 9 17l-5-5" />
-                    </svg>
-                  )}
+                  {/* سهم */}
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none"
+                    stroke="var(--color-muted)" strokeWidth="2" strokeLinecap="round"
+                    className="flex-shrink-0 mt-1">
+                    <path d="M15 18l-6-6 6-6" />
+                  </svg>
                 </button>
               ))}
-
-              {/* زرار تأكيد الاختيار */}
-              {selected && (
-                <button className="w-full bg-[var(--color-primary)] text-white text-sm font-bold py-3.5 rounded-2xl mt-2 shadow-md active:scale-[0.98] transition-transform">
-                  تأكيد العنوان
-                </button>
-              )}
             </div>
           )}
 
