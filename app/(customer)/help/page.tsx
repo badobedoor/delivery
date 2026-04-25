@@ -1,7 +1,8 @@
 "use client";
 
 import Link from "next/link";
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import { supabase } from "@/lib/supabase";
 
 const faqs = [
   {
@@ -12,12 +13,12 @@ const faqs = [
   {
     id: 2,
     q: "كيف ألغي طلبي؟",
-    a: "يمكن إلغاء الطلب خلال دقيقتين من التأكيد. بعدها تواصل معنا عبر واتساب وسنساعدك.",
+    a: "في حال أردت إلغاء طلبك، تواصل معنا فوراً عبر واتساب وسنبذل قصارى جهدنا لمساعدتك.",
   },
   {
     id: 3,
     q: "ما هي مناطق التوصيل؟",
-    a: "نوصل حالياً لمناطق: المعادي، مصر الجديدة، الزمالك، مدينة نصر، والتجمع الخامس.",
+    a: "نوصل حالياً لجميع أحياء مدينة الطور.",
   },
 ];
 
@@ -33,6 +34,20 @@ function Arrow({ open }: { open: boolean }) {
 
 export default function HelpPage() {
   const [openFaq, setOpenFaq] = useState<number | null>(null);
+  const [whatsappNumber, setWhatsappNumber] = useState<string | null>(null);
+
+  useEffect(() => {
+    supabase
+      .from("settings")
+      .select("whatsapp_number")
+      .limit(1)
+      .maybeSingle()
+      .then(({ data }) => {
+        if (data?.whatsapp_number) setWhatsappNumber(data.whatsapp_number);
+      });
+  }, []);
+
+  const whatsappHref = whatsappNumber ? `https://wa.me/2${whatsappNumber}` : "tel:+20";
 
   return (
     <div className="min-h-screen bg-[var(--color-surface)]">
@@ -63,7 +78,7 @@ export default function HelpPage() {
               تواصل معنا عبر واتساب وسنرد عليك في أقل من دقيقة
             </p>
             <a
-              href="https://wa.me/201000000000"
+              href={whatsappHref}
               target="_blank"
               rel="noopener noreferrer"
               className="mt-2 w-full bg-[#25D366] text-white text-sm font-bold py-3.5 rounded-2xl flex items-center justify-center gap-2 active:scale-[0.98] transition-transform"
