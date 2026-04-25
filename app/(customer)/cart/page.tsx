@@ -208,15 +208,6 @@ export default function CartPage() {
                 <span className="text-sm text-[var(--color-secondary)]">{delivery} ج.م</span>
               </div>
 
-              {/* رسوم الخدمة */}
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-1">
-                  <span className="text-sm text-[var(--color-muted)]">رسوم الخدمة</span>
-                  <InfoIcon />
-                </div>
-                <span className="text-sm text-[var(--color-secondary)]">{service} ج.م</span>
-              </div>
-
               {/* فاصل */}
               <div className="border-t border-[var(--color-border)] my-1" />
 
@@ -227,9 +218,6 @@ export default function CartPage() {
               </div>
             </div>
 
-            <button className="mt-3 text-xs font-semibold text-[var(--color-primary)] underline underline-offset-2">
-              اقرأ المزيد حول الرسوم
-            </button>
           </section>
 
         </main>
@@ -239,9 +227,12 @@ export default function CartPage() {
           <div className="mx-auto w-full max-w-[430px] px-4 pb-6 pt-2 bg-white border-t border-[var(--color-border)]">
             <div className="flex gap-3">
               {/* تنفيذ الطلب — يمين */}
-              <button className="flex-1 bg-[var(--color-primary)] text-white text-sm font-bold py-3.5 rounded-2xl shadow-md active:scale-[0.98] transition-transform">
+              <Link
+                href="/checkout"
+                className="flex-1 bg-[var(--color-primary)] text-white text-sm font-bold py-3.5 rounded-2xl shadow-md active:scale-[0.98] transition-transform text-center"
+              >
                 تنفيذ الطلب
-              </button>
+              </Link>
 
               {/* أضف المزيد — يسار */}
               <Link
