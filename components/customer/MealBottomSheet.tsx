@@ -1,7 +1,9 @@
 "use client";
 
 import Image from "next/image";
-import { useState } from "react";
+import { useState, useEffect, useRef } from "react";
+import { addToCart, clearCart, CartItem } from "@/lib/cart";
+import ConfirmModal from "@/components/customer/ConfirmModal";
 
 /* ── Types ── */
 interface Extra  { id: number; name: string; price: number }
@@ -18,6 +20,8 @@ interface Meal   {
 interface Props {
   meal: Meal;
   onClose: () => void;
+  restaurantId: string;
+  restaurantName: string;
 }
 
 /* ── Dummy data (used when previewing the component standalone) ── */
@@ -40,20 +44,32 @@ export const sampleMeal: Meal = {
 };
 
 /* ── Component ── */
-export default function MealBottomSheet({ meal, onClose }: Props) {
+export default function MealBottomSheet({ meal, onClose, restaurantId, restaurantName }: Props) {
   const [qty,            setQty]            = useState(1);
   const [selectedExtras, setSelectedExtras] = useState<number[]>([]);
   const [selectedSize,   setSelectedSize]   = useState<number | null>(null);
   const [showNote,       setShowNote]       = useState(false);
   const [note,           setNote]           = useState("");
+  const [conflictMsg,    setConflictMsg]    = useState<string | null>(null);
+  const pendingItem = useRef<CartItem | null>(null);
+
+  useEffect(() => {
+    if (meal.sizes && meal.sizes.length > 0) {
+      setSelectedSize(meal.sizes[0].id);
+    }
+  }, []);
 
   const extrasTotal = selectedExtras.reduce((sum, id) => {
     const extra = meal.extras?.find((e) => e.id === id);
     return sum + (extra?.price ?? 0);
   }, 0);
 
-  const activePrice = selectedSize !== null
-    ? (meal.sizes?.find((s) => s.id === selectedSize)?.price ?? meal.basePrice)
+  const hasSizes    = !!(meal.sizes && meal.sizes.length > 0);
+  const activePrice = hasSizes
+    ? (selectedSize !== null ? (meal.sizes!.find((s) => s.id === selectedSize)?.price ?? 0) : 0)
+    : meal.basePrice;
+  const minSizePrice = hasSizes
+    ? Math.min(...meal.sizes!.map((s) => s.price ?? meal.basePrice))
     : meal.basePrice;
 
   const total = (activePrice + extrasTotal) * qty;
@@ -62,6 +78,32 @@ export default function MealBottomSheet({ meal, onClose }: Props) {
     setSelectedExtras((prev) =>
       prev.includes(id) ? prev.filter((e) => e !== id) : [...prev, id]
     );
+  }
+
+  function handleAddToCart() {
+    const sizeObj = meal.sizes?.find((s) => s.id === selectedSize);
+    const cartItem = {
+      id: String(meal.id),
+      name: meal.name,
+      price: hasSizes ? 0 : meal.basePrice,
+      qty,
+      image_url: meal.img,
+      description: null,
+      size: selectedSize && sizeObj
+        ? { name: sizeObj.name, price: sizeObj.price ?? 0 }
+        : undefined,
+      extras: selectedExtras.map((id) => {
+        const extra = meal.extras!.find((e) => e.id === id)!;
+        return { name: extra.name, price: extra.price };
+      }),
+    };
+    const result = addToCart(restaurantId, restaurantName, cartItem);
+    if (result.conflict) {
+      pendingItem.current = cartItem;
+      setConflictMsg(`سلتك فيها طلب من ${result.conflictName}، هل تريد مسحها والبدء من جديد؟`);
+    } else {
+      onClose();
+    }
   }
 
   return (
@@ -115,7 +157,10 @@ export default function MealBottomSheet({ meal, onClose }: Props) {
                   {meal.name}
                 </h2>
                 <p className="text-base font-bold text-[var(--color-primary)] mt-1">
-                  {activePrice} ج.م
+                  {hasSizes && selectedSize === null
+                    ? `يبدأ من ${minSizePrice} ج.م`
+                    : `${activePrice} ج.م`
+                  }
                 </p>
               </div>
 
@@ -146,7 +191,45 @@ export default function MealBottomSheet({ meal, onClose }: Props) {
             </div>
           </div>
 
-          {/* ── 3. الإضافات ── */}
+          {/* ── 3. الحجم ── */}
+          {meal.sizes && meal.sizes.length > 0 && (
+            <div className="px-4 pt-4 pb-3 border-b border-[var(--color-border)]">
+              <h3 className="text-sm font-bold text-[var(--color-secondary)] mb-3">
+                إختيارك من الحجم:
+                <span className="text-[var(--color-muted)] font-normal"> (اختر 1)</span>
+              </h3>
+              <div className="flex flex-col gap-3">
+                {meal.sizes.map((size) => {
+                  const selected = selectedSize === size.id;
+                  return (
+                    <label
+                      key={size.id}
+                      className="flex items-center justify-between cursor-pointer"
+                      onClick={() => setSelectedSize(size.id)}
+                    >
+                      <span className={`text-sm transition-colors ${selected ? "font-bold text-[var(--color-primary)]" : "text-[var(--color-secondary)]"}`}>
+                        {size.name}
+                        {size.price !== undefined && (
+                          <span className="font-normal text-[var(--color-muted)] mr-1">— {size.price} ج.م</span>
+                        )}
+                      </span>
+                      <div className={`w-5 h-5 rounded-full border-2 flex items-center justify-center transition-colors ${
+                        selected
+                          ? "border-[var(--color-primary)]"
+                          : "border-[var(--color-border)]"
+                      }`}>
+                        {selected && (
+                          <div className="w-2.5 h-2.5 rounded-full bg-[var(--color-primary)]" />
+                        )}
+                      </div>
+                    </label>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
+          {/* ── 4. الإضافات ── */}
           {meal.extras && meal.extras.length > 0 && (
             <div className="px-4 pt-4 pb-3 border-b border-[var(--color-border)]">
               <h3 className="text-sm font-bold text-[var(--color-secondary)] mb-3">
@@ -190,44 +273,6 @@ export default function MealBottomSheet({ meal, onClose }: Props) {
             </div>
           )}
 
-          {/* ── 4. الحجم ── */}
-          {meal.sizes && meal.sizes.length > 0 && (
-            <div className="px-4 pt-4 pb-3 border-b border-[var(--color-border)]">
-              <h3 className="text-sm font-bold text-[var(--color-secondary)] mb-3">
-                إختيارك من الحجم:
-                <span className="text-[var(--color-muted)] font-normal"> (اختر 1)</span>
-              </h3>
-              <div className="flex flex-col gap-3">
-                {meal.sizes.map((size) => {
-                  const selected = selectedSize === size.id;
-                  return (
-                    <label
-                      key={size.id}
-                      className="flex items-center justify-between cursor-pointer"
-                      onClick={() => setSelectedSize(size.id)}
-                    >
-                      <span className={`text-sm transition-colors ${selected ? "font-bold text-[var(--color-primary)]" : "text-[var(--color-secondary)]"}`}>
-                        {size.name}
-                        {size.price !== undefined && (
-                          <span className="font-normal text-[var(--color-muted)] mr-1">— {size.price} ج.م</span>
-                        )}
-                      </span>
-                      <div className={`w-5 h-5 rounded-full border-2 flex items-center justify-center transition-colors ${
-                        selected
-                          ? "border-[var(--color-primary)]"
-                          : "border-[var(--color-border)]"
-                      }`}>
-                        {selected && (
-                          <div className="w-2.5 h-2.5 rounded-full bg-[var(--color-primary)]" />
-                        )}
-                      </div>
-                    </label>
-                  );
-                })}
-              </div>
-            </div>
-          )}
-
           {/* ── 5. ملاحظة ── */}
           <div className="px-4 pt-4 pb-3">
             <button
@@ -255,7 +300,7 @@ export default function MealBottomSheet({ meal, onClose }: Props) {
 
         {/* ── 6. Bottom bar ── */}
         <div className="absolute bottom-0 right-0 left-0 px-4 pb-6 pt-2 bg-white border-t border-[var(--color-border)]">
-          <button className="w-full bg-[var(--color-primary)] rounded-2xl px-4 py-3.5 flex items-center justify-between shadow-lg active:scale-[0.98] transition-transform">
+          <button onClick={handleAddToCart} className="w-full bg-[var(--color-primary)] rounded-2xl px-4 py-3.5 flex items-center justify-between shadow-lg active:scale-[0.98] transition-transform">
             {/* يمين: النص */}
             <span className="text-white text-base font-bold">إضافة للسلة</span>
             {/* يسار: السعر */}
@@ -264,6 +309,24 @@ export default function MealBottomSheet({ meal, onClose }: Props) {
         </div>
 
       </div>
+
+      <ConfirmModal
+        isOpen={conflictMsg !== null}
+        message={conflictMsg ?? ""}
+        onConfirm={() => {
+          if (pendingItem.current) {
+            clearCart();
+            addToCart(restaurantId, restaurantName, pendingItem.current);
+            pendingItem.current = null;
+          }
+          setConflictMsg(null);
+          onClose();
+        }}
+        onCancel={() => {
+          pendingItem.current = null;
+          setConflictMsg(null);
+        }}
+      />
     </div>
   );
 }

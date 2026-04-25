@@ -2,19 +2,15 @@
 
 import Image from "next/image";
 import Link from "next/link";
-import { useState } from "react";
+import { useState, useEffect } from "react";
+import { getCart, updateQty as updateCartQty, Cart, CartItem } from "@/lib/cart";
+import { supabase } from "@/lib/supabase";
 
-/* ── بيانات وهمية ── */
-const restaurantName = "بيت البرجر";
-
-const initialItems = [
-  { id: 1, name: "كشري كبير",   desc: "أرز ومكرونة وعدس بصوص الطماطم",      price: 25, img: "https://images.unsplash.com/photo-1512058564366-18510be2db19?w=200&h=200&fit=crop" },
-  { id: 2, name: "طاجن فراخ",   desc: "دجاج بالبصل والطماطم والتوابل الشرقية", price: 70, img: "https://images.unsplash.com/photo-1574484284002-952d92456975?w=200&h=200&fit=crop" },
-  { id: 3, name: "كشري وسط",    desc: "حجم وسط مثالي لشخص واحد",              price: 18, img: "https://images.unsplash.com/photo-1512058564366-18510be2db19?w=200&h=200&fit=crop" },
-];
-
-const delivery = 15;
-const service  = 5;
+function itemUnitPrice(item: CartItem): number {
+  const sizePrice    = item.size?.price ?? 0;
+  const extrasPrice  = (item.extras ?? []).reduce((s, e) => s + e.price, 0);
+  return item.price + sizePrice + extrasPrice;
+}
 
 function InfoIcon() {
   return (
@@ -27,20 +23,45 @@ function InfoIcon() {
 }
 
 export default function CartPage() {
-  const [items, setItems] = useState(
-    initialItems.map((item) => ({ ...item, qty: 1 }))
-  );
-  const [coupon, setCoupon] = useState("");
+  const [cart,     setCart]     = useState<Cart | null>(null);
+  const [coupon,   setCoupon]   = useState("");
+  const [delivery, setDelivery] = useState(0);
+  const [service,  setService]  = useState(0);
 
-  function updateQty(id: number, delta: number) {
-    setItems((prev) =>
-      prev
-        .map((item) => item.id === id ? { ...item, qty: item.qty + delta } : item)
-        .filter((item) => item.qty > 0)
+  useEffect(() => {
+    setCart(getCart());
+
+    async function fetchSettings() {
+      const { data } = await supabase
+        .from("settings")
+        .select("delivery_fee, service_fee")
+        .single();
+      if (data) {
+        setDelivery(data.delivery_fee ?? 0);
+        setService(data.service_fee  ?? 0);
+      }
+    }
+    fetchSettings();
+  }, []);
+
+  function handleQtyChange(itemId: string, newQty: number) {
+    updateCartQty(itemId, newQty);
+    setCart(getCart());
+  }
+
+  if (!cart) {
+    return (
+      <div className="min-h-screen bg-[var(--color-surface)] flex flex-col items-center justify-center gap-4">
+        <p className="text-[var(--color-secondary)] font-bold">سلتك فارغة</p>
+        <Link href="/restaurants" className="text-sm text-[var(--color-primary)] underline">
+          تصفّح المطاعم
+        </Link>
+      </div>
     );
   }
 
-  const subtotal = items.reduce((sum, item) => sum + item.price * item.qty, 0);
+  const items    = cart.items;
+  const subtotal = items.reduce((sum, item) => sum + itemUnitPrice(item) * item.qty, 0);
   const total    = subtotal + delivery + service;
 
   return (
@@ -62,7 +83,7 @@ export default function CartPage() {
             {/* العنوان — وسط */}
             <div className="text-center">
               <h1 className="text-base font-black text-[var(--color-secondary)]">سلة المشتريات</h1>
-              <p className="text-xs text-[var(--color-muted)] mt-0.5">{restaurantName}</p>
+              <p className="text-xs text-[var(--color-muted)] mt-0.5">{cart.restaurantName}</p>
             </div>
 
             {/* فراغ للتوازن */}
@@ -80,15 +101,29 @@ export default function CartPage() {
                   <div className="flex items-start gap-3">
                     {/* صورة — يمين */}
                     <div className="relative w-16 h-16 flex-shrink-0 rounded-xl overflow-hidden">
-                      <Image src={item.img} alt={item.name} fill className="object-cover" />
+                      <Image
+                        src={item.image_url ?? "https://images.unsplash.com/photo-1546069901-ba9599a7e63c?w=200&h=200&fit=crop"}
+                        alt={item.name}
+                        fill
+                        className="object-cover"
+                      />
                     </div>
 
                     {/* المعلومات */}
                     <div className="flex-1 min-w-0">
                       <p className="text-sm font-bold text-[var(--color-secondary)]">{item.name}</p>
-                      <p className="text-xs text-[var(--color-muted)] mt-0.5 line-clamp-1">{item.desc}</p>
+                      {item.size && (
+                        <p className="text-xs text-[var(--color-muted)] mt-0.5">
+                          {item.size.name} — {item.size.price} ج.م
+                        </p>
+                      )}
+                      {item.extras && item.extras.length > 0 && (
+                        <p className="text-xs text-[var(--color-muted)] mt-0.5 line-clamp-1">
+                          {item.extras.map((e) => e.name).join("، ")}
+                        </p>
+                      )}
                       <p className="text-sm font-bold text-[var(--color-primary)] mt-1">
-                        {item.price * item.qty} ج.م
+                        {itemUnitPrice(item) * item.qty} ج.م
                       </p>
                     </div>
                   </div>
@@ -96,7 +131,7 @@ export default function CartPage() {
                   {/* عداد الكمية */}
                   <div className="flex items-center gap-2 mt-2 justify-end">
                     <button
-                      onClick={() => updateQty(item.id, -1)}
+                      onClick={() => handleQtyChange(item.id, item.qty - 1)}
                       className="w-7 h-7 rounded-full bg-[var(--color-surface)] border border-[var(--color-border)] flex items-center justify-center"
                     >
                       <svg width="12" height="12" viewBox="0 0 24 24" fill="none"
@@ -108,7 +143,7 @@ export default function CartPage() {
                       {item.qty}
                     </span>
                     <button
-                      onClick={() => updateQty(item.id, 1)}
+                      onClick={() => handleQtyChange(item.id, item.qty + 1)}
                       className="w-7 h-7 rounded-full bg-[var(--color-primary)] flex items-center justify-center"
                     >
                       <svg width="12" height="12" viewBox="0 0 24 24" fill="none"

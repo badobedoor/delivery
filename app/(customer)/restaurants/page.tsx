@@ -4,6 +4,7 @@ import Image from "next/image";
 import Link from "next/link";
 import { useState, useEffect } from "react";
 import { supabase } from "@/lib/supabase";
+import CartBar from "@/components/customer/CartBar";
 
 /* ── Types ── */
 type Restaurant = {
@@ -14,13 +15,20 @@ type Restaurant = {
   cover_image_url: string | null;
 };
 
-/* ── Static promotional data (no DB table) ── */
-const topMeals = [
-  { id: 1, name: "برجر كلاسيك",    restaurant: "بيت البرجر",   rating: 4.8, img: "https://images.unsplash.com/photo-1568901346375-23c9450c58cd?w=300&h=200&fit=crop" },
-  { id: 2, name: "بيتزا مارجريتا", restaurant: "ليالي بيتزا",  rating: 4.6, img: "https://images.unsplash.com/photo-1568901346375-23c9450c58cd?w=300&h=200&fit=crop" },
-  { id: 3, name: "شاورما لحم",     restaurant: "شاورما الشام", rating: 4.7, img: "https://images.unsplash.com/photo-1568901346375-23c9450c58cd?w=300&h=200&fit=crop" },
-  { id: 4, name: "دجاج مشوي",     restaurant: "مشويات النيل", rating: 4.5, img: "https://images.unsplash.com/photo-1568901346375-23c9450c58cd?w=300&h=200&fit=crop" },
-];
+type Advertisement = {
+  id: string;
+  image_url: string | null;
+  link: string | null;
+};
+
+type FeaturedItem = {
+  id: string;
+  name: string;
+  restaurant_name: string | null;
+  rating: number | null;
+  image_url: string | null;
+  price: number | null;
+};
 
 const FALLBACK_IMG = "https://images.unsplash.com/photo-1552566626-52f8b828add9?w=100&h=100&fit=crop";
 
@@ -41,27 +49,44 @@ function StarRating({ rating }: { rating: number }) {
 export default function RestaurantsPage() {
   const address = "المعادي، القاهرة";
 
-  const [restaurants, setRestaurants] = useState<Restaurant[]>([]);
-  const [loading,     setLoading]     = useState(true);
-  const [error,       setError]       = useState<string | null>(null);
+  const [restaurants,    setRestaurants]    = useState<Restaurant[]>([]);
+  const [advertisement,  setAdvertisement]  = useState<Advertisement | null>(null);
+  const [featuredItems,  setFeaturedItems]  = useState<FeaturedItem[]>([]);
+  const [loading,        setLoading]        = useState(true);
+  const [error,          setError]          = useState<string | null>(null);
 
   useEffect(() => {
-    async function fetchRestaurants() {
-      const { data, error } = await supabase
-        .from("restaurants")
-        .select("id, name, description, image_url, cover_image_url")
-        .eq("is_active", true)
-        .order("name");
+    async function fetchAll() {
+      const [restaurantsRes, adsRes, featuredRes] = await Promise.all([
+        supabase
+          .from("restaurants")
+          .select("id, name, description, image_url, cover_image_url")
+          .eq("is_active", true)
+          .order("name"),
+        supabase
+          .from("advertisements")
+          .select("id, image_url, link")
+          .eq("is_active", true)
+          .eq("page", "home")
+          .order("order_index")
+          .limit(1)
+          .maybeSingle(),
+        supabase
+          .from("featured_items")
+          .select("id, name, restaurant_name, rating, image_url, price")
+          .eq("is_active", true)
+          .order("order_index"),
+      ]);
 
-      if (error) {
-        setError("تعذّر تحميل المطاعم");
-      } else {
-        setRestaurants(data ?? []);
-      }
+      if (restaurantsRes.error) setError("تعذّر تحميل المطاعم");
+      else setRestaurants(restaurantsRes.data ?? []);
+
+      setAdvertisement(adsRes.data ?? null);
+      setFeaturedItems(featuredRes.data ?? []);
       setLoading(false);
     }
 
-    fetchRestaurants();
+    fetchAll();
   }, []);
 
   return (
@@ -102,13 +127,25 @@ export default function RestaurantsPage() {
           {/* ── Banner ── */}
           <section className="pt-4">
             <div className="relative w-full h-40 rounded-2xl overflow-hidden shadow-md">
-              <Image
-                src="https://images.unsplash.com/photo-1565299624946-b28f40a0ae38?w=800&h=300&fit=crop"
-                alt="إعلان"
-                fill
-                className="object-cover"
-                priority
-              />
+              {advertisement?.link ? (
+                <a href={advertisement.link} target="_blank" rel="noopener noreferrer" className="block w-full h-full">
+                  <Image
+                    src={advertisement.image_url ?? "https://images.unsplash.com/photo-1565299624946-b28f40a0ae38?w=800&h=300&fit=crop"}
+                    alt="إعلان"
+                    fill
+                    className="object-cover"
+                    priority
+                  />
+                </a>
+              ) : (
+                <Image
+                  src={advertisement?.image_url ?? "https://images.unsplash.com/photo-1565299624946-b28f40a0ae38?w=800&h=300&fit=crop"}
+                  alt="إعلان"
+                  fill
+                  className="object-cover"
+                  priority
+                />
+              )}
             </div>
           </section>
 
@@ -118,24 +155,29 @@ export default function RestaurantsPage() {
               الأكثر طلباً 🔥
             </h2>
             <div className="flex gap-3 overflow-x-auto pb-2 -mx-4 px-4 scrollbar-hide">
-              {topMeals.map((meal) => (
+              {featuredItems.map((item) => (
                 <div
-                  key={meal.id}
+                  key={item.id}
                   className="flex-shrink-0 w-44 bg-white rounded-2xl overflow-hidden shadow-sm border border-[var(--color-border)]"
                 >
                   <div className="relative w-full h-28">
-                    <Image src={meal.img} alt={meal.name} fill className="object-cover" />
+                    <Image src={item.image_url ?? FALLBACK_IMG} alt={item.name} fill className="object-cover" />
                   </div>
                   <div className="p-2.5">
                     <p className="text-sm font-semibold text-[var(--color-secondary)] truncate">
-                      {meal.name}
+                      {item.name}
                     </p>
                     <p className="text-xs text-[var(--color-muted)] truncate mt-0.5">
-                      {meal.restaurant}
+                      {item.restaurant_name ?? ""}
                     </p>
                     <div className="mt-1.5">
-                      <StarRating rating={meal.rating} />
+                      <StarRating rating={item.rating ?? 0} />
                     </div>
+                    {item.price != null && (
+                      <p className="text-xs font-bold text-[var(--color-primary)] mt-1">
+                        {item.price} جنيه
+                      </p>
+                    )}
                   </div>
                 </div>
               ))}
@@ -196,6 +238,7 @@ export default function RestaurantsPage() {
 
         </main>
       </div>
+      <CartBar />
     </div>
   );
 }

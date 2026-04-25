@@ -2,10 +2,13 @@
 
 import Image from "next/image";
 import Link from "next/link";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useParams } from "next/navigation";
 import { supabase } from "@/lib/supabase";
+import { addToCart, clearCart, getCart, updateQty, CartItem } from "@/lib/cart";
+import ConfirmModal from "@/components/customer/ConfirmModal";
 import MealBottomSheet from "@/components/customer/MealBottomSheet";
+import CartBar from "@/components/customer/CartBar";
 
 /* ── DB types ── */
 type ItemExtra  = { id: number; name: string; price: number };
@@ -38,13 +41,49 @@ function formatPrice(p: number) {
 }
 
 /* ── Quantity counter for items without extras ── */
-function QuantityCounter({ price }: { price: number }) {
-  const [qty, setQty] = useState(0);
+interface QtyProps {
+  itemId: string;
+  name: string;
+  price: number;
+  description: string | null;
+  imageUrl: string | null;
+  restaurantId: string;
+  restaurantName: string;
+}
+
+function QuantityCounter({ itemId, name, price, description, imageUrl, restaurantId, restaurantName }: QtyProps) {
+  const [qty,         setQty]         = useState(() => getCart()?.items.find((i) => i.id === itemId)?.qty ?? 0);
+  const [conflictMsg, setConflictMsg] = useState<string | null>(null);
+  const pendingItem = useRef<CartItem | null>(null);
+
+  function handleAdd() {
+    const cartItem: CartItem = { id: itemId, name, price, qty: 1, image_url: imageUrl, description };
+    const result = addToCart(restaurantId, restaurantName, cartItem);
+    if (result.conflict) {
+      pendingItem.current = cartItem;
+      setConflictMsg(`سلتك فيها طلب من ${result.conflictName}، هل تريد مسحها والبدء من جديد؟`);
+    } else {
+      setQty(1);
+    }
+  }
+
+  function handleIncrease() {
+    const newQty = qty + 1;
+    updateQty(itemId, newQty);
+    setQty(newQty);
+  }
+
+  function handleDecrease() {
+    const newQty = qty - 1;
+    updateQty(itemId, newQty);
+    setQty(newQty);
+  }
+
   return (
     <div className="flex items-center gap-2 mt-2">
       {qty === 0 ? (
         <button
-          onClick={() => setQty(1)}
+          onClick={handleAdd}
           className="w-7 h-7 rounded-full bg-[var(--color-primary)] flex items-center justify-center shadow"
         >
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2.5">
@@ -54,7 +93,7 @@ function QuantityCounter({ price }: { price: number }) {
       ) : (
         <div className="flex items-center gap-2">
           <button
-            onClick={() => setQty((q) => Math.max(0, q - 1))}
+            onClick={handleDecrease}
             className="w-7 h-7 rounded-full bg-[var(--color-surface)] border border-[var(--color-border)] flex items-center justify-center"
           >
             <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="var(--color-secondary)" strokeWidth="2.5">
@@ -63,7 +102,7 @@ function QuantityCounter({ price }: { price: number }) {
           </button>
           <span className="text-sm font-bold text-[var(--color-secondary)] w-4 text-center">{qty}</span>
           <button
-            onClick={() => setQty((q) => q + 1)}
+            onClick={handleIncrease}
             className="w-7 h-7 rounded-full bg-[var(--color-primary)] flex items-center justify-center"
           >
             <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2.5">
@@ -75,6 +114,23 @@ function QuantityCounter({ price }: { price: number }) {
       {qty > 0 && (
         <span className="text-xs text-[var(--color-muted)]">{formatPrice(price * qty)}</span>
       )}
+      <ConfirmModal
+        isOpen={conflictMsg !== null}
+        message={conflictMsg ?? ""}
+        onConfirm={() => {
+          if (pendingItem.current) {
+            clearCart();
+            addToCart(restaurantId, restaurantName, pendingItem.current);
+            pendingItem.current = null;
+            setQty(1);
+          }
+          setConflictMsg(null);
+        }}
+        onCancel={() => {
+          pendingItem.current = null;
+          setConflictMsg(null);
+        }}
+      />
     </div>
   );
 }
@@ -89,10 +145,6 @@ export default function RestaurantPage() {
   const [error,       setError]       = useState<string | null>(null);
   const [activeTab,   setActiveTab]   = useState<string>("");
   const [sheetMeal,   setSheetMeal]   = useState<SheetMeal | null>(null);
-
-  /* ── dummy cart ── */
-  const cartItems = 2;
-  const cartTotal = "١١٠ ج";
 
   useEffect(() => {
     if (!id) return;
@@ -270,7 +322,15 @@ export default function RestaurantPage() {
                       <p className="text-sm font-bold text-[var(--color-secondary)]">{meal.name}</p>
                       <p className="text-xs text-[var(--color-muted)] mt-0.5 line-clamp-2 leading-relaxed">{meal.description}</p>
                       <p className="text-sm font-bold text-[var(--color-primary)] mt-1.5">{formatPrice(meal.price)}</p>
-                      <QuantityCounter price={meal.price} />
+                      <QuantityCounter
+                        itemId={String(meal.id)}
+                        name={meal.name}
+                        price={meal.price}
+                        description={meal.description}
+                        imageUrl={meal.image_url}
+                        restaurantId={id}
+                        restaurantName={restaurant.name}
+                      />
                     </div>
                   </div>
                 );
@@ -284,28 +344,18 @@ export default function RestaurantPage() {
 
         </main>
 
-        {/* ── Sticky Bottom Bar ── */}
-        {cartItems > 0 && (
-          <div className="fixed bottom-0 right-0 left-0 z-20">
-            <div className="mx-auto w-full max-w-[430px] px-4 pb-6 pt-2">
-              <button className="w-full bg-[var(--color-primary)] rounded-2xl px-4 py-3.5 flex items-center justify-between shadow-xl active:scale-[0.98] transition-transform">
-                <div className="flex items-center gap-2">
-                  <span className="bg-[var(--color-primary-dark)] text-white text-xs font-bold w-6 h-6 rounded-full flex items-center justify-center flex-shrink-0">
-                    {cartItems}
-                  </span>
-                  <span className="text-white text-base font-bold">سلة المشتريات</span>
-                </div>
-                <span className="text-white text-lg font-black">{cartTotal}</span>
-              </button>
-            </div>
-          </div>
-        )}
+        <CartBar />
 
       </div>
 
       {/* ── MealBottomSheet ── */}
       {sheetMeal && (
-        <MealBottomSheet meal={sheetMeal} onClose={() => setSheetMeal(null)} />
+        <MealBottomSheet
+          meal={sheetMeal}
+          onClose={() => setSheetMeal(null)}
+          restaurantId={id}
+          restaurantName={restaurant.name}
+        />
       )}
 
     </div>
