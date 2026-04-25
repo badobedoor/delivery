@@ -92,7 +92,7 @@ export default function CheckoutPage() {
         user_id:       userId,
         address_id:    address.id,
         restaurant_id: cart.restaurantId,
-        status:        "pending",
+        status:        "new",
         subtotal,
         delivery_fee: deliveryFee,
         total:        subtotal + deliveryFee,

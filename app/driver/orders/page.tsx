@@ -1,6 +1,7 @@
 "use client";
 
-import { useState, useCallback } from "react";
+import { useState, useCallback, useEffect } from "react";
+import { supabase } from "@/lib/supabase";
 
 const C = {
   bg:     "#0F172A",
@@ -17,7 +18,7 @@ const C = {
 /* ── Types ── */
 type Meal   = { name: string; qty: number; price: number };
 type Order  = {
-  id:         number;
+  id:         string;
   num:        string;
   restaurant: string;
   area:       string;
@@ -28,39 +29,33 @@ type Order  = {
 };
 type ActiveOrder = Order & { pickedUp: boolean; phone: string };
 
-/* ── Seed available orders ── */
-const seedAvailable: Order[] = [
-  {
-    id: 1, num: "#١٠٢٣", restaurant: "بيتزا هت", area: "المهندسين",
-    address: "١٢ شارع النيل، المهندسين، الجيزة",
-    total: 185,
-    meals: [
-      { name: "بيتزا بيبروني كبيرة",  qty: 1, price: 120 },
-      { name: "بيتزا مارجريتا وسط",   qty: 1, price: 65  },
-    ],
-    note: "بدون فلفل حار من فضلك",
-  },
-  {
-    id: 2, num: "#١٠٢٤", restaurant: "شاورمر", area: "الدقي",
-    address: "٥ شارع التحرير، الدقي، الجيزة",
-    total: 97,
-    meals: [
-      { name: "شاورما دجاج",  qty: 2, price: 35 },
-      { name: "بطاطس مقلية",  qty: 1, price: 27 },
-    ],
-    note: "",
-  },
-  {
-    id: 3, num: "#١٠٢٥", restaurant: "كنتاكي", area: "العجوزة",
-    address: "٣٣ شارع الهرم، العجوزة، الجيزة",
-    total: 142,
-    meals: [
-      { name: "وجبة دلو كبير",        qty: 1, price: 95 },
-      { name: "تويستر دجاج حار",      qty: 1, price: 47 },
-    ],
-    note: "الباب الخلفي للعمارة",
-  },
-];
+/* ── DB → local mapper ── */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type DBOrder = Record<string, any>;
+
+function toOrder(o: DBOrder): Order {
+  return {
+    id:         o.id,
+    num:        `#${o.user_order_number ?? "—"}`,
+    restaurant: o.restaurants?.name ?? "—",
+    area:       o.addresses?.area_id ?? o.addresses?.areas?.name ?? "—",
+    address:    o.addresses?.full_address ?? "—",
+    total:      o.total ?? 0,
+    meals:      (o.order_items ?? []).map((item: DBOrder) => ({
+      name:  item.menu_items?.name  ?? "—",
+      qty:   item.quantity  ?? 1,
+      price: item.menu_items?.price ?? 0,
+    })),
+    note: o.notes ?? "",
+  };
+}
+
+const ORDER_SELECT = `
+  id, total, notes, user_order_number,
+  restaurants!restaurant_id (name),
+  addresses!address_id (full_address, area_id),
+  order_items (quantity, menu_items(name, price))
+`;
 
 /* ── Web Audio notification ── */
 function playNotif() {
@@ -274,7 +269,7 @@ function ActiveCard({ order, onDeliver }: { order: ActiveOrder; onDeliver: () =>
           )}
 
           {/* Phone — visible only after pickup */}
-          {pickedUp && (
+          {pickedUp && order.phone && (
             <div
               className="rounded-xl px-3 py-2.5 flex items-center justify-between gap-3"
               style={{ background: `${C.teal}12`, border: `1px solid ${C.teal}30` }}
@@ -333,22 +328,104 @@ type TabId = "available" | "active";
 
 export default function DriverOrdersPage() {
   const [tab,       setTab]       = useState<TabId>("available");
-  const [available, setAvailable] = useState<Order[]>(seedAvailable);
+  const [available, setAvailable] = useState<Order[]>([]);
   const [active,    setActive]    = useState<ActiveOrder[]>([]);
+  const [driverId,  setDriverId]  = useState<string | null>(null);
+  const [shiftId,   setShiftId]   = useState<string | null>(null);
+  const [noShift,   setNoShift]   = useState(false);
+  const [loading,   setLoading]   = useState(true);
 
-  const accept = useCallback((order: Order) => {
+  const loadData = useCallback(async (did: string, sid: string) => {
+    const { data: availableOrders, error: availableError } = await supabase
+      .from("orders")
+      .select(`
+        id, total, notes, user_order_number,
+        restaurants!restaurant_id (name),
+        addresses!address_id (full_address, area_id)
+      `)
+      .eq("status", "pending")
+      .eq("shift_id", sid);
+
+    const { data: act } = await supabase.from("orders").select(ORDER_SELECT).eq("status", "on_the_way").eq("delivery_id", did);
+
+    setAvailable((availableOrders ?? []).map(toOrder));
+    setActive((act ?? []).map((o) => ({ ...toOrder(o), pickedUp: false, phone: "" })));
+  }, []);
+
+  useEffect(() => {
+    async function init() {
+      const driver = JSON.parse(localStorage.getItem("driver_user") || "{}");
+      const did = driver.id;
+      if (!did) { setLoading(false); return; }
+      setDriverId(did);
+
+      // 1. جيب الـ shift النشطة من delivery_shifts
+      const { data: deliveryShift, error: deliveryShiftError } = await supabase
+        .from("delivery_shifts")
+        .select("shift_id")
+        .eq("delivery_id", did)
+        .eq("is_active", true)
+        .limit(1)
+        .maybeSingle();
+
+      if (!deliveryShift) { setNoShift(true); setLoading(false); return; }
+
+      // 2. جيب تفاصيل الـ shift
+      const { data: activeShift } = await supabase
+        .from("shifts")
+        .select("id, num, start_time")
+        .eq("id", deliveryShift.shift_id)
+        .single();
+
+      if (!activeShift) { setNoShift(true); setLoading(false); return; }
+      setShiftId(activeShift.id);
+
+      await loadData(did, activeShift.id);
+      setLoading(false);
+    }
+    init();
+  }, [loadData]);
+
+  const accept = useCallback(async (order: Order) => {
+    if (!driverId || !shiftId) return;
     playNotif();
-    setAvailable((p) => p.filter((o) => o.id !== order.id));
-    setActive((p) => [...p, { ...order, pickedUp: false, phone: "01012345678" }]);
+    await supabase
+      .from("orders")
+      .update({ status: "on_the_way", delivery_id: driverId })
+      .eq("id", order.id);
+    await loadData(driverId, shiftId);
     setTab("active");
-  }, []);
+  }, [driverId, shiftId, loadData]);
 
-  const deliver = useCallback((id: number) => {
-    setActive((p) => p.filter((o) => o.id !== id));
-  }, []);
+  const deliver = useCallback(async (id: string) => {
+    await supabase.from("orders").update({ status: "delivered" }).eq("id", id);
+    if (driverId && shiftId) await loadData(driverId, shiftId);
+  }, [driverId, shiftId, loadData]);
 
-  /* badge count */
   const availCount = available.length;
+
+  /* ── Loading ── */
+  if (loading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center" style={{ background: C.bg }}>
+        <div className="w-8 h-8 rounded-full border-2 border-t-transparent animate-spin" style={{ borderColor: `${C.teal} transparent ${C.teal} ${C.teal}` }} />
+      </div>
+    );
+  }
+
+  /* ── No active shift ── */
+  if (noShift) {
+    return (
+      <div
+        className="min-h-screen flex flex-col items-center justify-center gap-4 text-center px-6"
+        style={{ background: C.bg, color: C.text, direction: "rtl" }}
+      >
+        <span className="text-5xl">🚫</span>
+        <p className="text-base font-bold" style={{ color: C.text }}>ليس لديك وردية نشطة حالياً</p>
+        <p className="text-sm" style={{ color: C.muted }}>تواصل مع المشرف لتفعيل الوردية</p>
+      </div>
+    );
+  }
 
   return (
     <div
