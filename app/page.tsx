@@ -1,4 +1,8 @@
+"use client";
 import Image from "next/image";
+import Link from "next/link";
+import { useState, useEffect } from "react";
+import { supabase } from "@/lib/supabase";
 
 const categories = [
   { emoji: "🍔", name: "مطاعم" },
@@ -18,7 +22,22 @@ const shortcuts = [
 ];
 
 export default function HomePage() {
-  const address = ""; // فاضي = مفيش عنوان
+  const [defaultAddress, setDefaultAddress] = useState<{ label: string } | null>(null);
+
+  useEffect(() => {
+    async function load() {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return;
+      const { data } = await supabase
+        .from("addresses")
+        .select("label")
+        .eq("user_id", user.id)
+        .eq("is_default", true)
+        .single();
+      setDefaultAddress(data);
+    }
+    load();
+  }, []);
 
   return (
     <div className="min-h-screen bg-[var(--color-surface)]">
@@ -34,26 +53,26 @@ export default function HomePage() {
 
           {/* العنوان — وسط */}
           <div>
-            {address ? (
+            {defaultAddress ? (
               <button className="flex items-center gap-1 text-sm font-semibold text-[var(--color-secondary)]">
-                {address}
+                {defaultAddress.label}
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
                   <path d="M6 9l6 6 6-6" />
                 </svg>
               </button>
             ) : (
-              <button className="text-sm font-semibold text-[var(--color-secondary)]">
+              <Link href="/address" className="text-sm font-semibold text-[var(--color-secondary)]">
                 أضف عنوان التوصيل 📍
-              </button>
+              </Link>
             )}
           </div>
 
           {/* أيقونة البحث — يسار */}
-          <button className="w-9 h-9 rounded-full bg-[var(--color-surface)] flex items-center justify-center">
+          <Link href="/search" className="w-9 h-9 rounded-full bg-[var(--color-surface)] flex items-center justify-center">
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--color-secondary)" strokeWidth="1.8">
               <circle cx="11" cy="11" r="8" /><path d="m21 21-4.35-4.35" />
             </svg>
-          </button>
+          </Link>
         </div>
 
       </header>
@@ -75,19 +94,34 @@ export default function HomePage() {
         {/* ── Categories ── */}
         <section className="px-4 pt-5">
           <div className="grid grid-cols-4 gap-3">
-            {categories.map((cat) => (
-              <button
-                key={cat.name}
-                className="flex flex-col items-center gap-1.5"
-              >
-                <div className="w-full aspect-square rounded-2xl bg-white border border-[var(--color-border)] flex items-center justify-center text-2xl shadow-sm">
-                  {cat.emoji}
-                </div>
-                <span className="text-xs font-medium text-[var(--color-secondary)] text-center leading-tight">
-                  {cat.name}
-                </span>
-              </button>
-            ))}
+            {categories.map((cat) =>
+              cat.name === "مطاعم" ? (
+                <Link
+                  key={cat.name}
+                  href="/restaurants"
+                  className="flex flex-col items-center gap-1.5"
+                >
+                  <div className="w-full aspect-square rounded-2xl bg-white border border-[var(--color-border)] flex items-center justify-center text-2xl shadow-sm">
+                    {cat.emoji}
+                  </div>
+                  <span className="text-xs font-medium text-[var(--color-secondary)] text-center leading-tight">
+                    {cat.name}
+                  </span>
+                </Link>
+              ) : (
+                <button
+                  key={cat.name}
+                  className="flex flex-col items-center gap-1.5"
+                >
+                  <div className="w-full aspect-square rounded-2xl bg-white border border-[var(--color-border)] flex items-center justify-center text-2xl shadow-sm">
+                    {cat.emoji}
+                  </div>
+                  <span className="text-xs font-medium text-[var(--color-secondary)] text-center leading-tight">
+                    {cat.name}
+                  </span>
+                </button>
+              )
+            )}
           </div>
         </section>
 
@@ -124,19 +158,19 @@ export default function HomePage() {
           <span className="text-[10px] font-semibold text-[var(--color-primary)]">الرئيسية</span>
         </button>
 
-        <button className="flex flex-col items-center gap-0.5 px-4">
+        <Link href="/search" className="flex flex-col items-center gap-0.5 px-4">
           <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="var(--color-muted)" strokeWidth="1.8">
             <circle cx="11" cy="11" r="8" /><path d="m21 21-4.35-4.35" />
           </svg>
           <span className="text-[10px] font-medium text-[var(--color-muted)]">بحث</span>
-        </button>
+        </Link>
 
-        <button className="flex flex-col items-center gap-0.5 px-4">
+        <Link href="/account" className="flex flex-col items-center gap-0.5 px-4">
           <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="var(--color-muted)" strokeWidth="1.8">
             <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" /><circle cx="12" cy="7" r="4" />
           </svg>
           <span className="text-[10px] font-medium text-[var(--color-muted)]">حسابي</span>
-        </button>
+        </Link>
       </nav>
 
     </div>

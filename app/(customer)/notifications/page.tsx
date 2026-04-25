@@ -1,46 +1,47 @@
+"use client";
+
 import Link from "next/link";
 
-/* ── بيانات وهمية ── */
 const notifications = [
   {
     id: 1,
-    icon: "🛵",
     title: "طلبك في الطريق",
-    desc: "المندوب على بعد ١٠ دقائق من موقعك",
+    body: "المندوب على بعد ١٠ دقائق من موقعك",
     time: "منذ ٥ دقائق",
-    unread: true,
+    read: false,
+    icon: "🛵",
   },
   {
     id: 2,
-    icon: "✅",
     title: "تم تأكيد طلبك",
-    desc: "تم استلام طلبك من بيت البرجر وجاري التحضير",
+    body: "تم استلام طلبك من بيت البرجر وجاري التحضير",
     time: "منذ ٢٠ دقيقة",
-    unread: true,
+    read: false,
+    icon: "✅",
   },
   {
     id: 3,
-    icon: "🎁",
     title: "عرض خاص لك",
-    desc: "استخدم كود HALA50 واحصل على خصم ٥٠٪ على طلبك القادم",
+    body: "استخدم كود HALA50 واحصل على خصم ٥٠٪ على طلبك القادم",
     time: "منذ ساعتين",
-    unread: false,
+    read: true,
+    icon: "🎁",
   },
   {
     id: 4,
-    icon: "✅",
     title: "تم توصيل طلبك",
-    desc: "استمتع بوجبتك من ليالي بيتزا 🍕",
+    body: "استمتع بوجبتك من ليالي بيتزا 🍕",
     time: "أمس",
-    unread: false,
+    read: true,
+    icon: "✅",
   },
   {
     id: 5,
-    icon: "🎁",
     title: "وفر على طلبك القادم",
-    desc: "توصيل مجاني على أول طلب تاني من شاورما الشام",
+    body: "توصيل مجاني على أول طلب تاني من شاورما الشام",
     time: "منذ يومين",
-    unread: false,
+    read: true,
+    icon: "🎁",
   },
 ];
 
@@ -54,7 +55,7 @@ export default function NotificationsPage() {
         {/* ── Header ── */}
         <header className="bg-white px-4 pt-10 pb-4 sticky top-0 z-10 shadow-sm">
           <div className="flex items-center justify-between">
-            <Link href="/account"
+            <Link href="/"
               className="w-9 h-9 rounded-full bg-[var(--color-surface)] flex items-center justify-center">
               <svg width="20" height="20" viewBox="0 0 24 24" fill="none"
                 stroke="var(--color-secondary)" strokeWidth="2.2" strokeLinecap="round">
@@ -76,7 +77,7 @@ export default function NotificationsPage() {
                 <div
                   key={n.id}
                   className={`flex items-start gap-3 px-4 py-4 ${
-                    n.unread ? "bg-[var(--color-primary-light)]/10" : "bg-white"
+                    !n.read ? "bg-[var(--color-primary)]/5" : "bg-white"
                   }`}
                 >
                   {/* أيقونة — يمين */}
@@ -88,13 +89,12 @@ export default function NotificationsPage() {
                   <div className="flex-1 min-w-0">
                     <div className="flex items-start justify-between gap-2">
                       <p className="text-sm font-bold text-[var(--color-secondary)]">{n.title}</p>
-                      {n.unread && (
+                      {/* نقطة برتقالية لو غير مقروء */}
+                      {!n.read && (
                         <span className="w-2 h-2 rounded-full bg-[var(--color-primary)] flex-shrink-0 mt-1.5" />
                       )}
                     </div>
-                    <p className="text-xs text-[var(--color-muted)] mt-0.5 leading-relaxed">
-                      {n.desc}
-                    </p>
+                    <p className="text-xs text-[var(--color-muted)] mt-0.5 leading-relaxed">{n.body}</p>
                     <p className="text-xs text-[var(--color-muted)] mt-1.5">{n.time}</p>
                   </div>
                 </div>
@@ -104,8 +104,7 @@ export default function NotificationsPage() {
             /* ── حالة فارغة ── */
             <div className="flex flex-col items-center justify-center pt-24 gap-3 text-center px-4">
               <span className="text-6xl">🔔</span>
-              <p className="text-base font-bold text-[var(--color-secondary)]">لا يوجد إشعارات</p>
-              <p className="text-sm text-[var(--color-muted)]">إشعاراتك ستظهر هنا</p>
+              <p className="text-base font-bold text-[var(--color-secondary)]">لا توجد إشعارات</p>
             </div>
           )}
 
