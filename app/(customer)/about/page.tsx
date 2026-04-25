@@ -1,12 +1,38 @@
-import Link from "next/link";
+"use client";
 
-const links = [
+import Link from "next/link";
+import { useEffect, useState } from "react";
+import { supabase } from "@/lib/supabase";
+
+const staticLinks = [
   { label: "سياسة الخصوصية", href: "/privacy" },
   { label: "شروط الاستخدام",  href: "/terms"   },
-  { label: "تواصل معنا",      href: "/help"    },
 ];
 
 export default function AboutPage() {
+  const [whatsappNumber, setWhatsappNumber] = useState<string | null>(null);
+
+  useEffect(() => {
+    supabase
+      .from("settings")
+      .select("whatsapp_number")
+      .limit(1)
+      .maybeSingle()
+      .then(({ data, error }) => {
+        console.log("settings data:", data, "error:", error);
+        if (data?.whatsapp_number) setWhatsappNumber(data.whatsapp_number);
+      });
+  }, []);
+
+  const allLinks = [
+    ...staticLinks,
+    {
+      label: "تواصل معنا",
+      href: whatsappNumber ? `https://wa.me/2${whatsappNumber}` : "/help",
+      external: !!whatsappNumber,
+    },
+  ];
+
   return (
     <div className="min-h-screen bg-[var(--color-surface)]">
       <div className="mx-auto w-full max-w-[430px]">
@@ -42,23 +68,31 @@ export default function AboutPage() {
 
           {/* ── روابط ── */}
           <div className="bg-white rounded-2xl border border-[var(--color-border)] overflow-hidden">
-            {links.map((link, i) => (
-              <Link
-                key={link.label}
-                href={link.href}
-                className={`flex items-center justify-between px-4 py-4 active:bg-[var(--color-surface)] transition-colors ${
-                  i < links.length - 1 ? "border-b border-[var(--color-border)]" : ""
-                }`}
-              >
-                <span className="text-sm font-semibold text-[var(--color-secondary)]">
-                  {link.label}
-                </span>
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none"
-                  stroke="var(--color-muted)" strokeWidth="2" strokeLinecap="round">
-                  <path d="M15 18l-6-6 6-6" />
-                </svg>
-              </Link>
-            ))}
+            {allLinks.map((link, i) => {
+              const inner = (
+                <>
+                  <span className="text-sm font-semibold text-[var(--color-secondary)]">
+                    {link.label}
+                  </span>
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none"
+                    stroke="var(--color-muted)" strokeWidth="2" strokeLinecap="round">
+                    <path d="M15 18l-6-6 6-6" />
+                  </svg>
+                </>
+              );
+              const cls = `flex items-center justify-between px-4 py-4 active:bg-[var(--color-surface)] transition-colors ${
+                i < allLinks.length - 1 ? "border-b border-[var(--color-border)]" : ""
+              }`;
+              return link.external ? (
+                <a key={link.label} href={link.href} target="_blank" rel="noopener noreferrer" className={cls}>
+                  {inner}
+                </a>
+              ) : (
+                <Link key={link.label} href={link.href} className={cls}>
+                  {inner}
+                </Link>
+              );
+            })}
           </div>
 
           {/* ── Footer ── */}
