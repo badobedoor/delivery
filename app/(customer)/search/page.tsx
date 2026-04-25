@@ -1,53 +1,63 @@
 "use client";
 
+import Image from "next/image";
 import Link from "next/link";
-import { useRef, useState } from "react";
+import { useState, useEffect, useRef } from "react";
+import { useRouter } from "next/navigation";
+import { supabase } from "@/lib/supabase";
 
-/* ── بيانات وهمية ── */
-const trending = ["بيتزا", "كشري", "برجر", "شاورما", "حلويات النصر", "كريب"];
+/* ── Types ── */
+type Restaurant = { id: string; name: string; image_url: string | null; cuisine_type: string | null };
+type Meal       = { id: string; name: string; price: number; image_url: string | null; restaurant_id: string; restaurants: { name: string } | null };
 
-const allItems = [
-  { id: 1, emoji: "🍔", name: "برجر كلاسيك",      restaurant: "بيت البرجر"   },
-  { id: 2, emoji: "🍔", name: "برجر دبل تشيز",    restaurant: "بيت البرجر"   },
-  { id: 3, emoji: "🍕", name: "بيتزا مارجريتا",   restaurant: "ليالي بيتزا"  },
-  { id: 4, emoji: "🍕", name: "بيتزا بيبروني",    restaurant: "ليالي بيتزا"  },
-  { id: 5, emoji: "🌯", name: "شاورما لحم",        restaurant: "شاورما الشام" },
-  { id: 6, emoji: "🌯", name: "شاورما دجاج",       restaurant: "شاورما الشام" },
-  { id: 7, emoji: "🍜", name: "كشري كبير",         restaurant: "كشري التحرير" },
-  { id: 8, emoji: "🍜", name: "كشري وسط",          restaurant: "كشري التحرير" },
-  { id: 9, emoji: "🧁", name: "حلويات النصر كريب", restaurant: "حلويات النصر" },
-  { id: 10, emoji: "🥞", name: "كريب نوتيلا",      restaurant: "كريب هاوس"   },
-];
-
-function highlight(text: string, query: string) {
-  if (!query) return <>{text}</>;
-  const idx = text.toLowerCase().indexOf(query.toLowerCase());
-  if (idx === -1) return <>{text}</>;
-  return (
-    <>
-      {text.slice(0, idx)}
-      <span className="text-[var(--color-primary)] font-bold">
-        {text.slice(idx, idx + query.length)}
-      </span>
-      {text.slice(idx + query.length)}
-    </>
-  );
-}
+const TRENDING   = ["شاورما", "برجر", "كشري", "بيتزا", "كريب", "حلويات"];
+const FALLBACK   = "https://images.unsplash.com/photo-1546069901-ba9599a7e63c?w=200&h=200&fit=crop";
 
 export default function SearchPage() {
-  const [query, setQuery]   = useState("");
-  const inputRef            = useRef<HTMLInputElement>(null);
+  const router = useRouter();
+  const inputRef = useRef<HTMLInputElement>(null);
 
-  const results = query.trim()
-    ? allItems.filter(
-        (item) =>
-          item.name.includes(query) ||
-          item.restaurant.includes(query)
-      )
-    : [];
+  const [query,       setQuery]       = useState("");
+  const [restaurants, setRestaurants] = useState<Restaurant[]>([]);
+  const [meals,       setMeals]       = useState<Meal[]>([]);
+  const [searching,   setSearching]   = useState(false);
+
+  /* ── Debounced search ── */
+  useEffect(() => {
+    const trimmed = query.trim();
+    if (!trimmed) {
+      setRestaurants([]);
+      setMeals([]);
+      return;
+    }
+
+    setSearching(true);
+    const timer = setTimeout(async () => {
+      const [{ data: restData }, { data: mealData }] = await Promise.all([
+        supabase
+          .from("restaurants")
+          .select("id, name, image_url, cuisine_type")
+          .ilike("name", `%${trimmed}%`)
+          .eq("is_active", true)
+          .limit(5),
+        supabase
+          .from("menu_items")
+          .select("id, name, price, image_url, restaurant_id, restaurants(name)")
+          .ilike("name", `%${trimmed}%`)
+          .eq("is_active", true)
+          .limit(10),
+      ]);
+      setRestaurants(restData ?? []);
+      setMeals(mealData ?? []);
+      setSearching(false);
+    }, 400);
+
+    return () => clearTimeout(timer);
+  }, [query]);
 
   const isTyping   = query.trim().length > 0;
-  const noResults  = isTyping && results.length === 0;
+  const hasResults = restaurants.length > 0 || meals.length > 0;
+  const noResults  = isTyping && !searching && !hasResults;
 
   return (
     <div className="min-h-screen bg-[var(--color-surface)]">
@@ -55,7 +65,7 @@ export default function SearchPage() {
 
         {/* ── Header ── */}
         <header className="bg-white px-4 pt-10 pb-3 sticky top-0 z-10 shadow-sm">
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-3">
             {/* Search input */}
             <div className="flex-1 flex items-center gap-2 bg-[var(--color-surface)] border border-[var(--color-border)] rounded-xl px-3 py-2.5">
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none"
@@ -82,32 +92,25 @@ export default function SearchPage() {
             </div>
 
             {/* إلغاء */}
-            <Link href="/"
-              className="text-sm font-bold text-[var(--color-primary)] flex-shrink-0">
+            <Link href="/" className="text-sm font-bold text-[var(--color-primary)] flex-shrink-0">
               إلغاء
             </Link>
           </div>
         </header>
 
-        <main className="px-4 pt-5 pb-24">
+        <main className="px-4 pt-5 pb-10">
 
-          {/* ── الأكثر بحثاً ── */}
+          {/* ── الأكثر بحثاً (query فارغ) ── */}
           {!isTyping && (
             <section>
-              <h2 className="text-sm font-black text-[var(--color-secondary)] mb-3">
-                الأكثر بحثاً
-              </h2>
+              <h2 className="text-sm font-black text-[var(--color-secondary)] mb-3">الأكثر بحثاً</h2>
               <div className="flex flex-wrap gap-2">
-                {trending.map((tag) => (
+                {TRENDING.map((tag) => (
                   <button
                     key={tag}
                     onClick={() => { setQuery(tag); inputRef.current?.focus(); }}
-                    className="flex items-center gap-1.5 bg-white border border-[var(--color-border)] rounded-full px-3 py-1.5 text-sm text-[var(--color-secondary)]"
+                    className="border border-[var(--color-border)] rounded-full px-4 py-2 text-sm text-[var(--color-secondary)] bg-white"
                   >
-                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none"
-                      stroke="var(--color-muted)" strokeWidth="2">
-                      <circle cx="11" cy="11" r="8" /><path d="m21 21-4.35-4.35" />
-                    </svg>
                     {tag}
                   </button>
                 ))}
@@ -115,27 +118,74 @@ export default function SearchPage() {
             </section>
           )}
 
-          {/* ── نتائج البحث ── */}
-          {isTyping && !noResults && (
-            <div className="bg-white rounded-2xl border border-[var(--color-border)] overflow-hidden">
-              {results.map((item, i) => (
-                <div
-                  key={item.id}
-                  className={`flex items-center gap-3 px-4 py-3 ${
-                    i < results.length - 1 ? "border-b border-[var(--color-border)]" : ""
-                  }`}
-                >
-                  <span className="text-2xl flex-shrink-0">{item.emoji}</span>
-                  <div className="min-w-0">
-                    <p className="text-sm font-semibold text-[var(--color-secondary)]">
-                      {highlight(item.name, query)}
-                    </p>
-                    <p className="text-xs text-[var(--color-muted)] mt-0.5">
-                      {highlight(item.restaurant, query)}
-                    </p>
+          {/* ── Searching spinner ── */}
+          {isTyping && searching && (
+            <div className="flex justify-center pt-16">
+              <div className="w-6 h-6 border-2 border-[var(--color-primary)] border-t-transparent rounded-full animate-spin" />
+            </div>
+          )}
+
+          {/* ── نتايج ── */}
+          {isTyping && !searching && hasResults && (
+            <div className="flex flex-col gap-5">
+
+              {/* مطاعم */}
+              {restaurants.length > 0 && (
+                <section>
+                  <h2 className="text-sm font-black text-[var(--color-secondary)] mb-3">مطاعم</h2>
+                  <div className="flex flex-col gap-2">
+                    {restaurants.map((r) => (
+                      <button
+                        key={r.id}
+                        onClick={() => router.push(`/restaurant/${r.id}`)}
+                        className="bg-white rounded-2xl p-3 flex items-center gap-3 text-right w-full"
+                      >
+                        <div className="relative w-12 h-12 flex-shrink-0 rounded-xl overflow-hidden">
+                          <Image src={r.image_url ?? FALLBACK} alt={r.name} fill className="object-cover" />
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <p className="text-sm font-bold text-[var(--color-secondary)] truncate">{r.name}</p>
+                          {r.cuisine_type && (
+                            <p className="text-xs text-[var(--color-muted)] mt-0.5">{r.cuisine_type}</p>
+                          )}
+                        </div>
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none"
+                          stroke="var(--color-muted)" strokeWidth="2" strokeLinecap="round" className="flex-shrink-0">
+                          <path d="M15 18l-6-6 6-6" />
+                        </svg>
+                      </button>
+                    ))}
                   </div>
-                </div>
-              ))}
+                </section>
+              )}
+
+              {/* وجبات */}
+              {meals.length > 0 && (
+                <section>
+                  <h2 className="text-sm font-black text-[var(--color-secondary)] mb-3">وجبات</h2>
+                  <div className="flex flex-col gap-2">
+                    {meals.map((m) => (
+                      <button
+                        key={m.id}
+                        onClick={() => router.push(`/restaurant/${m.restaurant_id}`)}
+                        className="bg-white rounded-2xl p-3 flex items-center gap-3 text-right w-full"
+                      >
+                        <div className="relative w-12 h-12 flex-shrink-0 rounded-xl overflow-hidden">
+                          <Image src={m.image_url ?? FALLBACK} alt={m.name} fill className="object-cover" />
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <p className="text-sm font-bold text-[var(--color-secondary)] truncate">{m.name}</p>
+                          <p className="text-xs text-[var(--color-muted)] mt-0.5 truncate">
+                            {m.restaurants?.name ?? ""}
+                          </p>
+                        </div>
+                        <p className="text-sm font-bold text-[var(--color-primary)] flex-shrink-0">{m.price} ج.م</p>
+                      </button>
+                    ))}
+                  </div>
+                </section>
+              )}
+
             </div>
           )}
 
@@ -149,35 +199,6 @@ export default function SearchPage() {
           )}
 
         </main>
-
-        {/* ── Bottom Navigation ── */}
-        <nav className="fixed bottom-0 right-0 left-0 bg-white border-t border-[var(--color-border)] flex items-center justify-around py-2 z-20">
-          <Link href="/" className="flex flex-col items-center gap-0.5 px-4">
-            <svg width="22" height="22" viewBox="0 0 24 24" fill="var(--color-muted)" stroke="none">
-              <path d="M10 20v-6h4v6h5v-8h3L12 3 2 12h3v8z" />
-            </svg>
-            <span className="text-[10px] font-medium text-[var(--color-muted)]">الرئيسية</span>
-          </Link>
-
-          {/* بحث — active */}
-          <button className="flex flex-col items-center gap-0.5 px-4">
-            <svg width="22" height="22" viewBox="0 0 24 24" fill="none"
-              stroke="var(--color-primary)" strokeWidth="1.8">
-              <circle cx="11" cy="11" r="8" /><path d="m21 21-4.35-4.35" />
-            </svg>
-            <span className="text-[10px] font-semibold text-[var(--color-primary)]">بحث</span>
-          </button>
-
-          <Link href="/account" className="flex flex-col items-center gap-0.5 px-4">
-            <svg width="22" height="22" viewBox="0 0 24 24" fill="none"
-              stroke="var(--color-muted)" strokeWidth="1.8">
-              <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" />
-              <circle cx="12" cy="7" r="4" />
-            </svg>
-            <span className="text-[10px] font-medium text-[var(--color-muted)]">حسابي</span>
-          </Link>
-        </nav>
-
       </div>
     </div>
   );

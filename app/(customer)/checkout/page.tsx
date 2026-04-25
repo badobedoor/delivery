@@ -89,9 +89,10 @@ export default function CheckoutPage() {
     const { data: order, error: orderError } = await supabase
       .from("orders")
       .insert({
-        user_id:      userId,
-        address_id:   address.id,
-        status:       "pending",
+        user_id:       userId,
+        address_id:    address.id,
+        restaurant_id: cart.restaurantId,
+        status:        "pending",
         subtotal,
         delivery_fee: deliveryFee,
         total:        subtotal + deliveryFee,
@@ -99,13 +100,18 @@ export default function CheckoutPage() {
       .select()
       .single();
 
-    if (orderError || !order) { setSubmitting(false); return; }
+    if (orderError || !order) {
+      console.log("Order Error:", orderError);
+      console.log("Order Data:", order);
+      setSubmitting(false);
+      return;
+    }
 
     const orderItems = cart.items.map((item) => ({
       order_id:       order.id,
       menu_item_id:   item.id,
       quantity:       item.qty,
-      price_at_order: item.price,
+      price_at_order: itemUnitPrice(item),
       extras:         item.extras ?? null,
     }));
 
