@@ -31,6 +31,8 @@ export default function EditAddressPage() {
   const [form, setForm]     = useState<Record<string, string>>({
     label: "", building: "", apartment: "", floor: "", landmark: "",
   });
+  const [isDefault, setIsDefault] = useState(false);
+  const [userId, setUserId]     = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving]   = useState(false);
   const [deleting, setDeleting] = useState(false);
@@ -38,12 +40,14 @@ export default function EditAddressPage() {
 
   useEffect(() => {
     async function load() {
-      const [{ data: areasData }, { data: addrData }] = await Promise.all([
+      const [{ data: areasData }, { data: addrData }, { data: { user } }] = await Promise.all([
         supabase.from("areas").select("id, name"),
-        supabase.from("addresses").select("id, label, area_id, building, apartment, floor, landmark, full_address").eq("id", id).single(),
+        supabase.from("addresses").select("id, label, area_id, building, apartment, floor, landmark, full_address, is_default").eq("id", id).single(),
+        supabase.auth.getUser(),
       ]);
 
       setAreas(areasData ?? []);
+      setUserId(user?.id ?? null);
 
       if (addrData) {
         setArea(addrData.area_id ?? "");
@@ -54,6 +58,7 @@ export default function EditAddressPage() {
           floor:     addrData.floor     ?? "",
           landmark:  addrData.landmark  ?? "",
         });
+        setIsDefault(addrData.is_default ?? false);
       }
 
       setLoading(false);
@@ -86,6 +91,12 @@ export default function EditAddressPage() {
 
     if (updateError) { setError("حدث خطأ أثناء الحفظ، حاول مرة أخرى"); return; }
     router.push("/address");
+  }
+
+  async function handleSetDefault() {
+    await supabase.from("addresses").update({ is_default: false }).eq("user_id", userId);
+    await supabase.from("addresses").update({ is_default: true  }).eq("id", id);
+    setIsDefault(true);
   }
 
   async function handleDelete() {
@@ -184,7 +195,19 @@ export default function EditAddressPage() {
 
         {/* ── Bottom: حفظ ── */}
         <div className="fixed bottom-0 right-0 left-0 z-20">
-          <div className="mx-auto w-full max-w-[430px] px-4 pb-6 pt-2 bg-white border-t border-[var(--color-border)]">
+          <div className="mx-auto w-full max-w-[430px] px-4 pb-6 pt-2 bg-white border-t border-[var(--color-border)] flex flex-col gap-2">
+            {isDefault ? (
+              <p className="text-sm font-semibold text-[var(--color-primary)] text-center py-1">
+                ✓ هذا هو عنوانك الافتراضي
+              </p>
+            ) : (
+              <button
+                onClick={handleSetDefault}
+                className="w-full border-2 border-[var(--color-primary)] text-[var(--color-primary)] text-sm font-bold py-3.5 rounded-2xl active:scale-[0.98] transition-transform"
+              >
+                اجعله افتراضي
+              </button>
+            )}
             <button
               onClick={handleSave}
               disabled={saving}

@@ -10,6 +10,7 @@ type Address = {
   label: string;
   full_address: string;
   area_id: string | null;
+  is_default: boolean;
 };
 
 function BackArrow() {
@@ -36,7 +37,7 @@ export default function AddressPage() {
 
       const { data } = await supabase
         .from("addresses")
-        .select("id, label, full_address, area_id")
+        .select("id, label, full_address, area_id, is_default")
         .eq("user_id", user.id);
 
       setAddresses(data ?? []);
@@ -44,6 +45,14 @@ export default function AddressPage() {
     }
     load();
   }, []);
+
+  async function setDefault(addressId: string) {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return;
+    await supabase.from("addresses").update({ is_default: false }).eq("user_id", user.id);
+    await supabase.from("addresses").update({ is_default: true  }).eq("id", addressId);
+    setAddresses((prev) => prev.map((a) => ({ ...a, is_default: a.id === addressId })));
+  }
 
   return (
     <div className="min-h-screen bg-[var(--color-surface)]">
@@ -91,10 +100,10 @@ export default function AddressPage() {
             /* ── قائمة العناوين ── */
             <div className="flex flex-col gap-3">
               {addresses.map((addr) => (
-                <button
+                <div
                   key={addr.id}
                   onClick={() => router.push(`/address/${addr.id}`)}
-                  className="w-full flex items-start gap-3 bg-white rounded-2xl p-4 border-2 border-[var(--color-border)] text-right transition-colors active:border-[var(--color-primary)]"
+                  className="w-full flex items-start gap-3 bg-white rounded-2xl p-4 border-2 border-[var(--color-border)] text-right transition-colors active:border-[var(--color-primary)] cursor-pointer"
                 >
                   {/* أيقونة */}
                   <div className="w-9 h-9 rounded-full flex items-center justify-center flex-shrink-0 mt-0.5 bg-[var(--color-surface)]">
@@ -107,7 +116,22 @@ export default function AddressPage() {
 
                   {/* النص */}
                   <div className="flex-1 min-w-0">
-                    <p className="text-sm font-bold text-[var(--color-secondary)]">{addr.label}</p>
+                    <div className="flex items-center gap-2">
+                      <p className="text-sm font-bold text-[var(--color-secondary)]">{addr.label}</p>
+                      {addr.is_default && (
+                        <span className="text-[10px] font-bold text-white bg-[var(--color-primary)] px-2 py-0.5 rounded-full">
+                          افتراضي
+                        </span>
+                      )}
+                    </div>
+                    {!addr.is_default && (
+                      <button
+                        onClick={(e) => { e.stopPropagation(); setDefault(addr.id); }}
+                        className="text-xs text-[var(--color-muted)] mt-0.5"
+                      >
+                        اجعله افتراضي
+                      </button>
+                    )}
                     <p className="text-xs text-[var(--color-muted)] mt-0.5 leading-relaxed">{addr.full_address}</p>
                   </div>
 
@@ -117,7 +141,7 @@ export default function AddressPage() {
                     className="flex-shrink-0 mt-1">
                     <path d="M15 18l-6-6 6-6" />
                   </svg>
-                </button>
+                </div>
               ))}
             </div>
           )}

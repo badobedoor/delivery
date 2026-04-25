@@ -31,7 +31,8 @@ export default function NewAddressPage() {
   const [form, setForm]     = useState<Record<string, string>>({
     label: "", building: "", apartment: "", floor: "", landmark: "",
   });
-  const [phone, setPhone]   = useState("");
+  const [phone, setPhone]       = useState("");
+  const [savedPhone, setSavedPhone] = useState("");
   const [userId, setUserId] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [error, setError]   = useState<string | null>(null);
@@ -45,7 +46,14 @@ export default function NewAddressPage() {
       setAreas(areasData ?? []);
       if (user) {
         setUserId(user.id);
-        setPhone(user.user_metadata?.phone || "");
+        const { data: userData } = await supabase
+          .from("users")
+          .select("phone")
+          .eq("id", user.id)
+          .single();
+        const p = userData?.phone ?? "";
+        setPhone(p);
+        setSavedPhone(p);
       }
     }
     load();
@@ -60,6 +68,10 @@ export default function NewAddressPage() {
     if (!area)         return setError("الرجاء اختيار الحي");
     if (!form.label)   return setError("الرجاء إدخال تسمية العنوان");
     if (!form.building) return setError("الرجاء إدخال رقم العمارة");
+    if (!savedPhone) {
+      if (!phone)              return setError("الرجاء إدخال رقم الهاتف");
+      if (phone.length !== 11) return setError("رقم الهاتف يجب أن يكون 11 رقم");
+    }
 
     const full_address = [
       `عمارة ${form.building}`,
@@ -69,6 +81,16 @@ export default function NewAddressPage() {
     ].filter(Boolean).join("، ");
 
     setSaving(true);
+    if (phone !== savedPhone && userId) {
+      await supabase.from("users").update({ phone }).eq("id", userId);
+    }
+    const { count } = await supabase
+      .from("addresses")
+      .select("*", { count: "exact", head: true })
+      .eq("user_id", userId);
+
+    const is_default = count === 0;
+
     const { error: insertError } = await supabase.from("addresses").insert({
       user_id:      userId,
       area_id:      area,
@@ -78,6 +100,7 @@ export default function NewAddressPage() {
       floor:        form.floor     || null,
       landmark:     form.landmark  || null,
       full_address,
+      is_default,
     });
     setSaving(false);
 
@@ -153,23 +176,21 @@ export default function NewAddressPage() {
           ))}
 
           {/* ── 7. رقم الهاتف ── */}
-          <div className="bg-white rounded-2xl border border-[var(--color-border)] px-4 py-3">
-            <label className="block text-xs font-bold text-[var(--color-secondary)] mb-1.5">
-              رقم الهاتف
-              {phone
-                ? <span className="text-[var(--color-muted)] font-normal"> (محفوظ)</span>
-                : <span className="text-[var(--color-danger)]"> *</span>
-              }
-            </label>
-            <input
-              type="tel"
-              value={phone}
-              onChange={(e) => setPhone(e.target.value)}
-              placeholder="01xxxxxxxxx"
-              className="w-full text-sm bg-transparent outline-none text-[var(--color-secondary)] placeholder:text-[var(--color-muted)]"
-              dir="ltr"
-            />
-          </div>
+          {!savedPhone && (
+            <div className="bg-white rounded-2xl border border-[var(--color-border)] px-4 py-3">
+              <label className="block text-xs font-bold text-[var(--color-secondary)] mb-1.5">
+                رقم الهاتف <span className="text-[var(--color-danger)]">*</span>
+              </label>
+              <input
+                type="tel"
+                value={phone}
+                onChange={(e) => setPhone(e.target.value)}
+                placeholder="01xxxxxxxxx"
+                className="w-full text-sm bg-transparent outline-none text-[var(--color-secondary)] placeholder:text-[var(--color-muted)]"
+                dir="ltr"
+              />
+            </div>
+          )}
 
           {/* ── خطأ ── */}
           {error && (
