@@ -37,6 +37,7 @@ type DBOrder = {
   status: string;
   created_at: string;
   user_order_number: number | null;
+  restaurant_id?: string | null;
   restaurants: { name: string } | null;
   addresses: { areas: { name: string } | null } | null;
   users: { name: string | null; phone: string | null } | null;
@@ -59,11 +60,11 @@ function statusColor(s: string) {
 }
 
 function formatTime(iso: string) {
-  return new Date(iso).toLocaleTimeString("ar-EG", { hour: "2-digit", minute: "2-digit" });
+  return new Date(iso + "Z").toLocaleTimeString("ar-EG", { hour: "2-digit", minute: "2-digit", timeZone: "Africa/Cairo" });
 }
 
 function formatDate(iso: string) {
-  return new Date(iso).toLocaleDateString("ar-EG", { day: "numeric", month: "long" });
+  return new Date(iso + "Z").toLocaleDateString("ar-EG", { day: "numeric", month: "long" });
 }
 
 /* ── Tabs ── */
@@ -89,7 +90,8 @@ export default function AdminOrdersPage() {
         id, total, notes, user_order_number, created_at, restaurant_id,
         restaurants!restaurant_id (name),
         addresses!address_id (full_address, areas(name)),
-        order_items (quantity, menu_items(name))
+        order_items (quantity, menu_items(name)),
+        users (name, phone)
       `)
       .eq("status", "new")
       .order("created_at", { ascending: false });
@@ -156,14 +158,65 @@ export default function AdminOrdersPage() {
     window.open(`https://wa.me/${phone}?text=${msg}`, "_blank");
   }
 
-  async function confirmOrder(orderId: string) {
-    await supabase.from("orders").update({ status: "pending" }).eq("id", orderId);
-    await loadData();
+  async function confirmOrder(id: string) {
+    // جيب الوردية النشطة
+    const { data: activeShift } = await supabase
+      .from("shifts")
+      .select("id")
+      .eq("is_active", true)
+      .limit(1)
+      .single();
+
+    const { error } = await supabase
+      .from("orders")
+      .update({
+        status: "pending",
+        shift_id: activeShift?.id ?? null
+      })
+      .eq("id", id);
+
+    if (error) { console.log("Confirm Error:", error); return; }
+
+    const order = newOrdersList.find((o) => o.id === id);
+    setNewOrdersList((prev) => prev.filter((o) => o.id !== id));
+    if (order) {
+      setAllOrdersList((prev) => [{
+        id:                order.id,
+        total:             order.total,
+        status:            "pending",
+        created_at:        order.created_at,
+        user_order_number: order.user_order_number,
+        restaurant_id:     order.restaurant_id,
+        restaurants:       order.restaurants,
+        addresses:         order.addresses as any,
+        users:             null,
+        delivery_staff:    null,
+      }, ...prev]);
+    }
   }
 
-  async function cancelOrder(orderId: string) {
-    await supabase.from("orders").update({ status: "cancelled" }).eq("id", orderId);
-    await loadData();
+  async function cancelOrder(id: string) {
+    const order = newOrdersList.find((o) => o.id === id);
+    setNewOrdersList((prev) => prev.filter((o) => o.id !== id));
+    if (order) {
+      setAllOrdersList((prev) => [{
+        id: order.id,
+        total: order.total,
+        status: "cancelled",
+        created_at: order.created_at,
+        user_order_number: order.user_order_number,
+        restaurant_id: order.restaurant_id,
+        restaurants: order.restaurants,
+        addresses: order.addresses as any,
+        users: null,
+        delivery_staff: null,
+      }, ...prev]);
+    }
+    const { error } = await supabase
+      .from("orders")
+      .update({ status: "cancelled" })
+      .eq("id", id);
+    console.log("Cancel Error:", error);
   }
 
   const countByStatus = (s: string) => {

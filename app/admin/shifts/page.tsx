@@ -136,7 +136,13 @@ export default function AdminShiftsPage() {
     setDelId(s.id);
     setRows((p) => p.map((r) => r.id === s.id ? { ...r, isActive: next } : r));
     const { error } = await supabase.from("shifts").update({ is_active: next }).eq("id", s.id);
-    if (error) setRows((p) => p.map((r) => r.id === s.id ? { ...r, isActive: s.isActive } : r));
+    if (error) {
+      setRows((p) => p.map((r) => r.id === s.id ? { ...r, isActive: s.isActive } : r));
+    } else if (!next) {
+      await supabase.from("delivery_shifts").update({ is_active: false }).eq("shift_id", s.id);
+    } else {
+      await supabase.from("delivery_shifts").update({ shift_id: s.id }).eq("is_active", true);
+    }
     setDelId(null);
   }
 

@@ -51,7 +51,7 @@ function toOrder(o: DBOrder): Order {
 }
 
 const ORDER_SELECT = `
-  id, total, notes, user_order_number,
+  id, status, total, notes, user_order_number,
   restaurants!restaurant_id (name),
   addresses!address_id (full_address, area_id),
   order_items (quantity, menu_items(name, price))
@@ -190,10 +190,15 @@ function CopyIcon() {
 }
 
 /* ── Active order card ── */
-function ActiveCard({ order, onDeliver }: { order: ActiveOrder; onDeliver: () => void }) {
+function ActiveCard({ order, onDeliver, onPickup }: { order: ActiveOrder; onDeliver: () => void; onPickup: (id: string) => Promise<void> }) {
   const [open,     setOpen]     = useState(false);
   const [pickedUp, setPickedUp] = useState(order.pickedUp);
   const [copied,   setCopied]   = useState(false);
+
+  async function handlePickup() {
+    setPickedUp(true);
+    await onPickup(order.id);
+  }
 
   function copyPhone() {
     navigator.clipboard.writeText(order.phone).catch(() => {});
@@ -292,7 +297,7 @@ function ActiveCard({ order, onDeliver }: { order: ActiveOrder; onDeliver: () =>
           {/* Actions */}
           <div className="flex flex-col gap-2 mt-1">
             <button
-              onClick={() => setPickedUp(true)}
+              onClick={handlePickup}
               disabled={pickedUp}
               className="w-full py-2.5 rounded-xl text-sm font-bold transition-colors"
               style={{
@@ -346,10 +351,10 @@ export default function DriverOrdersPage() {
       .eq("status", "pending")
       .eq("shift_id", sid);
 
-    const { data: act } = await supabase.from("orders").select(ORDER_SELECT).eq("status", "on_the_way").eq("delivery_id", did);
+    const { data: act } = await supabase.from("orders").select(ORDER_SELECT).in("status", ["accepted", "on_the_way"]).eq("delivery_id", did);
 
     setAvailable((availableOrders ?? []).map(toOrder));
-    setActive((act ?? []).map((o) => ({ ...toOrder(o), pickedUp: false, phone: "" })));
+    setActive((act ?? []).map((o) => ({ ...toOrder(o), pickedUp: (o as DBOrder).status === "on_the_way", phone: "" })));
   }, []);
 
   useEffect(() => {
@@ -391,11 +396,15 @@ export default function DriverOrdersPage() {
     playNotif();
     await supabase
       .from("orders")
-      .update({ status: "on_the_way", delivery_id: driverId })
+      .update({ status: "accepted", delivery_id: driverId })
       .eq("id", order.id);
     await loadData(driverId, shiftId);
     setTab("active");
   }, [driverId, shiftId, loadData]);
+
+  const pickup = useCallback(async (id: string) => {
+    await supabase.from("orders").update({ status: "on_the_way" }).eq("id", id);
+  }, []);
 
   const deliver = useCallback(async (id: string) => {
     await supabase.from("orders").update({ status: "delivered" }).eq("id", id);
@@ -499,7 +508,7 @@ export default function DriverOrdersPage() {
                 <p className="text-sm" style={{ color: C.muted }}>لا توجد طلبات قيد التنفيذ</p>
               </div>
             ) : active.map((o) => (
-              <ActiveCard key={o.id} order={o} onDeliver={() => deliver(o.id)} />
+              <ActiveCard key={o.id} order={o} onDeliver={() => deliver(o.id)} onPickup={pickup} />
             ))}
           </>
         )}
