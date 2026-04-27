@@ -1,6 +1,7 @@
 "use client";
 
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect, useCallback } from "react";
+import { supabase } from "@/lib/supabase";
 
 /* ── Palette ── */
 const C = {
@@ -26,72 +27,40 @@ type WalletCat    = "office" | "delivery" | "moto";
 type TxType       = "صرف" | "تحصيل" | "تحويل";
 
 type Transaction = {
-  id:          number;
-  createdAt:   string;   /* formatted Arabic date + time */
+  id:          string;
+  createdAt:   string;   /* ISO 8601 — formatted on display */
   type:        TxType;
-  personName?: string;   /* driver / moto name; omitted for transfers */
-  fromWallet:  string;   /* wallet label */
-  toWallet:    string;   /* wallet label or "—" */
+  personName?: string;
+  fromWallet:  string;
+  toWallet:    string;
   amount:      number;
   description: string;
 };
 
-/* ─────────────────────────────────────────────
-   Seed data
-───────────────────────────────────────────── */
-
-const seedDriverWallets: DriverWallet[] = [
-  { id: 1, name: "كريم سعد",   phone: "0100-111-2233", balance: 1200 },
-  { id: 2, name: "مصطفى علي",  phone: "0101-222-3344", balance: 850  },
-  { id: 3, name: "عمر حسين",   phone: "0102-333-4455", balance: 2300 },
-];
-
-const seedMotoWallets: MotoWallet[] = [
-  { id: 1, name: "موتوسيكل #1", plate: "أ ب ج 1234",  balance: 500  },
-  { id: 2, name: "موتوسيكل #2", plate: "د ه و 5678",  balance: 1200 },
-  { id: 3, name: "موتوسيكل #3", plate: "ز ح ط 9012",  balance: 300  },
-];
-
-const seedTransactions: Transaction[] = [
-  {
-    id: 1, createdAt: "١٤ أبريل ٢٠٢٦ — ١٠:٠٠ ص", type: "تحويل",
-    fromWallet: "خزنة المكتب", toWallet: "خزنة الدلفري",
-    amount: 5000, description: "تمويل رواتب السائقين",
-  },
-  {
-    id: 2, createdAt: "١٣ أبريل ٢٠٢٦ — ٢:٣٠ م", type: "صرف",
-    personName: "كريم سعد",
-    fromWallet: "خزنة المكتب", toWallet: "—",
-    amount: 1200, description: "راتب",
-  },
-  {
-    id: 3, createdAt: "١٣ أبريل ٢٠٢٦ — ٤:١٥ م", type: "تحصيل",
-    personName: "موتوسيكل #1",
-    fromWallet: "خزنة الموتسكلات", toWallet: "—",
-    amount: 200, description: "خصم تأخير",
-  },
-  {
-    id: 4, createdAt: "١٢ أبريل ٢٠٢٦ — ٩:٠٠ ص", type: "تحويل",
-    fromWallet: "خزنة المكتب", toWallet: "خزنة الموتسكلات",
-    amount: 2000, description: "صيانة وبنزين",
-  },
-  {
-    id: 5, createdAt: "١٢ أبريل ٢٠٢٦ — ١١:٤٥ ص", type: "صرف",
-    personName: "مصطفى علي",
-    fromWallet: "خزنة الدلفري", toWallet: "—",
-    amount: 850, description: "مكافأة أداء",
-  },
-];
+type AdvanceRequest = {
+  id:         number;
+  deliveryId: number;
+  driverName: string;
+  amount:     number;
+  note:       string;
+  createdAt:  string;   /* ISO 8601 */
+};
 
 /* ── Helpers ── */
 function fmtAmt(n: number) {
   return `${n.toLocaleString("ar-EG")} ج.م`;
 }
-function nowAr() {
-  const d = new Date();
-  const date = d.toLocaleDateString("ar-EG", { day: "numeric", month: "long", year: "numeric" });
-  const time = d.toLocaleTimeString("ar-EG", { hour: "2-digit", minute: "2-digit" });
-  return `${date} — ${time}`;
+
+function fmtDateAr(iso: string): string {
+  if (!iso) return "";
+  try {
+    const d = new Date(iso);
+    const date = d.toLocaleDateString("ar-EG", { day: "numeric", month: "long", year: "numeric" });
+    const time = d.toLocaleTimeString("ar-EG", { hour: "2-digit", minute: "2-digit" });
+    return `${date} — ${time}`;
+  } catch {
+    return iso;
+  }
 }
 
 const WALLET_OPTIONS: { value: WalletCat; label: string; icon: string }[] = [
@@ -105,7 +74,12 @@ const WALLET_LABELS: Record<WalletCat, string> = {
   moto:     "خزنة الموتسكلات",
 };
 
-/* ── Type meta ── */
+const FROM_WALLET_LABEL: Record<string, string> = {
+  office:   "خزنة المكتب",
+  delivery: "خزنة الدلفري",
+  moto:     "خزنة الموتسكلات",
+};
+
 const TX_META: Record<TxType, { icon: string; color: string; label: (t: Transaction) => string }> = {
   "صرف":    {
     icon:  "↑",
@@ -124,10 +98,68 @@ const TX_META: Record<TxType, { icon: string; color: string; label: (t: Transact
   },
 };
 
+/* ── Row mappers ── */
+
+/*
+  Semantic conventions for display:
+  - صرف  (payment to person):     fromWallet = source,          toWallet = "خزنة الدلفري"
+  - تحصيل (collection from person): fromWallet = "خزنة الدلفري", toWallet = destination
+  - تحويل (transfer):              direction derived from from_wallet
+  This ensures every delivery_accounts row always matches the delivery tab filter.
+*/
+function mapDeliveryTx(row: any): Transaction {
+  const fromLabel = FROM_WALLET_LABEL[row.from_wallet] ?? "خزنة الدلفري";
+  let fromWallet: string;
+  let toWallet: string;
+
+  if (row.type === "تحويل") {
+    fromWallet = fromLabel;
+    toWallet   = row.from_wallet === "delivery" ? "خزنة المكتب" : "خزنة الدلفري";
+  } else if (row.type === "صرف") {
+    fromWallet = fromLabel;
+    toWallet   = "خزنة الدلفري";
+  } else {
+    /* تحصيل */
+    fromWallet = "خزنة الدلفري";
+    toWallet   = fromLabel;
+  }
+
+  return {
+    id:          `d-${row.id}`,
+    createdAt:   row.created_at,
+    type:        row.type as TxType,
+    personName:  (row.delivery_staff as any)?.name,
+    fromWallet,
+    toWallet,
+    amount:      row.amount,
+    description: row.reason ?? "",
+  };
+}
+
+function mapMotoTx(row: any): Transaction {
+  let fromWallet = "خزنة الموتسكلات";
+  let toWallet   = "—";
+
+  if (row.type === "تحويل") {
+    toWallet = "خزنة المكتب";
+  } else if (row.type === "صرف") {
+    toWallet = "خزنة الموتسكلات";
+  }
+
+  return {
+    id:          `m-${row.id}`,
+    createdAt:   row.created_at,
+    type:        row.type as TxType,
+    personName:  (row.motorcycles as any)?.name,
+    fromWallet,
+    toWallet,
+    amount:      row.amount,
+    description: row.reason ?? "",
+  };
+}
+
 /* ─────────────────────────────────────────────
    COMPONENT: TransactionActivity (reusable)
-   walletKey: which wallet to filter for
-             ("all" = show everything = office)
 ───────────────────────────────────────────── */
 
 function TransactionActivity({
@@ -141,7 +173,6 @@ function TransactionActivity({
 
   const walletLabel = walletKey === "all" ? null : WALLET_LABELS[walletKey];
 
-  /* Filter by wallet */
   const walletFiltered = useMemo(() => {
     if (!walletLabel) return transactions;
     return transactions.filter(
@@ -149,7 +180,6 @@ function TransactionActivity({
     );
   }, [transactions, walletLabel]);
 
-  /* Filter by search query */
   const displayed = useMemo(() => {
     if (!query.trim()) return walletFiltered;
     const q = query.trim().toLowerCase();
@@ -167,7 +197,6 @@ function TransactionActivity({
     <div className="rounded-2xl flex flex-col gap-0 overflow-hidden"
       style={{ background: C.card, border: `1px solid ${C.border}` }}>
 
-      {/* Header + search */}
       <div className="flex flex-col gap-3 px-4 py-4 border-b" style={{ borderColor: C.border }}>
         <div className="flex items-center justify-between">
           <h3 className="text-sm font-black" style={{ color: C.text }}>سجل العمليات</h3>
@@ -177,7 +206,6 @@ function TransactionActivity({
           </span>
         </div>
 
-        {/* Search */}
         <div className="relative">
           <span className="absolute top-1/2 -translate-y-1/2 right-3 text-xs" style={{ color: C.muted }}>
             🔍
@@ -187,42 +215,31 @@ function TransactionActivity({
             onChange={(e) => setQuery(e.target.value)}
             placeholder="ابحث باسم الشخص أو البيان..."
             className="w-full rounded-xl pr-9 pl-4 py-2.5 text-sm outline-none"
-            style={{
-              background: C.bg,
-              border: `1px solid ${C.border}`,
-              color: C.text,
-            }}
+            style={{ background: C.bg, border: `1px solid ${C.border}`, color: C.text }}
           />
           {query && (
-            <button
-              onClick={() => setQuery("")}
+            <button onClick={() => setQuery("")}
               className="absolute top-1/2 -translate-y-1/2 left-3 text-xs hover:opacity-70"
               style={{ color: C.muted }}>✕</button>
           )}
         </div>
 
-        {/* Quick type filters */}
         <div className="flex gap-2 flex-wrap">
           {(["الكل", "صرف", "تحصيل", "تحويل"] as const).map((f) => {
-            const active =
-              f === "الكل"
-                ? query === ""
-                : query === f;
+            const active = f === "الكل" ? query === "" : query === f;
             const col =
-              f === "صرف" ? C.red :
+              f === "صرف"    ? C.red   :
               f === "تحصيل" ? C.green :
-              f === "تحويل" ? C.blue : C.teal;
+              f === "تحويل" ? C.blue  : C.teal;
             return (
-              <button
-                key={f}
+              <button key={f}
                 onClick={() => setQuery(f === "الكل" ? "" : f)}
                 className="px-3 py-1 rounded-lg text-[11px] font-bold transition-all"
                 style={{
                   background: active ? col : `${col}18`,
-                  color: active ? "#fff" : col,
-                  border: `1px solid ${active ? col : `${col}33`}`,
-                }}
-              >
+                  color:      active ? "#fff" : col,
+                  border:     `1px solid ${active ? col : `${col}33`}`,
+                }}>
                 {f}
               </button>
             );
@@ -230,7 +247,6 @@ function TransactionActivity({
         </div>
       </div>
 
-      {/* Activity feed */}
       <div className="overflow-y-auto" style={{ maxHeight: 420 }}>
         {displayed.length === 0 ? (
           <div className="flex flex-col items-center justify-center gap-3 py-12">
@@ -242,27 +258,19 @@ function TransactionActivity({
         ) : (
           <div className="flex flex-col">
             {displayed.map((t, i) => {
-              const meta  = TX_META[t.type];
+              const meta   = TX_META[t.type];
               const isLast = i === displayed.length - 1;
               return (
-                <div
-                  key={t.id}
+                <div key={t.id}
                   className="flex items-start gap-4 px-4 py-3.5 transition-all"
                   style={{
                     borderBottom: isLast ? "none" : `1px solid ${C.border}`,
-                    /* fade-in via CSS animation for newest items */
-                    animation: i === 0 ? "txFadeIn 0.35s ease" : undefined,
-                  }}
-                >
-                  {/* Icon badge */}
-                  <div
-                    className="w-10 h-10 rounded-xl flex items-center justify-center text-lg font-black flex-shrink-0 mt-0.5"
-                    style={{ background: `${meta.color}20`, color: meta.color }}
-                  >
+                    animation:    i === 0 ? "txFadeIn 0.35s ease" : undefined,
+                  }}>
+                  <div className="w-10 h-10 rounded-xl flex items-center justify-center text-lg font-black flex-shrink-0 mt-0.5"
+                    style={{ background: `${meta.color}20`, color: meta.color }}>
                     {meta.icon}
                   </div>
-
-                  {/* Main content */}
                   <div className="flex-1 min-w-0">
                     <p className="text-sm font-bold leading-snug" style={{ color: C.text }}>
                       {meta.label(t)}
@@ -273,7 +281,6 @@ function TransactionActivity({
                       </p>
                     )}
                     <div className="flex items-center gap-2 mt-1.5 flex-wrap">
-                      {/* Wallet badges */}
                       <span className="text-[10px] px-2 py-0.5 rounded-md font-medium"
                         style={{ background: `${C.border}`, color: C.muted }}>
                         {t.fromWallet}
@@ -289,19 +296,15 @@ function TransactionActivity({
                       )}
                     </div>
                     <p className="text-[10px] mt-1" style={{ color: `${C.muted}99` }}>
-                      {t.createdAt}
+                      {fmtDateAr(t.createdAt)}
                     </p>
                   </div>
-
-                  {/* Amount + type badge */}
                   <div className="flex flex-col items-end gap-1.5 flex-shrink-0">
                     <p className="text-base font-black" style={{ color: meta.color }}>
                       {fmtAmt(t.amount)}
                     </p>
-                    <span
-                      className="text-[10px] px-2 py-0.5 rounded-full font-bold"
-                      style={{ background: `${meta.color}22`, color: meta.color }}
-                    >
+                    <span className="text-[10px] px-2 py-0.5 rounded-full font-bold"
+                      style={{ background: `${meta.color}22`, color: meta.color }}>
                       {t.type}
                     </span>
                   </div>
@@ -312,7 +315,6 @@ function TransactionActivity({
         )}
       </div>
 
-      {/* Footer count */}
       {displayed.length > 0 && (
         <div className="px-4 py-2.5 border-t text-xs flex items-center justify-between"
           style={{ borderColor: C.border, color: C.muted }}>
@@ -329,7 +331,6 @@ function TransactionActivity({
         </div>
       )}
 
-      {/* Keyframe injection */}
       <style>{`
         @keyframes txFadeIn {
           from { opacity: 0; transform: translateY(-8px); }
@@ -341,46 +342,85 @@ function TransactionActivity({
 }
 
 /* ─────────────────────────────────────────────
-   TAB: ملخص
+   TAB: ملخص — طلبات السلفة
 ───────────────────────────────────────────── */
-function SummaryTab() {
+
+function SummaryTab({
+  pendingRequests,
+  onApprove,
+  onReject,
+  processingIds,
+}: {
+  pendingRequests: AdvanceRequest[];
+  onApprove: (req: AdvanceRequest) => void;
+  onReject:  (id: number) => void;
+  processingIds: Set<number>;
+}) {
   return (
     <div className="flex flex-col gap-5">
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-        {[
-          { label: "إجمالي العملاء",  value: "1,284",      color: C.teal   },
-          { label: "إجمالي الطلبات", value: "8,740",      color: C.orange },
-          { label: "إيرادات الشهر",  value: "94,320 ج.م", color: C.green  },
-          { label: "عملاء محظورين",  value: "3",          color: C.red    },
-        ].map((s) => (
-          <div key={s.label} className="rounded-2xl p-4 flex flex-col gap-2"
-            style={{ background: C.card, border: `1px solid ${C.border}` }}>
-            <p className="text-2xl font-black" style={{ color: s.color }}>{s.value}</p>
-            <p className="text-xs"             style={{ color: C.muted  }}>{s.label}</p>
-          </div>
-        ))}
-      </div>
-      <div className="rounded-2xl p-5" style={{ background: C.card, border: `1px solid ${C.border}` }}>
-        <h3 className="text-sm font-black mb-4" style={{ color: C.text }}>أكثر العملاء طلباً 🏆</h3>
-        <div className="flex flex-col gap-3">
-          {[
-            { name: "أحمد محمد",  orders: 48, total: "3,840 ج.م" },
-            { name: "سارة علي",   orders: 36, total: "2,910 ج.م" },
-            { name: "محمود خالد", orders: 31, total: "2,480 ج.م" },
-          ].map((c, i) => (
-            <div key={c.name} className="flex items-center gap-3">
-              <span className="text-xs font-black w-5 text-center flex-shrink-0" style={{ color: C.teal }}>{i + 1}</span>
-              <div className="w-8 h-8 rounded-full flex items-center justify-center text-xs font-black flex-shrink-0"
-                style={{ background: `${C.teal}30`, color: C.teal }}>{c.name[0]}</div>
-              <div className="flex-1 min-w-0">
-                <p className="text-sm font-semibold" style={{ color: C.text }}>{c.name}</p>
-                <p className="text-xs" style={{ color: C.muted }}>{c.orders} طلب</p>
-              </div>
-              <span className="text-sm font-bold flex-shrink-0" style={{ color: C.teal }}>{c.total}</span>
-            </div>
-          ))}
+
+      {pendingRequests.length === 0 ? (
+        <div className="rounded-2xl p-8 flex flex-col items-center gap-3"
+          style={{ background: C.card, border: `1px solid ${C.border}` }}>
+          <span style={{ fontSize: 36 }}>✅</span>
+          <p className="text-sm font-semibold" style={{ color: C.muted }}>لا توجد طلبات سلفة معلقة</p>
         </div>
-      </div>
+      ) : (
+        <div className="rounded-2xl overflow-hidden"
+          style={{ background: C.card, border: `1px solid ${C.border}` }}>
+          <div className="flex items-center justify-between px-4 py-3 border-b"
+            style={{ borderColor: C.border }}>
+            <h3 className="text-sm font-black" style={{ color: C.text }}>طلبات السلفة المعلقة</h3>
+            <span className="text-[11px] px-2 py-0.5 rounded-full font-semibold"
+              style={{ background: `${C.orange}22`, color: C.orange }}>
+              {pendingRequests.length} طلب
+            </span>
+          </div>
+
+          <div className="flex flex-col">
+            {pendingRequests.map((req, i) => {
+              const processing = processingIds.has(req.id);
+              const isLast     = i === pendingRequests.length - 1;
+              return (
+                <div key={req.id}
+                  className="flex items-start gap-4 px-4 py-3.5"
+                  style={{ borderBottom: isLast ? "none" : `1px solid ${C.border}` }}>
+                  <div className="w-10 h-10 rounded-xl flex items-center justify-center text-base flex-shrink-0 mt-0.5"
+                    style={{ background: `${C.orange}20` }}>💸</div>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-bold" style={{ color: C.text }}>{req.driverName}</p>
+                    <p className="text-sm font-black mt-0.5" style={{ color: C.orange }}>
+                      {fmtAmt(req.amount)}
+                    </p>
+                    {req.note && (
+                      <p className="text-xs mt-0.5 truncate" style={{ color: C.muted }}>{req.note}</p>
+                    )}
+                    <p className="text-[10px] mt-1" style={{ color: `${C.muted}99` }}>
+                      {fmtDateAr(req.createdAt)}
+                    </p>
+                  </div>
+                  <div className="flex flex-col gap-2 flex-shrink-0">
+                    <button
+                      onClick={() => onApprove(req)}
+                      disabled={processing}
+                      className="px-3 py-1.5 rounded-lg text-xs font-bold hover:opacity-80 disabled:opacity-40 transition-opacity"
+                      style={{ background: `${C.green}22`, color: C.green }}>
+                      {processing ? "..." : "موافقة"}
+                    </button>
+                    <button
+                      onClick={() => onReject(req.id)}
+                      disabled={processing}
+                      className="px-3 py-1.5 rounded-lg text-xs font-bold hover:opacity-80 disabled:opacity-40 transition-opacity"
+                      style={{ background: `${C.red}22`, color: C.red }}>
+                      {processing ? "..." : "رفض"}
+                    </button>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -389,13 +429,14 @@ function SummaryTab() {
    MODAL A — إدارة (صرف / تحصيل)
 ───────────────────────────────────────────── */
 
-function ManageModal({ target, officeBalance, deliveryBalance, motoBalance, onSubmit, onClose }: {
+function ManageModal({ target, officeBalance, deliveryBalance, motoBalance, onSubmit, onClose, submitting }: {
   target: { type: "driver" | "moto"; id: number; name: string; balance: number };
-  officeBalance: number;
+  officeBalance:   number;
   deliveryBalance: number;
-  motoBalance: number;
+  motoBalance:     number;
   onSubmit: (op: "صرف" | "تحصيل", wallet: WalletCat, amount: number, note: string) => void;
   onClose: () => void;
+  submitting: boolean;
 }) {
   const [op,     setOp]     = useState<"صرف" | "تحصيل">("صرف");
   const [wallet, setWallet] = useState<WalletCat>("office");
@@ -523,11 +564,13 @@ function ManageModal({ target, officeBalance, deliveryBalance, motoBalance, onSu
         </div>
 
         <div className="flex gap-3 px-5 py-4 border-t" style={{ borderColor: C.border }}>
-          <button onClick={handleSubmit}
-            className="flex-1 py-2.5 rounded-xl text-sm font-bold hover:opacity-90"
-            style={{ background: opColor, color: "#fff" }}>تأكيد</button>
-          <button onClick={onClose}
-            className="flex-1 py-2.5 rounded-xl text-sm font-bold hover:opacity-80"
+          <button onClick={handleSubmit} disabled={submitting}
+            className="flex-1 py-2.5 rounded-xl text-sm font-bold hover:opacity-90 disabled:opacity-50 transition-opacity"
+            style={{ background: opColor, color: "#fff" }}>
+            {submitting ? "جارٍ المعالجة..." : "تأكيد"}
+          </button>
+          <button onClick={onClose} disabled={submitting}
+            className="flex-1 py-2.5 rounded-xl text-sm font-bold hover:opacity-80 disabled:opacity-50 transition-opacity"
             style={{ background: C.bg, color: C.muted, border: `1px solid ${C.border}` }}>إلغاء</button>
         </div>
       </div>
@@ -539,12 +582,13 @@ function ManageModal({ target, officeBalance, deliveryBalance, motoBalance, onSu
    MODAL B — تحويل بين الخزن
 ───────────────────────────────────────────── */
 
-function TransferModal({ officeBalance, deliveryBalance, motoBalance, onSubmit, onClose }: {
-  officeBalance: number;
+function TransferModal({ officeBalance, deliveryBalance, motoBalance, onSubmit, onClose, submitting }: {
+  officeBalance:   number;
   deliveryBalance: number;
-  motoBalance: number;
+  motoBalance:     number;
   onSubmit: (from: WalletCat, to: WalletCat, amount: number, note: string) => void;
   onClose: () => void;
+  submitting: boolean;
 }) {
   const [from,   setFrom]   = useState<WalletCat>("office");
   const [to,     setTo]     = useState<WalletCat>("delivery");
@@ -651,11 +695,13 @@ function TransferModal({ officeBalance, deliveryBalance, motoBalance, onSubmit, 
         </div>
 
         <div className="flex gap-3 px-5 py-4 border-t" style={{ borderColor: C.border }}>
-          <button onClick={handleSubmit}
-            className="flex-1 py-2.5 rounded-xl text-sm font-bold hover:opacity-90"
-            style={{ background: C.teal, color: "#fff" }}>تأكيد التحويل</button>
-          <button onClick={onClose}
-            className="flex-1 py-2.5 rounded-xl text-sm font-bold hover:opacity-80"
+          <button onClick={handleSubmit} disabled={submitting}
+            className="flex-1 py-2.5 rounded-xl text-sm font-bold hover:opacity-90 disabled:opacity-50 transition-opacity"
+            style={{ background: C.teal, color: "#fff" }}>
+            {submitting ? "جارٍ المعالجة..." : "تأكيد التحويل"}
+          </button>
+          <button onClick={onClose} disabled={submitting}
+            className="flex-1 py-2.5 rounded-xl text-sm font-bold hover:opacity-80 disabled:opacity-50 transition-opacity"
             style={{ background: C.bg, color: C.muted, border: `1px solid ${C.border}` }}>إلغاء</button>
         </div>
       </div>
@@ -668,13 +714,11 @@ function TransferModal({ officeBalance, deliveryBalance, motoBalance, onSubmit, 
 ───────────────────────────────────────────── */
 
 function OfficeWalletTab({ balance, transactions }: {
-  balance: number;
+  balance:      number;
   transactions: Transaction[];
 }) {
   return (
     <div className="flex flex-col gap-4">
-
-      {/* Balance card */}
       <div className="rounded-2xl p-5 flex items-center justify-between"
         style={{ background: C.card, border: `1px solid ${C.border}` }}>
         <div>
@@ -683,8 +727,6 @@ function OfficeWalletTab({ balance, transactions }: {
         </div>
         <span style={{ fontSize: 40 }}>🏦</span>
       </div>
-
-      {/* Activity feed — all transactions */}
       <TransactionActivity walletKey="all" transactions={transactions} />
     </div>
   );
@@ -695,14 +737,13 @@ function OfficeWalletTab({ balance, transactions }: {
 ───────────────────────────────────────────── */
 
 function DeliveryWalletTab({ poolBalance, drivers, transactions, onManage }: {
-  poolBalance: number;
-  drivers: DriverWallet[];
+  poolBalance:  number;
+  drivers:      DriverWallet[];
   transactions: Transaction[];
-  onManage: (id: number) => void;
+  onManage:     (id: number) => void;
 }) {
   return (
     <div className="flex flex-col gap-4">
-
       <div className="rounded-2xl p-5 flex items-center justify-between"
         style={{ background: C.card, border: `1px solid ${C.border}` }}>
         <div>
@@ -712,7 +753,6 @@ function DeliveryWalletTab({ poolBalance, drivers, transactions, onManage }: {
         <span style={{ fontSize: 40 }}>🛵</span>
       </div>
 
-      {/* Drivers table */}
       <div className="rounded-2xl overflow-hidden" style={{ background: C.card, border: `1px solid ${C.border}` }}>
         <div className="px-4 py-3 border-b" style={{ borderColor: C.border }}>
           <h3 className="text-sm font-black" style={{ color: C.text }}>رصيد السائقين</h3>
@@ -724,8 +764,8 @@ function DeliveryWalletTab({ poolBalance, drivers, transactions, onManage }: {
                 {[
                   { col: "الاسم",       hide: "" },
                   { col: "رقم الهاتف", hide: " hidden sm:table-cell" },
-                  { col: "الرصيد",      hide: "" },
-                  { col: "إجراءات",    hide: "" },
+                  { col: "الرصيد",     hide: "" },
+                  { col: "إجراءات",   hide: "" },
                 ].map(({ col, hide }) => (
                   <th key={col}
                     className={`px-4 py-3 text-right text-xs font-semibold whitespace-nowrap${hide}`}
@@ -766,7 +806,6 @@ function DeliveryWalletTab({ poolBalance, drivers, transactions, onManage }: {
         </div>
       </div>
 
-      {/* Activity feed — delivery only */}
       <TransactionActivity walletKey="delivery" transactions={transactions} />
     </div>
   );
@@ -777,14 +816,13 @@ function DeliveryWalletTab({ poolBalance, drivers, transactions, onManage }: {
 ───────────────────────────────────────────── */
 
 function MotoWalletTab({ poolBalance, motos, transactions, onManage }: {
-  poolBalance: number;
-  motos: MotoWallet[];
+  poolBalance:  number;
+  motos:        MotoWallet[];
   transactions: Transaction[];
-  onManage: (id: number) => void;
+  onManage:     (id: number) => void;
 }) {
   return (
     <div className="flex flex-col gap-4">
-
       <div className="rounded-2xl p-5 flex items-center justify-between"
         style={{ background: C.card, border: `1px solid ${C.border}` }}>
         <div>
@@ -794,7 +832,6 @@ function MotoWalletTab({ poolBalance, motos, transactions, onManage }: {
         <span style={{ fontSize: 40 }}>🏍</span>
       </div>
 
-      {/* Motos table */}
       <div className="rounded-2xl overflow-hidden" style={{ background: C.card, border: `1px solid ${C.border}` }}>
         <div className="px-4 py-3 border-b" style={{ borderColor: C.border }}>
           <h3 className="text-sm font-black" style={{ color: C.text }}>رصيد الموتوسيكلات</h3>
@@ -806,8 +843,8 @@ function MotoWalletTab({ poolBalance, motos, transactions, onManage }: {
                 {[
                   { col: "الموتوسيكل", hide: "" },
                   { col: "رقم اللوحة", hide: " hidden sm:table-cell" },
-                  { col: "الرصيد",     hide: "" },
-                  { col: "إجراءات",   hide: "" },
+                  { col: "الرصيد",    hide: "" },
+                  { col: "إجراءات",  hide: "" },
                 ].map(({ col, hide }) => (
                   <th key={col}
                     className={`px-4 py-3 text-right text-xs font-semibold whitespace-nowrap${hide}`}
@@ -848,7 +885,6 @@ function MotoWalletTab({ poolBalance, motos, transactions, onManage }: {
         </div>
       </div>
 
-      {/* Activity feed — moto only */}
       <TransactionActivity walletKey="moto" transactions={transactions} />
     </div>
   );
@@ -859,38 +895,131 @@ function MotoWalletTab({ poolBalance, motos, transactions, onManage }: {
 ───────────────────────────────────────────── */
 
 const TABS = ["ملخص", "خزنة المكتب", "خزنة الدلفري", "خزنة الموتسكلات"] as const;
-type Tab = typeof TABS[number];
+type Tab = (typeof TABS)[number];
 
 export default function AdminAccountsPage() {
-  const [tab, setTab] = useState<Tab>("ملخص");
+  const [tab,          setTab]          = useState<Tab>("ملخص");
+  const [loading,      setLoading]      = useState(true);
+  const [submitting,   setSubmitting]   = useState(false);
+  const [processingIds, setProcessingIds] = useState<Set<number>>(new Set());
 
-  /* ── Wallet balances ── */
-  const [officeBalance,   setOfficeBalance]   = useState(50000);
-  const [deliveryBalance, setDeliveryBalance] = useState(5000);
-  const [motoBalance,     setMotoBalance]     = useState(2000);
+  const [mainWalletId,   setMainWalletId]   = useState<number | null>(null);
+  const [officeBalance,  setOfficeBalance]  = useState(0);
+  const [driverWallets,  setDriverWallets]  = useState<DriverWallet[]>([]);
+  const [motoWallets,    setMotoWallets]    = useState<MotoWallet[]>([]);
+  const [deliveryTxs,    setDeliveryTxs]    = useState<Transaction[]>([]);
+  const [motoTxs,        setMotoTxs]        = useState<Transaction[]>([]);
+  const [pendingRequests, setPendingRequests] = useState<AdvanceRequest[]>([]);
 
-  /* ── Person balances ── */
-  const [driverWallets, setDriverWallets] = useState<DriverWallet[]>(seedDriverWallets);
-  const [motoWallets,   setMotoWallets]   = useState<MotoWallet[]>(seedMotoWallets);
+  const [manageTarget,  setManageTarget]  = useState<{ type: "driver" | "moto"; id: number; name: string } | null>(null);
+  const [showTransfer,  setShowTransfer]  = useState(false);
+  const [transferKey,   setTransferKey]   = useState(0);
 
-  /* ── Unified transaction log ── */
-  const [transactions, setTransactions] = useState<Transaction[]>(seedTransactions);
+  /* ── Derived balances ── */
+  const deliveryBalance = useMemo(
+    () => driverWallets.reduce((s, d) => s + d.balance, 0), [driverWallets]);
+  const motoBalance = useMemo(
+    () => motoWallets.reduce((s, m) => s + m.balance, 0), [motoWallets]);
 
-  /* ── Manage modal state ── */
-  const [manageTarget, setManageTarget] = useState<{
-    type: "driver" | "moto"; id: number; name: string;
-  } | null>(null);
+  /* ── Merged + sorted transaction log ── */
+  const allTransactions = useMemo(() =>
+    [...deliveryTxs, ...motoTxs].sort(
+      (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),
+    ), [deliveryTxs, motoTxs]);
 
-  /* ── Transfer modal state ── */
-  const [showTransfer, setShowTransfer] = useState(false);
-  const [transferKey,  setTransferKey]  = useState(0);
+  /* ── Load all data in parallel ── */
+  const loadData = useCallback(async () => {
+    const [
+      { data: walletData },
+      { data: driversData },
+      { data: motosData },
+      { data: deliveryTxData },
+      { data: motoTxData },
+      { data: advanceData },
+    ] = await Promise.all([
+      supabase.from("main_wallet").select("id, balance").single(),
+      supabase
+        .from("delivery_staff")
+        .select("id, name, phone, wallet_balance")
+        .eq("is_active", true),
+      supabase
+        .from("motorcycles")
+        .select("id, name, plate, wallet_balance")
+        .eq("is_active", true),
+      supabase
+        .from("delivery_accounts")
+        .select("id, delivery_id, type, amount, reason, from_wallet, created_at, delivery_staff(name)")
+        .order("created_at", { ascending: false })
+        .limit(50),
+      supabase
+        .from("motorcycle_accounts")
+        .select("id, motorcycle_id, type, amount, reason, created_at, motorcycles(name)")
+        .order("created_at", { ascending: false })
+        .limit(50),
+      supabase
+        .from("advance_requests")
+        .select("id, delivery_id, amount, note, created_at, delivery_staff(name)")
+        .eq("status", "pending")
+        .order("created_at", { ascending: false }),
+    ]);
 
-  /* ── Wallet adjuster ── */
-  function adjWallet(cat: WalletCat, delta: number) {
-    if (cat === "office")   setOfficeBalance((b) => b + delta);
-    if (cat === "delivery") setDeliveryBalance((b) => b + delta);
-    if (cat === "moto")     setMotoBalance((b) => b + delta);
-  }
+    if (walletData) {
+      setMainWalletId(walletData.id);
+      setOfficeBalance(walletData.balance);
+    }
+    if (driversData) {
+      setDriverWallets(driversData.map((d: any) => ({
+        id:      d.id,
+        name:    d.name,
+        phone:   d.phone,
+        balance: d.wallet_balance,
+      })));
+    }
+    if (motosData) {
+      setMotoWallets(motosData.map((m: any) => ({
+        id:      m.id,
+        name:    m.name,
+        plate:   m.plate,
+        balance: m.wallet_balance,
+      })));
+    }
+    if (deliveryTxData) setDeliveryTxs((deliveryTxData as any[]).map(mapDeliveryTx));
+    if (motoTxData)     setMotoTxs((motoTxData as any[]).map(mapMotoTx));
+    if (advanceData) {
+      setPendingRequests((advanceData as any[]).map((r) => ({
+        id:         r.id,
+        deliveryId: r.delivery_id,
+        driverName: (r.delivery_staff as any)?.name ?? "—",
+        amount:     r.amount,
+        note:       r.note ?? "",
+        createdAt:  r.created_at,
+      })));
+    }
+  }, []);
+
+  /* ── Initial load + realtime subscriptions ── */
+  useEffect(() => {
+    loadData().finally(() => setLoading(false));
+
+    const dChan = supabase
+      .channel("accts-delivery-tx")
+      .on("postgres_changes",
+        { event: "INSERT", schema: "public", table: "delivery_accounts" },
+        () => loadData())
+      .subscribe();
+
+    const aChan = supabase
+      .channel("accts-advance-req")
+      .on("postgres_changes",
+        { event: "*", schema: "public", table: "advance_requests" },
+        () => loadData())
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(dChan);
+      supabase.removeChannel(aChan);
+    };
+  }, [loadData]);
 
   /* ── Open manage modal ── */
   function openDriverManage(id: number) {
@@ -901,7 +1030,6 @@ export default function AdminAccountsPage() {
     const m = motoWallets.find((x) => x.id === id);
     if (m) setManageTarget({ type: "moto", id, name: m.name });
   }
-
   function getManageBalance(): number {
     if (!manageTarget) return 0;
     if (manageTarget.type === "driver")
@@ -909,51 +1037,168 @@ export default function AdminAccountsPage() {
     return motoWallets.find((m) => m.id === manageTarget.id)?.balance ?? 0;
   }
 
-  /* ── Handle manage submit ── */
-  function handleManage(op: "صرف" | "تحصيل", wallet: WalletCat, amount: number, note: string) {
+  /* ── Handle صرف / تحصيل ── */
+  async function handleManage(
+    op:     "صرف" | "تحصيل",
+    wallet: WalletCat,
+    amount: number,
+    note:   string,
+  ) {
     if (!manageTarget) return;
+    setSubmitting(true);
+    try {
+      const personDelta    = op === "صرف" ? +amount : -amount;
+      const currentBalance = getManageBalance();
 
-    const personDelta = op === "صرف" ? +amount : -amount;
-    if (manageTarget.type === "driver") {
-      setDriverWallets((p) => p.map((d) =>
-        d.id === manageTarget.id ? { ...d, balance: d.balance + personDelta } : d));
-    } else {
-      setMotoWallets((p) => p.map((m) =>
-        m.id === manageTarget.id ? { ...m, balance: m.balance + personDelta } : m));
+      if (manageTarget.type === "driver") {
+        await supabase.from("delivery_accounts").insert({
+          delivery_id: manageTarget.id,
+          type:        op,
+          amount,
+          reason:      note || null,
+          from_wallet: wallet,
+        });
+        await supabase
+          .from("delivery_staff")
+          .update({ wallet_balance: currentBalance + personDelta })
+          .eq("id", manageTarget.id);
+      } else {
+        await supabase.from("motorcycle_accounts").insert({
+          motorcycle_id: manageTarget.id,
+          type:          op,
+          amount,
+          reason:        note || null,
+        });
+        await supabase
+          .from("motorcycles")
+          .update({ wallet_balance: currentBalance + personDelta })
+          .eq("id", manageTarget.id);
+      }
+
+      if (wallet === "office" && mainWalletId !== null) {
+        await supabase
+          .from("main_wallet")
+          .update({ balance: officeBalance - amount })
+          .eq("id", mainWalletId);
+      }
+
+      await loadData();
+    } finally {
+      setSubmitting(false);
+      setManageTarget(null);
     }
-
-    adjWallet(wallet, -amount);
-
-    setTransactions((p) => [{
-      id:          Date.now(),
-      createdAt:   nowAr(),
-      type:        op,
-      personName:  manageTarget.name,
-      fromWallet:  WALLET_LABELS[wallet],
-      toWallet:    "—",
-      amount,
-      description: note,
-    }, ...p]);
-
-    setManageTarget(null);
   }
 
-  /* ── Handle transfer submit ── */
-  function handleTransfer(from: WalletCat, to: WalletCat, amount: number, note: string) {
-    adjWallet(from, -amount);
-    adjWallet(to,   +amount);
+  /* ── Handle تحويل بين الخزن ── */
+  async function handleTransfer(
+    from:   WalletCat,
+    to:     WalletCat,
+    amount: number,
+    note:   string,
+  ) {
+    if (!mainWalletId) return;
+    setSubmitting(true);
+    try {
+      /* Update main_wallet when office is either source or destination */
+      if (from === "office" || to === "office") {
+        const newBalance = from === "office"
+          ? officeBalance - amount
+          : officeBalance + amount;
+        await supabase
+          .from("main_wallet")
+          .update({ balance: newBalance })
+          .eq("id", mainWalletId);
+      }
 
-    setTransactions((p) => [{
-      id:          Date.now(),
-      createdAt:   nowAr(),
-      type:        "تحويل",
-      fromWallet:  WALLET_LABELS[from],
-      toWallet:    WALLET_LABELS[to],
-      amount,
-      description: note,
-    }, ...p]);
+      /* Log into the appropriate account table */
+      if (from === "delivery" || to === "delivery") {
+        await supabase.from("delivery_accounts").insert({
+          type:        "تحويل",
+          amount,
+          reason:      note || null,
+          from_wallet: from,
+          delivery_id: null,
+        });
+      } else {
+        /* office↔moto or moto↔office */
+        await supabase.from("motorcycle_accounts").insert({
+          type:          "تحويل",
+          amount,
+          reason:        note || null,
+          motorcycle_id: null,
+        });
+      }
 
-    setShowTransfer(false);
+      await loadData();
+    } finally {
+      setSubmitting(false);
+      setShowTransfer(false);
+    }
+  }
+
+  /* ── Approve سلفة ── */
+  async function handleApprove(req: AdvanceRequest) {
+    setProcessingIds((p) => new Set(p).add(req.id));
+    try {
+      const driver         = driverWallets.find((d) => d.id === req.deliveryId);
+      const currentBalance = driver?.balance ?? 0;
+
+      await supabase.from("delivery_accounts").insert({
+        delivery_id: req.deliveryId,
+        type:        "صرف",
+        amount:      req.amount,
+        reason:      "سلفة",
+        from_wallet: "office",
+      });
+      await supabase
+        .from("delivery_staff")
+        .update({ wallet_balance: currentBalance + req.amount })
+        .eq("id", req.deliveryId);
+      if (mainWalletId !== null) {
+        await supabase
+          .from("main_wallet")
+          .update({ balance: officeBalance - req.amount })
+          .eq("id", mainWalletId);
+      }
+      await supabase
+        .from("advance_requests")
+        .update({ status: "approved" })
+        .eq("id", req.id);
+
+      await loadData();
+    } finally {
+      setProcessingIds((p) => { const s = new Set(p); s.delete(req.id); return s; });
+    }
+  }
+
+  /* ── Reject سلفة ── */
+  async function handleReject(id: number) {
+    setProcessingIds((p) => new Set(p).add(id));
+    try {
+      await supabase
+        .from("advance_requests")
+        .update({ status: "rejected" })
+        .eq("id", id);
+      await loadData();
+    } finally {
+      setProcessingIds((p) => { const s = new Set(p); s.delete(id); return s; });
+    }
+  }
+
+  /* ── Loading screen ── */
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center min-h-[60vh]" dir="rtl">
+        <div className="flex flex-col items-center gap-4">
+          <div className="w-10 h-10 rounded-full border-4 animate-spin"
+            style={{
+              borderColor: `${C.teal}33`,
+              borderTopColor: C.teal,
+            }} />
+          <p className="text-sm font-semibold" style={{ color: C.muted }}>جارٍ تحميل الحسابات...</p>
+        </div>
+      </div>
+    );
   }
 
   /* ── Render ── */
@@ -967,32 +1212,45 @@ export default function AdminAccountsPage() {
             style={{ background: C.card, border: `1px solid ${C.border}` }}>
             {TABS.map((t) => (
               <button key={t} onClick={() => setTab(t)}
-                className="flex-shrink-0 px-4 py-2 rounded-lg text-sm font-bold transition-all whitespace-nowrap"
+                className="flex-shrink-0 px-4 py-2 rounded-lg text-sm font-bold transition-all whitespace-nowrap flex items-center gap-1.5"
                 style={{
                   background: tab === t ? C.teal : "transparent",
                   color:      tab === t ? "#fff" : C.muted,
                 }}>
                 {t}
+                {t === "ملخص" && pendingRequests.length > 0 && (
+                  <span className="px-1.5 py-0.5 rounded-full text-[10px] font-black leading-none"
+                    style={{ background: C.orange, color: "#fff" }}>
+                    {pendingRequests.length}
+                  </span>
+                )}
               </button>
             ))}
           </div>
 
           <button
             onClick={() => { setTransferKey((k) => k + 1); setShowTransfer(true); }}
-            className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-bold flex-shrink-0 hover:opacity-90 transition-opacity"
-            style={{ background: C.teal, color: "#fff" }}
-          >
+            disabled={submitting}
+            className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-bold flex-shrink-0 hover:opacity-90 disabled:opacity-60 transition-opacity"
+            style={{ background: C.teal, color: "#fff" }}>
             <span>⇄</span>
             <span className="hidden sm:inline">تحويل بين الخزن</span>
           </button>
         </div>
 
-        {tab === "ملخص" && <SummaryTab />}
+        {tab === "ملخص" && (
+          <SummaryTab
+            pendingRequests={pendingRequests}
+            onApprove={handleApprove}
+            onReject={handleReject}
+            processingIds={processingIds}
+          />
+        )}
 
         {tab === "خزنة المكتب" && (
           <OfficeWalletTab
             balance={officeBalance}
-            transactions={transactions}
+            transactions={allTransactions}
           />
         )}
 
@@ -1000,7 +1258,7 @@ export default function AdminAccountsPage() {
           <DeliveryWalletTab
             poolBalance={deliveryBalance}
             drivers={driverWallets}
-            transactions={transactions}
+            transactions={allTransactions}
             onManage={openDriverManage}
           />
         )}
@@ -1009,7 +1267,7 @@ export default function AdminAccountsPage() {
           <MotoWalletTab
             poolBalance={motoBalance}
             motos={motoWallets}
-            transactions={transactions}
+            transactions={allTransactions}
             onManage={openMotoManage}
           />
         )}
@@ -1024,6 +1282,7 @@ export default function AdminAccountsPage() {
           motoBalance={motoBalance}
           onSubmit={handleManage}
           onClose={() => setManageTarget(null)}
+          submitting={submitting}
         />
       )}
 
@@ -1036,6 +1295,7 @@ export default function AdminAccountsPage() {
           motoBalance={motoBalance}
           onSubmit={handleTransfer}
           onClose={() => setShowTransfer(false)}
+          submitting={submitting}
         />
       )}
     </>

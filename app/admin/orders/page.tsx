@@ -46,6 +46,7 @@ type DBOrder = {
 
 /* ── Status helpers ── */
 const STATUS_AR: Record<string, string> = {
+  accepted:   "قبله الدرايفر",
   pending:    "قيد التنفيذ",
   on_the_way: "في الطريق",
   delivered:  "تم التوصيل",
@@ -82,16 +83,44 @@ export default function AdminOrdersPage() {
   const [loading,       setLoading]       = useState(true);
   const [activeTab,     setActiveTab]     = useState("الكل");
   const [search,        setSearch]        = useState("");
+  const [confirmingId,  setConfirmingId]  = useState<string | null>(null);
+  const [confirmError,  setConfirmError]  = useState<string | null>(null);
+
+  /* ── Shift time validation (handles overnight shifts) ── */
+  function isShiftActiveNow(shift: { start_time: string; end_time: string }): boolean {
+    const now            = new Date();
+    const currentMinutes = now.getHours() * 60 + now.getMinutes();
+
+    const [startH, startM] = shift.start_time.split(":").map(Number);
+    const [endH,   endM]   = shift.end_time.split(":").map(Number);
+    const startMinutes     = startH * 60 + startM;
+    const endMinutes       = endH   * 60 + endM;
+
+    if (startMinutes <= endMinutes) {
+      /* Normal shift e.g. 08:00 → 16:00 */
+      return currentMinutes >= startMinutes && currentMinutes <= endMinutes;
+    }
+    /* Overnight shift e.g. 22:00 → 06:00 */
+    return currentMinutes >= startMinutes || currentMinutes <= endMinutes;
+  }
 
   async function loadData() {
+    // 1. جلب الطلبات بدون order_items
     const { data: newOrdersData, error: e1 } = await supabase
       .from("orders")
       .select(`
-        id, total, notes, user_order_number, created_at, restaurant_id,
-        restaurants!restaurant_id (name),
-        addresses!address_id (full_address, areas(name)),
-        order_items (quantity, menu_items(name)),
-        users (name, phone)
+        id,
+        total,
+        notes,
+        user_order_number,
+        created_at,
+        restaurant_id,
+        restaurants:restaurants!restaurant_id (name),
+        addresses:addresses!address_id (
+          full_address,
+          areas (name)
+        ),
+        users:users (name, phone)
       `)
       .eq("status", "new")
       .order("created_at", { ascending: false });
@@ -99,12 +128,39 @@ export default function AdminOrdersPage() {
     console.log("New Orders Error:", e1);
     console.log("New Orders:", newOrdersData);
 
+    // 2. جلب الأصناف لكل الطلبات الجديدة بشكل منفصل
+    const orderIds = (newOrdersData ?? []).map((o: any) => o.id);
+    let itemsMap: Record<string, DBNewOrder["order_items"]> = {};
+
+    if (orderIds.length > 0) {
+      const { data: itemsData } = await supabase
+        .from("order_items")
+        .select("order_id, quantity, menu_items (name, price_at_order)")
+        .in("order_id", orderIds);
+
+      for (const row of (itemsData ?? []) as any[]) {
+        if (!itemsMap[row.order_id]) itemsMap[row.order_id] = [];
+        itemsMap[row.order_id].push({
+          quantity:   row.quantity,
+          menu_items: row.menu_items ?? null,
+        });
+      }
+    }
+
+    // 3. دمج الأصناف مع الطلبات
+    const finalOrders: DBNewOrder[] = (newOrdersData ?? []).map((o: any) => ({
+      ...o,
+      order_items: itemsMap[o.id] ?? [],
+    }));
+
     const { data: allOrdersData, error: e2 } = await supabase
       .from("orders")
       .select(`
         id, total, status, created_at, user_order_number, user_id, delivery_id,
         restaurants!restaurant_id (name),
-        addresses!address_id (areas(name))
+        addresses!address_id (areas(name)),
+        users (name, phone),
+        delivery_staff (name)
       `)
       .neq("status", "new")
       .order("created_at", { ascending: false });
@@ -112,8 +168,8 @@ export default function AdminOrdersPage() {
     console.log("All Orders Error:", e2);
     console.log("All Orders:", allOrdersData);
 
-    setNewOrdersList((newOrdersData as DBNewOrder[]) ?? []);
-    setAllOrdersList((allOrdersData as DBOrder[]) ?? []);
+    setNewOrdersList(finalOrders);
+    setAllOrdersList((allOrdersData as unknown as DBOrder[]) ?? []);
   }
 
   useEffect(() => {
@@ -159,40 +215,83 @@ export default function AdminOrdersPage() {
   }
 
   async function confirmOrder(id: string) {
-    // جيب الوردية النشطة
-    const { data: activeShift } = await supabase
+    setConfirmError(null);
+
+    // 1. UI guard — تحقق من الـ local state أولاً قبل أي network call
+    const order = newOrdersList.find((o) => o.id === id);
+    if (!order) {
+      setConfirmError("تم تحديث الطلب بالفعل");
+      return;
+    }
+
+    setConfirmingId(id);
+
+    // 2. التحقق من وجود وردية نشطة مع start_time و end_time
+    const { data: shift } = await supabase
       .from("shifts")
-      .select("id")
+      .select("id, start_time, end_time")
       .eq("is_active", true)
       .limit(1)
-      .single();
+      .maybeSingle();
 
-    const { error } = await supabase
-      .from("orders")
-      .update({
-        status: "pending",
-        shift_id: activeShift?.id ?? null
-      })
-      .eq("id", id);
-
-    if (error) { console.log("Confirm Error:", error); return; }
-
-    const order = newOrdersList.find((o) => o.id === id);
-    setNewOrdersList((prev) => prev.filter((o) => o.id !== id));
-    if (order) {
-      setAllOrdersList((prev) => [{
-        id:                order.id,
-        total:             order.total,
-        status:            "pending",
-        created_at:        order.created_at,
-        user_order_number: order.user_order_number,
-        restaurant_id:     order.restaurant_id,
-        restaurants:       order.restaurants,
-        addresses:         order.addresses as any,
-        users:             null,
-        delivery_staff:    null,
-      }, ...prev]);
+    if (!shift) {
+      setConfirmError("🚫 لا توجد وردية نشطة حالياً، يرجى فتح وردية أولاً");
+      setConfirmingId(null);
+      return;
     }
+
+    // 3. التحقق من أن الوقت الحالي ضمن نطاق الوردية
+    if (!isShiftActiveNow(shift)) {
+      setConfirmError("⚠️ هذه الوردية خارج وقت التشغيل، يرجى إنهاءها وفتح وردية مناسبة للوقت الحالي");
+      setConfirmingId(null);
+      return;
+    }
+
+    // 4. التحقق من وجود سائقين نشطين في الوردية
+    const { count } = await supabase
+      .from("delivery_shifts")
+      .select("*", { count: "exact", head: true })
+      .eq("shift_id", shift.id)
+      .eq("is_active", true);
+
+    if (!count) {
+      setConfirmError("🚫 لا يوجد سائقين متاحين على هذه الوردية، يرجى إضافة سائقين أولاً");
+      setConfirmingId(null);
+      return;
+    }
+
+    // 5. DB update مع status guard — select("id") عشان نعرف لو اتحدث فعلاً
+    const { data: updated, error } = await supabase
+      .from("orders")
+      .update({ status: "pending", shift_id: shift.id })
+      .eq("id", id)
+      .eq("status", "new")
+      .select("id");
+
+    if (error) { console.log("Confirm Error:", error); setConfirmingId(null); return; }
+
+    if (!updated?.length) {
+      setConfirmError("تم تحديث الطلب بالفعل من مستخدم آخر");
+      setConfirmingId(null);
+      return;
+    }
+
+    // 6. Optimistic UI update
+    setNewOrdersList((prev) => prev.filter((o) => o.id !== id));
+    setAllOrdersList((prev) => [{
+      id:                order.id,
+      total:             order.total,
+      status:            "pending",
+      created_at:        order.created_at,
+      user_order_number: order.user_order_number,
+      restaurant_id:     order.restaurant_id,
+      restaurants:       order.restaurants,
+      addresses:         order.addresses as any,
+      users:             order.users,
+      delivery_staff:    null,
+    }, ...prev]);
+
+    setConfirmingId(null);
   }
 
   async function cancelOrder(id: string) {
@@ -215,7 +314,8 @@ export default function AdminOrdersPage() {
     const { error } = await supabase
       .from("orders")
       .update({ status: "cancelled" })
-      .eq("id", id);
+      .eq("id", id)
+      .eq("status", "new");
     console.log("Cancel Error:", error);
   }
 
@@ -335,6 +435,21 @@ export default function AdminOrdersPage() {
           </span>
         </div>
 
+        {/* Error banner */}
+        {confirmError && (
+          <div
+            className="mx-4 mt-4 flex items-center justify-between gap-3 px-4 py-3 rounded-xl"
+            style={{ background: `${C.red}18`, border: `1px solid ${C.red}44` }}
+          >
+            <p className="text-sm font-semibold" style={{ color: C.red }}>{confirmError}</p>
+            <button
+              onClick={() => setConfirmError(null)}
+              className="flex-shrink-0 text-xs hover:opacity-70"
+              style={{ color: C.red }}
+            >✕</button>
+          </div>
+        )}
+
         {/* Cards */}
         <div className="p-4">
           {newOrdersList.length === 0 ? (
@@ -384,8 +499,10 @@ export default function AdminOrdersPage() {
                     className="rounded-lg px-3 py-2 flex flex-col gap-1"
                     style={{ background: C.bg }}
                   >
-                    {order.order_items.map((item, idx) => (
+                    {
+                    (order.order_items ?? []).map((item, idx) =>(
                       <div key={idx} className="flex justify-between text-xs">
+                        {/* order.order_items.map((item, idx) =>  */}
                         <span style={{ color: C.text }}>
                           {item.menu_items?.name ?? "—"}{" "}
                           <span style={{ color: C.muted }}>×{item.quantity}</span>
@@ -408,10 +525,12 @@ export default function AdminOrdersPage() {
                     </button>
                     <button
                       onClick={() => confirmOrder(order.id)}
-                      className="flex-1 flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold min-w-[100px]"
+                      disabled={confirmingId === order.id}
+                      className="flex-1 flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold min-w-[100px] disabled:opacity-60 transition-opacity"
                       style={{ background: `${C.teal}22`, color: C.teal, border: `1px solid ${C.teal}55` }}
                     >
-                      <span>✅</span> تأكيد الطلب
+                      <span>✅</span>
+                      {confirmingId === order.id ? "جارٍ التأكيد..." : "تأكيد الطلب"}
                     </button>
                     <button
                       onClick={() => cancelOrder(order.id)}
