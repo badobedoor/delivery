@@ -46,6 +46,18 @@ type AdvanceRequest = {
   createdAt:  string;   /* ISO 8601 */
 };
 
+type SettlementRequest = {
+  id:           number;
+  deliveryId:   number;
+  shiftId:      string;
+  driverName:   string;
+  totalOrders:  number;
+  cashTotal:    number;
+  vodafoneTotal: number;
+  restaurantDebt: number;
+  createdAt:    string;
+};
+
 /* ── Helpers ── */
 function fmtAmt(n: number) {
   return `${n.toLocaleString("ar-EG")} ج.م`;
@@ -342,19 +354,162 @@ function TransactionActivity({
 }
 
 /* ─────────────────────────────────────────────
-   TAB: ملخص — طلبات السلفة
+   SettlementModal — تصفية الوردية
+───────────────────────────────────────────── */
+
+function SettlementModal({
+  req,
+  motos,
+  onConfirm,
+  onClose,
+  submitting,
+}: {
+  req:        SettlementRequest;
+  motos:      { id: number; name: string }[];
+  onConfirm:  (advanceReturn: number, motoId: number | null) => void;
+  onClose:    () => void;
+  submitting: boolean;
+}) {
+  const [advReturn, setAdvReturn] = useState("");
+  const [motoId,    setMotoId]    = useState<number | null>(null);
+  const [error,     setError]     = useState("");
+
+  const totalCollected = req.cashTotal + req.vodafoneTotal;
+  const advReturnNum   = parseFloat(advReturn) || 0;
+  const remaining      = totalCollected - advReturnNum;
+  const share          = remaining > 0 ? Math.round(remaining / 3) : 0;
+
+  function handleConfirm() {
+    if (advReturnNum < 0) { setError("قيمة رد السلفة لا يمكن أن تكون سالبة"); return; }
+    if (advReturnNum > totalCollected) { setError("قيمة رد السلفة أكبر من المبلغ المحصّل"); return; }
+    onConfirm(advReturnNum, motoId);
+  }
+
+  const sel = { background: `${C.bg}`, border: `1px solid ${C.border}`, color: C.text, colorScheme: "dark" as const };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4"
+      style={{ background: "rgba(0,0,0,0.8)" }}
+      onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}>
+      <div className="w-full max-w-sm rounded-2xl flex flex-col"
+        style={{ background: C.card, border: `1px solid ${C.border}` }}>
+
+        <div className="flex items-center justify-between px-5 py-4 border-b" style={{ borderColor: C.border }}>
+          <div>
+            <h2 className="text-base font-black" style={{ color: C.text }}>تصفية الوردية</h2>
+            <p className="text-xs mt-0.5" style={{ color: C.muted }}>{req.driverName}</p>
+          </div>
+          <button onClick={onClose}
+            className="w-8 h-8 rounded-full flex items-center justify-center hover:opacity-70"
+            style={{ background: C.bg, color: C.muted }}>✕</button>
+        </div>
+
+        <div className="px-5 py-4 flex flex-col gap-4">
+          {/* Summary */}
+          <div className="rounded-xl p-3 flex flex-col gap-1.5" style={{ background: C.bg }}>
+            {[
+              { label: "أوردرات الوردية",  value: `${req.totalOrders} أوردر`,    color: C.text   },
+              { label: "نقدي محصّل",       value: fmtAmt(req.cashTotal),          color: C.green  },
+              { label: "فودافون محصّل",    value: fmtAmt(req.vodafoneTotal),      color: C.blue   },
+              { label: "ديون مطاعم",       value: fmtAmt(req.restaurantDebt),     color: C.red    },
+              { label: "إجمالي محصّل",    value: fmtAmt(totalCollected),          color: C.teal   },
+            ].map((r) => (
+              <div key={r.label} className="flex justify-between">
+                <span className="text-xs" style={{ color: C.muted }}>{r.label}</span>
+                <span className="text-xs font-bold" style={{ color: r.color }}>{r.value}</span>
+              </div>
+            ))}
+          </div>
+
+          {/* Advance return input */}
+          <div className="flex flex-col gap-1.5">
+            <label className="text-xs font-semibold" style={{ color: C.muted }}>قيمة رد السلفة</label>
+            <div className="relative">
+              <input type="number" min="0" value={advReturn}
+                onChange={(e) => { setAdvReturn(e.target.value); setError(""); }}
+                placeholder="0"
+                className="w-full rounded-xl px-3 py-2.5 text-sm outline-none"
+                style={{ background: C.bg, border: `1px solid ${C.orange}55`, color: C.text }} />
+              <span className="absolute top-1/2 -translate-y-1/2 left-3 text-xs font-bold"
+                style={{ color: C.muted }}>ج.م</span>
+            </div>
+          </div>
+
+          {/* Motorcycle selector */}
+          {motos.length > 0 && (
+            <div className="flex flex-col gap-1.5">
+              <label className="text-xs font-semibold" style={{ color: C.muted }}>موتوسيكل الوردية (اختياري)</label>
+              <select value={motoId ?? ""} onChange={(e) => setMotoId(e.target.value ? Number(e.target.value) : null)}
+                className="w-full rounded-xl px-3 py-2.5 text-sm outline-none" style={sel}>
+                <option value="">بدون موتوسيكل</option>
+                {motos.map((m) => <option key={m.id} value={m.id}>{m.name}</option>)}
+              </select>
+            </div>
+          )}
+
+          {/* Settlement preview */}
+          {remaining > 0 && (
+            <div className="rounded-xl p-3 flex flex-col gap-1.5"
+              style={{ background: `${C.teal}12`, border: `1px solid ${C.teal}33` }}>
+              <p className="text-xs font-bold text-center mb-1" style={{ color: C.teal }}>
+                توزيع المبلغ (المتبقي ÷ 3)
+              </p>
+              {[
+                { label: "حصة السائق",     value: share },
+                { label: "حصة الموتوسيكل", value: share },
+                { label: "حصة المكتب",     value: share },
+              ].map((r) => (
+                <div key={r.label} className="flex justify-between">
+                  <span className="text-xs" style={{ color: C.muted }}>{r.label}</span>
+                  <span className="text-xs font-bold" style={{ color: C.teal }}>{fmtAmt(r.value)}</span>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {error && (
+            <p className="text-xs text-center py-1.5 px-3 rounded-lg"
+              style={{ background: `${C.red}18`, color: C.red, border: `1px solid ${C.red}33` }}>
+              ⚠ {error}
+            </p>
+          )}
+        </div>
+
+        <div className="flex gap-3 px-5 py-4 border-t" style={{ borderColor: C.border }}>
+          <button onClick={handleConfirm} disabled={submitting}
+            className="flex-1 py-2.5 rounded-xl text-sm font-bold hover:opacity-90 disabled:opacity-50 transition-opacity"
+            style={{ background: C.teal, color: "#fff" }}>
+            {submitting ? "جارٍ التصفية..." : "تأكيد التصفية"}
+          </button>
+          <button onClick={onClose} disabled={submitting}
+            className="flex-1 py-2.5 rounded-xl text-sm font-bold hover:opacity-80 disabled:opacity-50 transition-opacity"
+            style={{ background: C.bg, color: C.muted, border: `1px solid ${C.border}` }}>إلغاء</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ─────────────────────────────────────────────
+   TAB: ملخص — طلبات السلفة + تصفية الورديات
 ───────────────────────────────────────────── */
 
 function SummaryTab({
   pendingRequests,
+  settlementRequests,
   onApprove,
   onReject,
+  onSettle,
   processingIds,
+  settlingId,
 }: {
-  pendingRequests: AdvanceRequest[];
+  pendingRequests:     AdvanceRequest[];
+  settlementRequests:  SettlementRequest[];
   onApprove: (req: AdvanceRequest) => void;
   onReject:  (id: number) => void;
+  onSettle:  (req: SettlementRequest) => void;
   processingIds: Set<number>;
+  settlingId:    number | null;
 }) {
   return (
     <div className="flex flex-col gap-5">
@@ -415,6 +570,59 @@ function SummaryTab({
                       {processing ? "..." : "رفض"}
                     </button>
                   </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+      {/* ── Settlement requests ── */}
+      {settlementRequests.length > 0 && (
+        <div className="rounded-2xl overflow-hidden"
+          style={{ background: C.card, border: `1px solid ${C.teal}44` }}>
+          <div className="flex items-center justify-between px-4 py-3 border-b"
+            style={{ borderColor: C.border }}>
+            <h3 className="text-sm font-black" style={{ color: C.text }}>طلبات تصفية الورديات</h3>
+            <span className="text-[11px] px-2 py-0.5 rounded-full font-semibold"
+              style={{ background: `${C.teal}22`, color: C.teal }}>
+              {settlementRequests.length} طلب
+            </span>
+          </div>
+
+          <div className="flex flex-col">
+            {settlementRequests.map((req, i) => {
+              const settling = settlingId === req.id;
+              const isLast   = i === settlementRequests.length - 1;
+              const total    = req.cashTotal + req.vodafoneTotal;
+              return (
+                <div key={req.id}
+                  className="flex items-start gap-4 px-4 py-3.5"
+                  style={{ borderBottom: isLast ? "none" : `1px solid ${C.border}` }}>
+                  <div className="w-10 h-10 rounded-xl flex items-center justify-center text-base flex-shrink-0 mt-0.5"
+                    style={{ background: `${C.teal}20` }}>🔒</div>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-bold" style={{ color: C.text }}>{req.driverName}</p>
+                    <p className="text-sm font-black mt-0.5" style={{ color: C.teal }}>
+                      {fmtAmt(total)}
+                    </p>
+                    <div className="flex gap-3 mt-0.5">
+                      <span className="text-xs" style={{ color: C.muted }}>{req.totalOrders} أوردر</span>
+                      {req.restaurantDebt > 0 && (
+                        <span className="text-xs" style={{ color: C.red }}>دين مطاعم: {fmtAmt(req.restaurantDebt)}</span>
+                      )}
+                    </div>
+                    <p className="text-[10px] mt-1" style={{ color: `${C.muted}99` }}>
+                      {fmtDateAr(req.createdAt)}
+                    </p>
+                  </div>
+                  <button
+                    onClick={() => onSettle(req)}
+                    disabled={settling}
+                    className="px-3 py-1.5 rounded-lg text-xs font-bold hover:opacity-80 disabled:opacity-40 transition-opacity flex-shrink-0 mt-0.5"
+                    style={{ background: `${C.teal}22`, color: C.teal }}>
+                    {settling ? "..." : "تصفية"}
+                  </button>
                 </div>
               );
             })}
@@ -911,6 +1119,10 @@ export default function AdminAccountsPage() {
   const [motoTxs,        setMotoTxs]        = useState<Transaction[]>([]);
   const [pendingRequests, setPendingRequests] = useState<AdvanceRequest[]>([]);
 
+  const [settlementRequests, setSettlementRequests] = useState<SettlementRequest[]>([]);
+  const [settleTarget,  setSettleTarget]  = useState<SettlementRequest | null>(null);
+  const [settlingId,    setSettlingId]    = useState<number | null>(null);
+
   const [manageTarget,  setManageTarget]  = useState<{ type: "driver" | "moto"; id: number; name: string } | null>(null);
   const [showTransfer,  setShowTransfer]  = useState(false);
   const [transferKey,   setTransferKey]   = useState(0);
@@ -936,6 +1148,7 @@ export default function AdminAccountsPage() {
       { data: deliveryTxData },
       { data: motoTxData },
       { data: advanceData },
+      { data: settlementData },
     ] = await Promise.all([
       supabase.from("main_wallet").select("id, balance").single(),
       supabase
@@ -959,6 +1172,11 @@ export default function AdminAccountsPage() {
       supabase
         .from("advance_requests")
         .select("id, delivery_id, amount, note, created_at, delivery_staff(name)")
+        .eq("status", "pending")
+        .order("created_at", { ascending: false }),
+      supabase
+        .from("shift_settlement_requests")
+        .select("id, delivery_id, shift_id, created_at, delivery_staff(name)")
         .eq("status", "pending")
         .order("created_at", { ascending: false }),
     ]);
@@ -994,6 +1212,41 @@ export default function AdminAccountsPage() {
         note:       r.note ?? "",
         createdAt:  r.created_at,
       })));
+    }
+
+    /* Load settlement requests with order totals */
+    if (settlementData && (settlementData as any[]).length > 0) {
+      const enriched: SettlementRequest[] = await Promise.all(
+        (settlementData as any[]).map(async (r) => {
+          const { data: orders } = await supabase
+            .from("orders")
+            .select("total, cash_amount, vodafone_amount, restaurant_paid, restaurant_debt")
+            .eq("delivery_id", r.delivery_id)
+            .eq("shift_id", r.shift_id)
+            .eq("status", "delivered");
+
+          const cashTotal      = (orders ?? []).reduce((s: number, o: any) => s + (o.cash_amount ?? 0), 0);
+          const vodafoneTotal  = (orders ?? []).reduce((s: number, o: any) => s + (o.vodafone_amount ?? 0), 0);
+          const restaurantDebt = (orders ?? [])
+            .filter((o: any) => o.restaurant_paid === false)
+            .reduce((s: number, o: any) => s + (o.restaurant_debt ?? 0), 0);
+
+          return {
+            id:            r.id,
+            deliveryId:    r.delivery_id,
+            shiftId:       r.shift_id,
+            driverName:    (r.delivery_staff as any)?.name ?? "—",
+            totalOrders:   (orders ?? []).length,
+            cashTotal,
+            vodafoneTotal,
+            restaurantDebt,
+            createdAt:     r.created_at,
+          };
+        }),
+      );
+      setSettlementRequests(enriched);
+    } else {
+      setSettlementRequests([]);
     }
   }, []);
 
@@ -1185,6 +1438,76 @@ export default function AdminAccountsPage() {
     }
   }
 
+  /* ── Process shift settlement ── */
+  async function handleSettlement(advanceReturn: number, motoId: number | null) {
+    if (!settleTarget || !mainWalletId) return;
+    setSettlingId(settleTarget.id);
+    setSubmitting(true);
+    try {
+      const total     = settleTarget.cashTotal + settleTarget.vodafoneTotal;
+      const remaining = total - advanceReturn;
+      const share     = remaining > 0 ? Math.round(remaining / 3) : 0;
+
+      /* 1. INSERT delivery_accounts — رد السلفة */
+      if (advanceReturn > 0) {
+        await supabase.from("delivery_accounts").insert({
+          delivery_id: settleTarget.deliveryId,
+          type:        "return_advance",
+          amount:      advanceReturn,
+          reason:      `رد سلفة وردية من ${settleTarget.driverName}`,
+          from_wallet: "office",
+        });
+      }
+
+      /* 2. UPDATE driver wallet += share */
+      const { data: staff } = await supabase
+        .from("delivery_staff")
+        .select("wallet_balance")
+        .eq("id", settleTarget.deliveryId)
+        .single();
+      if (staff) {
+        await supabase
+          .from("delivery_staff")
+          .update({ wallet_balance: (staff.wallet_balance ?? 0) + share })
+          .eq("id", settleTarget.deliveryId);
+      }
+
+      /* 3. UPDATE motorcycle wallet += share */
+      if (motoId) {
+        const { data: moto } = await supabase
+          .from("motorcycles")
+          .select("wallet_balance")
+          .eq("id", motoId)
+          .single();
+        if (moto) {
+          await supabase
+            .from("motorcycles")
+            .update({ wallet_balance: (moto.wallet_balance ?? 0) + share })
+            .eq("id", motoId);
+        }
+      }
+
+      /* 4. UPDATE main_wallet += advance_return + office_share */
+      const officeGain = advanceReturn + share;
+      await supabase
+        .from("main_wallet")
+        .update({ balance: officeBalance + officeGain })
+        .eq("id", mainWalletId);
+
+      /* 5. Mark settlement as completed */
+      await supabase
+        .from("shift_settlement_requests")
+        .update({ status: "completed" })
+        .eq("id", settleTarget.id);
+
+      await loadData();
+      setSettleTarget(null);
+    } finally {
+      setSettlingId(null);
+      setSubmitting(false);
+    }
+  }
+
   /* ── Loading screen ── */
   if (loading) {
     return (
@@ -1241,9 +1564,12 @@ export default function AdminAccountsPage() {
         {tab === "ملخص" && (
           <SummaryTab
             pendingRequests={pendingRequests}
+            settlementRequests={settlementRequests}
             onApprove={handleApprove}
             onReject={handleReject}
+            onSettle={(req) => setSettleTarget(req)}
             processingIds={processingIds}
+            settlingId={settlingId}
           />
         )}
 
@@ -1295,6 +1621,17 @@ export default function AdminAccountsPage() {
           motoBalance={motoBalance}
           onSubmit={handleTransfer}
           onClose={() => setShowTransfer(false)}
+          submitting={submitting}
+        />
+      )}
+
+      {/* Settlement modal */}
+      {settleTarget && (
+        <SettlementModal
+          req={settleTarget}
+          motos={motoWallets.map((m) => ({ id: m.id, name: m.name }))}
+          onConfirm={handleSettlement}
+          onClose={() => setSettleTarget(null)}
           submitting={submitting}
         />
       )}

@@ -531,10 +531,7 @@ export default function DriverOrdersPage() {
   const [noShift,       setNoShift]       = useState(false);
   const [loading,       setLoading]       = useState(true);
 
-  /* ── Financial state ── */
-  const [driverPct,     setDriverPct]     = useState(10);
-  const [officePct,     setOfficePct]     = useState(5);
-  const [mainWalletId,  setMainWalletId]  = useState<number | null>(null);
+  /* ── Payment collection state ── */
   const [collectTarget, setCollectTarget] = useState<ActiveOrder | null>(null);
   const [collecting,    setCollecting]    = useState(false);
 
@@ -582,24 +579,13 @@ export default function DriverOrdersPage() {
       if (!did) { setLoading(false); return; }
       setDriverId(did);
 
-      /* Fetch settings + wallet in parallel with shift lookup */
-      const [settingsRes, walletRes, shiftRes] = await Promise.all([
-        supabase.from("settings").select("driver_percentage, office_percentage").single(),
-        supabase.from("main_wallet").select("id").single(),
-        supabase
-          .from("delivery_shifts")
-          .select("shift_id")
-          .eq("delivery_id", did)
-          .eq("is_active", true)
-          .limit(1)
-          .maybeSingle(),
-      ]);
-
-      setDriverPct(settingsRes.data?.driver_percentage ?? 10);
-      setOfficePct(settingsRes.data?.office_percentage ?? 5);
-      if (walletRes.data) setMainWalletId(walletRes.data.id);
-
-      const deliveryShift = shiftRes.data;
+      const { data: deliveryShift } = await supabase
+        .from("delivery_shifts")
+        .select("shift_id")
+        .eq("delivery_id", did)
+        .eq("is_active", true)
+        .limit(1)
+        .maybeSingle();
 
       if (!deliveryShift) {
         setNoShift(true);
@@ -683,66 +669,23 @@ export default function DriverOrdersPage() {
     if (driverId && shiftId) await loadData(driverId, shiftId);
   }, [driverId, shiftId, loadData]);
 
-  /* ── Payment collection + financial inserts ── */
+  /* ── Payment collection — record method only, NO financial calculations ── */
   const handleCollect = useCallback(async (method: PayMethod, cash: number, vodafone: number) => {
-    if (!collectTarget || !driverId) return;
+    if (!collectTarget) return;
     setCollecting(true);
     try {
-      const commission  = Math.round(collectTarget.total * driverPct / 100);
-      const officeShare = Math.round(collectTarget.total * officePct / 100);
-
-      /* 1. UPDATE order payment info */
       await supabase.from("orders").update({
         payment_method:  method,
         cash_amount:     cash,
         vodafone_amount: vodafone,
       }).eq("id", collectTarget.id);
-
-      /* 2. INSERT commission in delivery_accounts */
-      await supabase.from("delivery_accounts").insert({
-        delivery_id: driverId,
-        type:        "commission",
-        amount:      commission,
-        reason:      `حصة أوردر ${collectTarget.num}`,
-        order_id:    collectTarget.id,
-        from_wallet: "office",
-      });
-
-      /* 3. UPDATE driver wallet_balance */
-      const { data: staff } = await supabase
-        .from("delivery_staff")
-        .select("wallet_balance")
-        .eq("id", driverId)
-        .single();
-
-      if (staff) {
-        await supabase.from("delivery_staff")
-          .update({ wallet_balance: (staff.wallet_balance ?? 0) + commission })
-          .eq("id", driverId);
-      }
-
-      /* 4. UPDATE main_wallet (office share) */
-      if (mainWalletId) {
-        const { data: wallet } = await supabase
-          .from("main_wallet")
-          .select("balance")
-          .eq("id", mainWalletId)
-          .single();
-
-        if (wallet) {
-          await supabase.from("main_wallet")
-            .update({ balance: wallet.balance + officeShare })
-            .eq("id", mainWalletId);
-        }
-      }
-
       setCollectTarget(null);
     } catch (err) {
       console.error("Collection error:", err);
     } finally {
       setCollecting(false);
     }
-  }, [collectTarget, driverId, driverPct, officePct, mainWalletId]);
+  }, [collectTarget]);
 
   const availCount = available.length;
 
