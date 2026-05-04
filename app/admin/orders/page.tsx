@@ -21,13 +21,19 @@ const C = {
 type DBNewOrder = {
   id: string;
   total: number;
+  subtotal: number | null;
   notes: string | null;
   user_order_number: number | null;
   created_at: string;
   restaurant_id: string | null;
   restaurants: { name: string } | null;
   addresses: { full_address: string | null; areas: { name: string } | null } | null;
-  order_items: { quantity: number; menu_items: { name: string; price_at_order: number } | null }[];
+  order_items: {
+    quantity:      number;
+    price_at_order: number;
+    extras:        { name: string; price: number }[] | null;
+    menu_items:    { name: string } | null;
+  }[];
   users: { name: string | null; phone: string | null } | null;
 };
 
@@ -46,6 +52,7 @@ type DBOrder = {
 
 /* ── Status helpers ── */
 const STATUS_AR: Record<string, string> = {
+  new:        "جديد",
   accepted:   "قبله الدرايفر",
   pending:    "قيد التنفيذ",
   on_the_way: "في الطريق",
@@ -54,6 +61,7 @@ const STATUS_AR: Record<string, string> = {
 };
 
 function statusColor(s: string) {
+  if (s === "new"        || s === "جديد")        return { bg: `${C.orange}22`, color: C.orange };
   if (s === "delivered"  || s === "تم التوصيل")  return { bg: `${C.green}22`,  color: C.green  };
   if (s === "on_the_way" || s === "في الطريق")   return { bg: `${C.blue}22`,   color: C.blue   };
   if (s === "pending"    || s === "قيد التنفيذ") return { bg: `${C.yellow}22`, color: C.yellow };
@@ -85,6 +93,25 @@ export default function AdminOrdersPage() {
   const [search,        setSearch]        = useState("");
   const [confirmingId,  setConfirmingId]  = useState<string | null>(null);
   const [confirmError,  setConfirmError]  = useState<string | null>(null);
+  const [selectedOrderModal, setSelectedOrderModal] = useState<{
+    id: string;
+    number:       number | null;
+    total:        number;
+    subtotal:     number | null;
+    delivery_fee: number | null;
+    status:       string;
+    restaurant:   string | null;
+    area:         string | null;
+    notes:        string | null;
+  } | null>(null);
+  const [modalItems,   setModalItems]   = useState<{
+    name:     string;
+    quantity: number;
+    price:    number;
+    extras:   { name: string; price: number }[];
+  }[]>([]);
+  const [modalLoading, setModalLoading] = useState(false);
+  const [modalError,   setModalError]   = useState<string | null>(null);
 
   /* ── Shift time validation (handles overnight shifts) ── */
   function isShiftActiveNow(shift: { start_time: string; end_time: string }): boolean {
@@ -111,6 +138,7 @@ export default function AdminOrdersPage() {
       .select(`
         id,
         total,
+        subtotal,
         notes,
         user_order_number,
         created_at,
@@ -135,14 +163,16 @@ export default function AdminOrdersPage() {
     if (orderIds.length > 0) {
       const { data: itemsData } = await supabase
         .from("order_items")
-        .select("order_id, quantity, menu_items (name, price_at_order)")
+        .select("order_id, quantity, price_at_order, extras, menu_items (name)")
         .in("order_id", orderIds);
 
       for (const row of (itemsData ?? []) as any[]) {
         if (!itemsMap[row.order_id]) itemsMap[row.order_id] = [];
         itemsMap[row.order_id].push({
-          quantity:   row.quantity,
-          menu_items: row.menu_items ?? null,
+          quantity:       row.quantity,
+          price_at_order: row.price_at_order ?? 0,
+          extras:         Array.isArray(row.extras) ? row.extras : [],
+          menu_items:     row.menu_items ?? null,
         });
       }
     }
@@ -199,19 +229,37 @@ export default function AdminOrdersPage() {
     // تحويل الرقم لصيغة دولية
     const phone = restaurant.phone.replace(/^0/, "20").replace(/\D/g, "");
 
-    const itemsText = (order.order_items as any[])
-      .map((i: any) => `• ${i.menu_items?.name} ×${i.quantity}`)
-      .join("\n");
+    const itemsText = order.order_items.map((item) => {
+      const extras      = item.extras ?? [];
+      const extrasTotal = extras.reduce((sum, e) => sum + (e.price ?? 0), 0);
+      const basePrice   = item.price_at_order - extrasTotal;
 
-    const msg = encodeURIComponent(
-      `🛵 طلب جديد من حالا\n` +
-      `رقم الطلب: #${order.user_order_number}\n\n` +
-      `الأصناف:\n${itemsText}\n\n` +
-      (order.notes ? `📝 ملاحظات: ${order.notes}\n\n` : "") +
-      `يرجى الرد لتأكيد استلام الطلب 🙏`
-    );
+      let line = `- ${item.menu_items?.name ?? "—"} ×${item.quantity}\n  السعر الأساسي: ${basePrice}ج`;
 
-    window.open(`https://wa.me/${phone}?text=${msg}`, "_blank");
+      if (extras.length > 0) {
+        const extrasLines = extras.map((e) => `    + ${e.name} (+${e.price}ج)`).join("\n");
+        line += `\n  الإضافات:\n${extrasLines}`;
+      }
+
+      return line;
+    }).join("\n\n");
+
+    const message = [
+      "🛵 طلب جديد من حالا",
+      "",
+      "الأصناف:",
+      itemsText,
+      "",
+      ...(order.notes ? [`📝 ملاحظات: ${order.notes}`, ""] : []),
+      `💰 الإجمالي: ${order.subtotal ?? order.total}ج`,
+      "",
+      "يرجى الرد لتأكيد استلام الطلب 🙏",
+    ].join("\n");
+
+    console.log("WhatsApp message:", message);
+
+    const encodedMessage = encodeURIComponent(message);
+    window.open(`https://wa.me/${phone}?text=${encodedMessage}`, "_blank");
   }
 
   async function confirmOrder(id: string) {
@@ -317,6 +365,66 @@ export default function AdminOrdersPage() {
       .eq("id", id)
       .eq("status", "new");
     console.log("Cancel Error:", error);
+  }
+
+  async function openModal(id: string, number: number | null, total: number, status: string) {
+    setSelectedOrderModal({
+      id, number, total, subtotal: null, delivery_fee: null, status, restaurant: null, area: null, notes: null,
+    });
+    setModalItems([]);
+    setModalError(null);
+    setModalLoading(true);
+
+    const [orderRes, itemsRes] = await Promise.all([
+      supabase
+        .from("orders")
+        .select("subtotal, delivery_fee, total, notes, restaurants!restaurant_id (name), addresses!address_id (areas (name))")
+        .eq("id", id)
+        .single(),
+      supabase
+        .from("order_items")
+        .select("quantity, price_at_order, extras, menu_items (name)")
+        .eq("order_id", id),
+    ]);
+
+    if (orderRes.error) {
+      console.error("Modal order fetch error:", orderRes.error);
+    } else if (orderRes.data) {
+      const od = orderRes.data as any;
+      setSelectedOrderModal({
+        id,
+        number,
+        total:        od.total        ?? total,
+        subtotal:     od.subtotal     ?? null,
+        delivery_fee: od.delivery_fee ?? null,
+        status,
+        restaurant:   od.restaurants?.name        ?? null,
+        area:         od.addresses?.areas?.name   ?? null,
+        notes:        od.notes                    ?? null,
+      });
+    }
+
+    if (itemsRes.error) {
+      console.error("Modal items fetch error:", itemsRes.error);
+      setModalError("حدث خطأ أثناء تحميل الأصناف");
+    } else {
+      setModalItems(
+        (itemsRes.data ?? []).map((item: any) => ({
+          name:     item.menu_items?.name          ?? "—",
+          quantity: item.quantity,
+          price:    item.price_at_order            ?? 0,
+          extras:   Array.isArray(item.extras) ? item.extras : [],
+        }))
+      );
+    }
+
+    setModalLoading(false);
+  }
+
+  function closeModal() {
+    setSelectedOrderModal(null);
+    setModalItems([]);
+    setModalError(null);
   }
 
   const countByStatus = (s: string) => {
@@ -462,8 +570,9 @@ export default function AdminOrdersPage() {
               {newOrdersList.map((order) => (
                 <div
                   key={order.id}
-                  className="rounded-xl p-4 flex flex-col gap-3"
+                  className="rounded-xl p-4 flex flex-col gap-3 cursor-pointer"
                   style={{ background: C.card, border: `1px solid ${C.border}` }}
+                  onClick={() => openModal(order.id, order.user_order_number, order.total, "new")}
                 >
                   {/* Order header */}
                   <div className="flex items-start justify-between gap-2 flex-wrap">
@@ -508,14 +617,14 @@ export default function AdminOrdersPage() {
                           <span style={{ color: C.muted }}>×{item.quantity}</span>
                         </span>
                         <span style={{ color: C.muted }}>
-                          {item.menu_items?.price_at_order ?? 0} ج.م
+                          {item.price_at_order} ج.م
                         </span>
                       </div>
                     ))}
                   </div>
 
                   {/* Action buttons */}
-                  <div className="flex gap-2 flex-wrap">
+                  <div className="flex gap-2 flex-wrap" onClick={(e) => e.stopPropagation()}>
                     <button
                       onClick={() => sendToRestaurant(order)}
                       className="flex-1 flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold"
@@ -631,7 +740,9 @@ export default function AdminOrdersPage() {
                   const sc = statusColor(order.status);
                   return (
                     <tr key={order.id}
-                      style={{ borderBottom: i < filtered.length - 1 ? `1px solid ${C.border}` : "none" }}>
+                      className="cursor-pointer transition-colors hover:bg-white/5"
+                      style={{ borderBottom: i < filtered.length - 1 ? `1px solid ${C.border}` : "none" }}
+                      onClick={() => openModal(order.id, order.user_order_number, order.total, order.status)}>
                       <td className="px-3 py-2.5 font-bold text-xs whitespace-nowrap" style={{ color: C.teal }}>
                         #{order.user_order_number ?? "—"}
                       </td>
@@ -679,6 +790,206 @@ export default function AdminOrdersPage() {
           عرض {filtered.length} من {allOrdersList.length} طلب
         </div>
       </div>
+
+      {/* ── Order Detail Modal ── */}
+      {selectedOrderModal && (
+        <div
+          className="fixed inset-0 z-50 flex items-end sm:items-center justify-center"
+          style={{ background: "rgba(0,0,0,0.75)" }}
+          onClick={closeModal}
+        >
+          <div
+            className="w-full sm:max-w-md flex flex-col gap-4 rounded-t-2xl sm:rounded-2xl p-5"
+            style={{ background: C.card, border: `1px solid ${C.border}`, maxHeight: "85vh", overflowY: "auto" }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Header */}
+            <div className="flex items-center justify-between">
+              <h3 className="text-base font-black" style={{ color: C.text }}>
+                تفاصيل الطلب #{selectedOrderModal.number ?? "—"}
+              </h3>
+              <button
+                onClick={closeModal}
+                className="w-7 h-7 flex items-center justify-center rounded-full text-sm transition-opacity hover:opacity-70"
+                style={{ background: C.bg, color: C.muted }}
+              >
+                ✕
+              </button>
+            </div>
+
+            {/* ── Section 1: معلومات الطلب ── */}
+            <div className="rounded-xl p-3 flex flex-col gap-2.5" style={{ background: C.bg }}>
+              <div className="flex items-center justify-between">
+                <span className="text-xs" style={{ color: C.muted }}>الحالة</span>
+                <span
+                  className="px-2.5 py-0.5 rounded-full text-xs font-bold"
+                  style={{
+                    background: statusColor(selectedOrderModal.status).bg,
+                    color:      statusColor(selectedOrderModal.status).color,
+                  }}
+                >
+                  {STATUS_AR[selectedOrderModal.status] ?? selectedOrderModal.status}
+                </span>
+              </div>
+              {selectedOrderModal.restaurant && (
+                <div className="flex items-center justify-between">
+                  <span className="text-xs" style={{ color: C.muted }}>المطعم</span>
+                  <span className="text-xs font-semibold" style={{ color: C.text }}>
+                    🍽 {selectedOrderModal.restaurant}
+                  </span>
+                </div>
+              )}
+              {selectedOrderModal.area && (
+                <div className="flex items-center justify-between">
+                  <span className="text-xs" style={{ color: C.muted }}>المنطقة</span>
+                  <span className="text-xs font-semibold" style={{ color: C.text }}>
+                    📍 {selectedOrderModal.area}
+                  </span>
+                </div>
+              )}
+            </div>
+
+            <div style={{ height: 1, background: C.border }} />
+
+            {/* ── Section 2: الأصناف ── */}
+            <div className="flex flex-col gap-2">
+              <p className="text-xs font-bold" style={{ color: C.muted }}>الأصناف</p>
+
+              {modalLoading ? (
+                <div className="flex justify-center py-8">
+                  <div
+                    className="w-6 h-6 rounded-full border-2 border-t-transparent animate-spin"
+                    style={{ borderColor: `${C.teal} transparent ${C.teal} ${C.teal}` }}
+                  />
+                </div>
+              ) : modalError ? (
+                <p className="text-sm text-center py-6" style={{ color: C.red }}>{modalError}</p>
+              ) : modalItems.length === 0 ? (
+                <p className="text-sm text-center py-6" style={{ color: C.muted }}>لا توجد أصناف</p>
+              ) : (
+                <div className="rounded-xl overflow-hidden" style={{ background: C.bg }}>
+                  {modalItems.map((item, i) => (
+                    <div
+                      key={i}
+                      className="flex flex-col px-3 py-2.5 gap-1.5"
+                      style={{ borderBottom: i < modalItems.length - 1 ? `1px solid ${C.border}` : "none" }}
+                    >
+                      <div className="flex items-center justify-between text-sm">
+                        <div className="flex items-center gap-2">
+                          <span
+                            className="text-xs font-bold px-1.5 py-0.5 rounded"
+                            style={{ background: `${C.teal}22`, color: C.teal }}
+                          >
+                            ×{item.quantity}
+                          </span>
+                          <span style={{ color: C.text }}>{item.name}</span>
+                        </div>
+                        <span style={{ color: C.muted }}>
+                          {item.extras.length > 0
+                            ? item.price - item.extras.reduce((s, e) => s + (e.price ?? 0), 0)
+                            : item.price} ج.م
+                        </span>
+                      </div>
+                      {item.extras.length > 0 && (
+                        <div className="flex flex-col gap-0.5 pr-8">
+                          {item.extras.map((e, j) => (
+                            <span key={j} className="text-[11px]" style={{ color: C.muted }}>
+                              + {e.name} <span style={{ color: C.yellow }}>(+{e.price}ج)</span>
+                            </span>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {/* ── Section 2.5: الملاحظات ── */}
+            {!modalLoading && !modalError && selectedOrderModal.notes && (
+              <>
+                <div style={{ height: 1, background: C.border }} />
+                <div
+                  className="rounded-xl px-3 py-2.5 flex gap-2"
+                  style={{ background: `${C.yellow}0f`, border: `1px solid ${C.yellow}33` }}
+                >
+                  <span className="text-sm flex-shrink-0">📝</span>
+                  <div className="flex flex-col gap-0.5">
+                    <p className="text-[10px] font-bold" style={{ color: C.yellow }}>ملاحظات</p>
+                    <p className="text-xs" style={{ color: C.text }}>{selectedOrderModal.notes}</p>
+                  </div>
+                </div>
+              </>
+            )}
+
+            {/* ── Section 3: الحساب ── */}
+            {!modalLoading && !modalError && (
+              <>
+                <div style={{ height: 1, background: C.border }} />
+                <div className="flex flex-col gap-2">
+                  {selectedOrderModal.subtotal != null && (
+                    <div className="flex items-center justify-between text-xs">
+                      <span style={{ color: C.muted }}>قيمة الطلب للمطعم</span>
+                      <span style={{ color: C.text }}>{selectedOrderModal.subtotal} ج.م</span>
+                    </div>
+                  )}
+                  {selectedOrderModal.delivery_fee != null && (
+                    <div className="flex items-center justify-between text-xs">
+                      <span style={{ color: C.muted }}>رسوم التوصيل</span>
+                      <span style={{ color: C.text }}>{selectedOrderModal.delivery_fee} ج.م</span>
+                    </div>
+                  )}
+                  <div
+                    className="flex items-center justify-between pt-2 mt-0.5"
+                    style={{ borderTop: `1px solid ${C.border}` }}
+                  >
+                    <span className="text-sm font-bold" style={{ color: C.text }}>الإجمالي</span>
+                    <span className="text-lg font-black" style={{ color: C.green }}>
+                      {selectedOrderModal.total} ج.م
+                    </span>
+                  </div>
+                </div>
+              </>
+            )}
+
+            {/* ── Section 4: أزرار التحكم (فقط للطلبات الجديدة) ── */}
+            {selectedOrderModal.status === "new" &&
+              newOrdersList.some((o) => o.id === selectedOrderModal.id) && (
+              <>
+                <div style={{ height: 1, background: C.border }} />
+                <div className="flex gap-2 flex-wrap">
+                  <button
+                    onClick={() => {
+                      const o = newOrdersList.find((ord) => ord.id === selectedOrderModal.id);
+                      if (o) sendToRestaurant(o);
+                    }}
+                    className="flex-1 flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold"
+                    style={{ background: `${C.orange}22`, color: C.orange, border: `1px solid ${C.orange}55` }}
+                  >
+                    <span>📲</span> إرسال للمطعم
+                  </button>
+                  <button
+                    onClick={() => { confirmOrder(selectedOrderModal.id); closeModal(); }}
+                    disabled={confirmingId === selectedOrderModal.id}
+                    className="flex-1 flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold min-w-[100px] disabled:opacity-60 transition-opacity"
+                    style={{ background: `${C.teal}22`, color: C.teal, border: `1px solid ${C.teal}55` }}
+                  >
+                    <span>✅</span>
+                    {confirmingId === selectedOrderModal.id ? "جارٍ التأكيد..." : "تأكيد الطلب"}
+                  </button>
+                  <button
+                    onClick={() => { cancelOrder(selectedOrderModal.id); closeModal(); }}
+                    className="flex-1 flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold min-w-[80px]"
+                    style={{ background: `${C.red}22`, color: C.red, border: `1px solid ${C.red}55` }}
+                  >
+                    <span>✕</span> إلغاء
+                  </button>
+                </div>
+              </>
+            )}
+          </div>
+        </div>
+      )}
 
     </div>
   );

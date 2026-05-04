@@ -23,6 +23,7 @@ type TodayOrder = {
   id:             string;
   num:            string;
   restaurant:     string;
+  subtotal:       number;
   total:          number;
   status:         "accepted" | "on_the_way" | "delivered";
   restaurantPaid: boolean | null;
@@ -36,6 +37,7 @@ type ArchiveOrder = {
   id:             string;
   num:            string;
   restaurant:     string;
+  subtotal:       number;
   total:          number;
   restaurantPaid: boolean | null;
   restaurantDebt: number;
@@ -200,7 +202,7 @@ function ReadOnlyOrderCard({ order }: { order: TodayOrder }) {
             <span className="text-xs">{order.restaurantPaid ? "✓" : "⚠"}</span>
             <span className="text-xs font-semibold"
               style={{ color: order.restaurantPaid ? C.green : C.red }}>
-              {order.restaurantPaid ? "دفع مطعم" : `دين مطعم: ${fmtAmt(order.restaurantDebt)}`}
+              {order.restaurantPaid ? "✓ دفع مطعم" : "⚠ لم يدفع للمطعم"}
             </span>
           </div>
         )}
@@ -236,7 +238,7 @@ function ShiftSummary({ orders }: { orders: TodayOrder[] }) {
 
   const cashTotal     = collected.reduce((s, o) => s + o.cashAmount, 0);
   const vodafoneTotal = collected.reduce((s, o) => s + o.vodafoneAmount, 0);
-  const paidToRest    = collected.filter((o) => o.restaurantPaid === true).reduce((s, o) => s + o.total, 0);
+  const paidToRest    = collected.filter((o) => o.restaurantPaid === true).reduce((s, o) => s + o.subtotal, 0);
   const restDebt      = collected.filter((o) => o.restaurantPaid === false).reduce((s, o) => s + o.restaurantDebt, 0);
   /* Driver hands over everything minus what they already paid to restaurants */
   const toHandOver    = cashTotal + vodafoneTotal - paidToRest;
@@ -281,7 +283,7 @@ function ArchiveDayCard({
 
   const cashTotal     = orders.reduce((s, o) => s + o.cashAmount, 0);
   const vodafoneTotal = orders.reduce((s, o) => s + o.vodafoneAmount, 0);
-  const paidToRest    = orders.filter((o) => o.restaurantPaid === true).reduce((s, o) => s + o.total, 0);
+  const paidToRest    = orders.filter((o) => o.restaurantPaid === true).reduce((s, o) => s + o.subtotal, 0);
   const restDebt      = orders.filter((o) => !o.restaurantPaid && o.restaurantDebt > 0).reduce((s, o) => s + o.restaurantDebt, 0);
   const totalCollected = cashTotal + vodafoneTotal;
 
@@ -374,7 +376,7 @@ export default function DriverAccountsPage() {
       supabase
         .from("orders")
         .select(
-          "id, status, total, user_order_number, restaurant_paid, restaurant_debt, " +
+          "id, status, total, subtotal, user_order_number, restaurant_paid, restaurant_debt, " +
           "payment_method, cash_amount, vodafone_amount, restaurants!restaurant_id(name)",
         )
         .eq("delivery_id", did)
@@ -397,7 +399,8 @@ export default function DriverAccountsPage() {
         id:             o.id,
         num:            `#${o.user_order_number ?? "—"}`,
         restaurant:     (o.restaurants as any)?.name ?? "—",
-        total:          o.total ?? 0,
+        subtotal:       o.subtotal         ?? 0,
+        total:          o.total            ?? 0,
         status:         o.status,
         restaurantPaid: o.restaurant_paid  ?? null,
         restaurantDebt: o.restaurant_debt  ?? 0,
@@ -425,7 +428,7 @@ export default function DriverAccountsPage() {
     const { data } = await supabase
       .from("orders")
       .select(
-        "id, total, user_order_number, restaurant_paid, restaurant_debt, " +
+        "id, total, subtotal, user_order_number, restaurant_paid, restaurant_debt, " +
         "cash_amount, vodafone_amount, created_at, restaurants!restaurant_id(name)",
       )
       .eq("delivery_id", did)
@@ -440,11 +443,12 @@ export default function DriverAccountsPage() {
         id:             o.id,
         num:            `#${o.user_order_number ?? "—"}`,
         restaurant:     (o.restaurants as any)?.name ?? "—",
-        total:          o.total ?? 0,
-        restaurantPaid: o.restaurant_paid ?? null,
-        restaurantDebt: o.restaurant_debt ?? 0,
-        cashAmount:     o.cash_amount     ?? 0,
-        vodafoneAmount: o.vodafone_amount ?? 0,
+        subtotal:       o.subtotal         ?? 0,
+        total:          o.total            ?? 0,
+        restaurantPaid: o.restaurant_paid  ?? null,
+        restaurantDebt: o.restaurant_debt  ?? 0,
+        cashAmount:     o.cash_amount      ?? 0,
+        vodafoneAmount: o.vodafone_amount  ?? 0,
         isoDate:        o.created_at,
       })),
     );

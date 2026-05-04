@@ -73,7 +73,14 @@ export default function AdminShiftsPage() {
   const [modal,      setModal]      = useState(false);
   const [form,       setForm]       = useState(emptyForm);
   const [toggleErr,  setToggleErr]  = useState<string | null>(null);
-  const [formErr, setFormErr] = useState<string | null>(null);
+  const [formErr,    setFormErr]    = useState<string | null>(null);
+
+  const [editModal,        setEditModal]        = useState(false);
+  const [editShift,        setEditShift]        = useState<Shift | null>(null);
+  const [editForm,         setEditForm]         = useState({ startTime: "", endTime: "" });
+  const [editErr,          setEditErr]          = useState<string | null>(null);
+  const [editSaving,       setEditSaving]       = useState(false);
+  const [editCheckingId,   setEditCheckingId]   = useState<number | null>(null);
 
   /* live clock — re-evaluates active shift every minute */
   const [now, setNow] = useState(() => new Date());
@@ -144,6 +151,56 @@ export default function AdminShiftsPage() {
       await supabase.from("delivery_shifts").update({ shift_id: s.id }).eq("is_active", true);
     }
     setDelId(null);
+  }
+
+  /* ── Edit ── */
+  async function handleEditClick(s: Shift) {
+    setEditCheckingId(s.id);
+    setToggleErr(null);
+
+    const { count, error } = await supabase
+      .from("delivery_shifts")
+      .select("*", { count: "exact", head: true })
+      .eq("shift_id", s.id);
+
+    setEditCheckingId(null);
+
+    if (error) { setToggleErr("تعذّر التحقق من بيانات الوردية"); return; }
+    if (count && count > 0) { setToggleErr("لا يمكن تعديل وردية تم استخدامها بالفعل"); return; }
+
+    setEditShift(s);
+    setEditForm({ startTime: s.startTime, endTime: s.endTime });
+    setEditErr(null);
+    setEditModal(true);
+  }
+
+  async function handleEditSave() {
+    if (!editShift) return;
+    if (!editForm.startTime || !editForm.endTime) {
+      setEditErr("وقت البداية والنهاية مطلوبان"); return;
+    }
+    if (editForm.endTime <= editForm.startTime) {
+      setEditErr("وقت النهاية يجب أن يكون بعد وقت البداية"); return;
+    }
+
+    setEditSaving(true);
+    setEditErr(null);
+
+    const { error } = await supabase
+      .from("shifts")
+      .update({ start_time: `${editForm.startTime}:00`, end_time: `${editForm.endTime}:00`, is_active: false })
+      .eq("id", editShift.id);
+
+    if (error) { setEditErr("فشل الحفظ، حاول مرة أخرى"); setEditSaving(false); return; }
+
+    setRows((p) => p.map((r) =>
+      r.id === editShift.id
+        ? { ...r, startTime: editForm.startTime, endTime: editForm.endTime, isActive: false }
+        : r
+    ));
+    setEditSaving(false);
+    setEditModal(false);
+    setEditShift(null);
   }
 
   return (
@@ -272,17 +329,27 @@ export default function AdminShiftsPage() {
 
                       {/* إجراءات */}
                       <td className="px-4 py-3">
-                        <button
-                          onClick={() => handleToggle(s)}
-                          disabled={isToggling}
-                          className="px-3 py-1.5 rounded-lg text-xs font-bold hover:opacity-80 transition-opacity whitespace-nowrap disabled:opacity-40"
-                          style={{
-                            background: s.isActive ? `${C.red}22`  : `${C.green}22`,
-                            color:      s.isActive ? C.red         : C.green,
-                          }}
-                        >
-                          {isToggling ? "..." : s.isActive ? "إيقاف" : "تشغيل"}
-                        </button>
+                        <div className="flex gap-2 flex-wrap">
+                          <button
+                            onClick={() => handleToggle(s)}
+                            disabled={isToggling}
+                            className="px-3 py-1.5 rounded-lg text-xs font-bold hover:opacity-80 transition-opacity whitespace-nowrap disabled:opacity-40"
+                            style={{
+                              background: s.isActive ? `${C.red}22`  : `${C.green}22`,
+                              color:      s.isActive ? C.red         : C.green,
+                            }}
+                          >
+                            {isToggling ? "..." : s.isActive ? "إيقاف" : "تشغيل"}
+                          </button>
+                          <button
+                            onClick={() => handleEditClick(s)}
+                            disabled={s.isActive || editCheckingId === s.id}
+                            className="px-3 py-1.5 rounded-lg text-xs font-bold hover:opacity-80 transition-opacity whitespace-nowrap disabled:opacity-40"
+                            style={{ background: `${C.teal}22`, color: C.teal }}
+                          >
+                            {editCheckingId === s.id ? "..." : "تعديل"}
+                          </button>
+                        </div>
                       </td>
                     </tr>
                   );
@@ -350,6 +417,71 @@ export default function AdminShiftsPage() {
                 {saving ? "جاري الحفظ..." : "حفظ"}
               </button>
               <button onClick={() => setModal(false)} disabled={saving}
+                className="flex-1 py-2.5 rounded-xl text-sm font-bold hover:opacity-80 transition-opacity disabled:opacity-50"
+                style={{ background: C.bg, color: C.muted, border: `1px solid ${C.border}` }}>
+                إلغاء
+              </button>
+            </div>
+
+          </div>
+        </div>
+      )}
+      {/* ── Edit Shift Modal ── */}
+      {editModal && editShift && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center p-4"
+          style={{ background: "rgba(0,0,0,0.7)" }}
+          onClick={(e) => { if (e.target === e.currentTarget) { setEditModal(false); setEditShift(null); } }}
+        >
+          <div className="w-full max-w-sm rounded-2xl flex flex-col"
+            style={{ background: C.card, border: `1px solid ${C.border}` }}>
+
+            <div className="flex items-center justify-between px-5 py-4 border-b" style={{ borderColor: C.border }}>
+              <h2 className="text-base font-black" style={{ color: C.text }}>تعديل وردية {editShift.num}</h2>
+              <button onClick={() => { setEditModal(false); setEditShift(null); }}
+                className="w-8 h-8 rounded-full flex items-center justify-center text-sm hover:opacity-70"
+                style={{ background: C.bg, color: C.muted }}>✕</button>
+            </div>
+
+            <div className="px-5 py-4 flex flex-col gap-4">
+
+              {editErr && (
+                <p className="text-xs font-semibold text-center py-1.5 rounded-lg"
+                  style={{ background: `${C.red}22`, color: C.red }}>
+                  {editErr}
+                </p>
+              )}
+
+              <div className="grid grid-cols-2 gap-3">
+                <div className="flex flex-col gap-1.5">
+                  <label className="text-xs font-semibold" style={{ color: C.muted }}>وقت البداية</label>
+                  <input type="time" value={editForm.startTime}
+                    onChange={(e) => setEditForm({ ...editForm, startTime: e.target.value })}
+                    className="w-full rounded-xl px-3 py-2.5 text-sm outline-none"
+                    style={{ background: C.bg, border: `1px solid ${C.border}`, color: C.text, colorScheme: "dark" }} />
+                </div>
+                <div className="flex flex-col gap-1.5">
+                  <label className="text-xs font-semibold" style={{ color: C.muted }}>وقت النهاية</label>
+                  <input type="time" value={editForm.endTime}
+                    onChange={(e) => setEditForm({ ...editForm, endTime: e.target.value })}
+                    className="w-full rounded-xl px-3 py-2.5 text-sm outline-none"
+                    style={{ background: C.bg, border: `1px solid ${C.border}`, color: C.text, colorScheme: "dark" }} />
+                </div>
+              </div>
+
+              <p className="text-[10px]" style={{ color: C.muted }}>
+                * سيتم تعطيل الوردية تلقائياً عند الحفظ
+              </p>
+
+            </div>
+
+            <div className="flex gap-3 px-5 py-4 border-t" style={{ borderColor: C.border }}>
+              <button onClick={handleEditSave} disabled={editSaving}
+                className="flex-1 py-2.5 rounded-xl text-sm font-bold hover:opacity-90 transition-opacity disabled:opacity-50"
+                style={{ background: C.teal, color: "#fff" }}>
+                {editSaving ? "جاري الحفظ..." : "حفظ التعديل"}
+              </button>
+              <button onClick={() => { setEditModal(false); setEditShift(null); }} disabled={editSaving}
                 className="flex-1 py-2.5 rounded-xl text-sm font-bold hover:opacity-80 transition-opacity disabled:opacity-50"
                 style={{ background: C.bg, color: C.muted, border: `1px solid ${C.border}` }}>
                 إلغاء
