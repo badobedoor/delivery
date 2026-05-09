@@ -56,7 +56,7 @@ export default function DriverArchivePage() {
         .eq("status", "delivered")
         .order("created_at", { ascending: false });
 
-      setOrders((data as DBOrder[]) ?? []);
+      setOrders((data as unknown as DBOrder[]) ?? []);
       setLoading(false);
     }
     load();

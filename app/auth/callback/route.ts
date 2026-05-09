@@ -1,4 +1,4 @@
-import { NextResponse }    from "next/server";
+import { NextResponse, type NextRequest } from "next/server";
 import { createServerClient } from "@supabase/ssr";
 
 /**
@@ -9,7 +9,7 @@ import { createServerClient } from "@supabase/ssr";
  * We build the client inline so we can attach the session cookies directly
  * onto the NextResponse redirect, which is the only way to get them to the browser.
  */
-export async function GET(request: Request) {
+export async function GET(request: NextRequest) {
   const { searchParams, origin } = new URL(request.url);
   const code = searchParams.get("code");
 

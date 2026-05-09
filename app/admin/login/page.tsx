@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { signIn, getUserProfile, getRoleRedirect } from "@/lib/auth";
+import { supabasePublic } from "@/lib/supabasePublic";
 
 const C = {
   bg:     "#0F172A",
@@ -36,7 +36,7 @@ function EyeOffIcon() {
 }
 
 export default function AdminLoginPage() {
-  const [email,    setEmail]    = useState("");
+  const [phone,    setPhone]    = useState("");
   const [password, setPassword] = useState("");
   const [showPass, setShowPass] = useState(false);
   const [error,    setError]    = useState("");
@@ -44,46 +44,29 @@ export default function AdminLoginPage() {
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
-    if (!email.trim())    { setError("أدخل البريد الإلكتروني"); return; }
-    if (!password.trim()) { setError("أدخل كلمة المرور");        return; }
+    if (!phone.trim())    { setError("أدخل رقم الهاتف"); return; }
+    if (!password.trim()) { setError("أدخل كلمة المرور"); return; }
 
     setError("");
     setLoading(true);
 
-    try {
-      /* ── Step 1: authenticate ── */
-      const data = await signIn(email.trim(), password);
-      console.log("LOGIN DATA:", data);
+    const { data, error: dbError } = await supabasePublic
+      .from("staff")
+      .select("id, name, phone, role, is_active")
+      .eq("phone", phone.trim())
+      .eq("password", password)
+      .eq("is_active", true)
+      .single();
 
-      const session = data?.session;
-      if (!session?.user) throw new Error("فشل تسجيل الدخول — لا توجد جلسة");
-
-      /* ── Step 2: fetch profile ── */
-      const profile = await getUserProfile(session.user.id);
-      console.log("PROFILE:", profile);
-
-      if (!profile) {
-        throw new Error(
-          "لم يتم العثور على الملف الشخصي — تأكد من إنشاء صف في جدول profiles",
-        );
-      }
-
-      /* ── Step 3: role check ── */
-      if (profile.role !== "admin" && profile.role !== "staff") {
-        throw new Error(`غير مصرح لك بالدخول لهذه اللوحة (دورك: ${profile.role})`);
-      }
-
-      /* ── Step 4: hard redirect so the middleware sees the new cookie ── */
-      const dest = getRoleRedirect(profile.role);
-      console.log("REDIRECTING TO:", dest);
-      window.location.href = dest;
-    } catch (err: unknown) {
-      console.error("LOGIN ERROR:", err);
-      setError(err instanceof Error ? err.message : "حدث خطأ غير متوقع");
+    if (dbError || !data) {
+      setError("رقم الهاتف أو كلمة المرور غير صحيحة");
       setLoading(false);
+      return;
     }
-    /* Note: setLoading(false) is intentionally skipped on success —
-       the page will navigate away so there is nothing to reset. */
+
+    localStorage.setItem("staff_user", JSON.stringify(data));
+    document.cookie = "staff_session=1; path=/; SameSite=Lax";
+    window.location.href = "/admin/dashboard";
   }
 
   return (
@@ -113,16 +96,16 @@ export default function AdminLoginPage() {
         {/* ── Form ── */}
         <form onSubmit={handleSubmit} className="flex flex-col gap-4">
 
-          {/* Email */}
+          {/* Phone */}
           <div className="flex flex-col gap-1.5">
             <label className="text-sm font-semibold" style={{ color: C.muted }}>
-              البريد الإلكتروني
+              رقم الهاتف
             </label>
             <input
-              type="email"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              placeholder="admin@example.com"
+              type="tel"
+              value={phone}
+              onChange={(e) => setPhone(e.target.value)}
+              placeholder="01XXXXXXXXX"
               className="w-full rounded-xl px-3 py-2.5 text-sm outline-none"
               style={{
                 background: C.bg,

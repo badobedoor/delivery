@@ -69,7 +69,7 @@ function toOrder(o: DBOrder): Order {
 }
 
 const ORDER_SELECT = `
-  id, status, total, subtotal, delivery_fee, notes, user_order_number,
+  id, status, picked_up, total, subtotal, delivery_fee, notes, user_order_number,
   restaurant_paid, restaurant_debt, payment_method, cash_amount, vodafone_amount,
   restaurants!restaurant_id (name),
   addresses!address_id (full_address, areas (name)),
@@ -383,21 +383,17 @@ function ActiveCard({
   onPickup:         (id: string) => Promise<void>;
   onRestaurantPaid: (id: string, paid: boolean) => void;
 }) {
-  const [open,           setOpen]           = useState(false);
-  const [pickedUp,       setPickedUp]       = useState(false);
-  const [restaurantPaid, setRestaurantPaid] = useState<boolean | null>(null);
-  const [restBusy,       setRestBusy]       = useState(false);
-  const [copied,         setCopied]         = useState(false);
-  const [delivered,      setDelivered]      = useState(false);
+  const [open,      setOpen]      = useState(false);
+  const [restBusy,  setRestBusy]  = useState(false);
+  const [copied,    setCopied]    = useState(false);
+  const [delivered, setDelivered] = useState(false);
 
   async function handlePickup() {
-    setPickedUp(true);
     await onPickup(order.id);
   }
 
   async function handleRestPaid(paid: boolean) {
     setRestBusy(true);
-    setRestaurantPaid(paid);
     onRestaurantPaid(order.id, paid);
     setRestBusy(false);
   }
@@ -425,11 +421,11 @@ function ActiveCard({
             <span
               className="text-[10px] font-bold px-2 py-0.5 rounded-full"
               style={{
-                background: pickedUp ? `${C.green}20` : `${C.yellow}20`,
-                color:      pickedUp ? C.green          : C.yellow,
+                background: order.pickedUp ? `${C.green}20` : `${C.yellow}20`,
+                color:      order.pickedUp ? C.green          : C.yellow,
               }}
             >
-              {pickedUp ? "✓ تم الاستلام" : "لم يُستلم بعد"}
+              {order.pickedUp ? "✓ تم الاستلام" : "لم يُستلم بعد"}
             </span>
           </div>
           <span className="text-xs" style={{ color: C.muted }}>📍 {order.area}</span>
@@ -511,7 +507,7 @@ function ActiveCard({
           <div className="flex flex-col gap-2 mt-1">
 
             {/* Step 1 — هل دفعت للمطعم؟ */}
-            {restaurantPaid === null ? (
+            {order.restaurantPaid === null ? (
               <div className="flex flex-col gap-2 p-3 rounded-xl"
                 style={{ background: C.bg, border: `1px solid ${C.border}` }}>
                 <p className="text-xs font-bold text-center" style={{ color: C.muted }}>هل دفعت للمطعم؟</p>
@@ -531,7 +527,7 @@ function ActiveCard({
             ) : null}
 
             {/* Step 2 — تم الاستلام (يظهر فقط بعد قرار الدفع) */}
-            {restaurantPaid !== null && !pickedUp && (
+            {order.restaurantPaid !== null && !order.pickedUp && (
               <button
                 onClick={handlePickup}
                 className="w-full py-2.5 rounded-xl text-sm font-bold transition-opacity hover:opacity-90"
@@ -542,7 +538,7 @@ function ActiveCard({
             )}
 
             {/* Step 3 — هاتف العميل + التسليم (يظهر فقط بعد الاستلام) */}
-            {pickedUp && (
+            {order.pickedUp && (
               <>
                 {order.phone ? (
                   <div className="rounded-xl px-3 py-2.5 flex items-center justify-between gap-3"
@@ -607,8 +603,31 @@ export default function DriverOrdersPage() {
   const [collecting,    setCollecting]    = useState(false);
 
   const loadData = useCallback(async (did: string, sid: string | null) => {
-    /* Available orders — only when driver has an active shift */
-    if (sid) {
+    /* 1. Fetch active orders first — needed to evaluate workload */
+    const { data: act } = await supabase
+      .from("orders")
+      .select(ORDER_SELECT)
+      .in("status", ["accepted", "on_the_way"])
+      .eq("delivery_id", did);
+
+    const activeOrders: ActiveOrder[] = (act ?? []).map((o) => ({
+      ...toOrder(o),
+      pickedUp:       (o as DBOrder).picked_up ?? false,
+      phone:          (o as DBOrder).users?.phone ?? "",
+      restaurantPaid: (o as DBOrder).restaurant_paid  ?? null,
+      restaurantDebt: (o as DBOrder).restaurant_debt  ?? 0,
+      paymentMethod:  (o as DBOrder).payment_method   ?? null,
+      cashAmount:     (o as DBOrder).cash_amount      ?? 0,
+      vodafoneAmount: (o as DBOrder).vodafone_amount  ?? 0,
+    }));
+    setActive(activeOrders);
+
+    /* 2. Check workload constraints before fetching available orders */
+    const hasPickedUp  = activeOrders.some((o) => o.pickedUp);
+    const isAtCapacity = activeOrders.length >= 3;
+    const canTakeNew   = sid && !hasPickedUp && !isAtCapacity;
+
+    if (canTakeNew) {
       const { data: availableOrders } = await supabase
         .from("orders")
         .select(`
@@ -623,24 +642,6 @@ export default function DriverOrdersPage() {
     } else {
       setAvailable([]);
     }
-
-    /* Active orders — ALWAYS by delivery_id, never filtered by shift */
-    const { data: act } = await supabase
-      .from("orders")
-      .select(ORDER_SELECT)
-      .in("status", ["accepted", "on_the_way"])
-      .eq("delivery_id", did);
-
-    setActive((act ?? []).map((o) => ({
-      ...toOrder(o),
-      pickedUp:       (o as DBOrder).status === "on_the_way",
-      phone:          (o as DBOrder).users?.phone ?? "",
-      restaurantPaid: (o as DBOrder).restaurant_paid  ?? null,
-      restaurantDebt: (o as DBOrder).restaurant_debt  ?? 0,
-      paymentMethod:  (o as DBOrder).payment_method   ?? null,
-      cashAmount:     (o as DBOrder).cash_amount      ?? 0,
-      vodafoneAmount: (o as DBOrder).vodafone_amount  ?? 0,
-    })));
   }, []);
 
   useEffect(() => {
@@ -667,11 +668,11 @@ export default function DriverOrdersPage() {
 
       const { data: activeShift } = await supabase
         .from("shifts")
-        .select("id, num, start_time")
+        .select("id, num, start_time, is_active")
         .eq("id", deliveryShift.shift_id)
         .single();
 
-      if (!activeShift) {
+      if (!activeShift || !activeShift.is_active) {
         setNoShift(true);
         await loadData(did, null);
         setLoading(false);
@@ -722,9 +723,10 @@ export default function DriverOrdersPage() {
   const pickup = useCallback(async (id: string) => {
     await supabase
       .from("orders")
-      .update({ status: "on_the_way" })
+      .update({ picked_up: true, status: "on_the_way" })
       .eq("id", id)
       .eq("status", "accepted");
+    setActive((prev) => prev.map((o) => o.id === id ? { ...o, pickedUp: true } : o));
   }, []);
 
   /* ── Deliver → open payment modal ── */
@@ -757,6 +759,10 @@ export default function DriverOrdersPage() {
       setCollecting(false);
     }
   }, [collectTarget]);
+
+  const hasPickedUp      = active.some((o) => o.pickedUp);
+  const isAtCapacity     = active.length >= 3;
+  const canTakeNewOrders = !hasPickedUp && !isAtCapacity;
 
   const availCount = available.length;
 
@@ -834,6 +840,21 @@ export default function DriverOrdersPage() {
                 </p>
                 <p className="text-sm" style={{ color: C.muted }}>
                   يرجى التواصل مع الإدارة للانضمام إلى وردية
+                </p>
+              </div>
+            ) : !canTakeNewOrders ? (
+              <div
+                className="rounded-2xl p-5 flex flex-col items-center gap-3 text-center"
+                style={{ background: `${C.orange}12`, border: `1px solid ${C.orange}44` }}
+              >
+                <span className="text-4xl">🛵</span>
+                <p className="text-base font-black" style={{ color: C.orange }}>
+                  وصّل الطلبات اللي معاك الأول
+                </p>
+                <p className="text-sm" style={{ color: C.muted }}>
+                  {hasPickedUp
+                    ? "لديك طلب مستلم من المطعم — أكمل التوصيل أولاً"
+                    : `وصلت الحد الأقصى (${active.length}/3 طلبات)`}
                 </p>
               </div>
             ) : available.length === 0 ? (

@@ -72,7 +72,7 @@ export default function OrderDetailPage() {
         .single();
 
       if (error || !data) { setNotFound(true); setLoading(false); return; }
-      setOrder(data as Order);
+      setOrder(data as unknown as Order);
       setLoading(false);
     }
     load();

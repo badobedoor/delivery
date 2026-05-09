@@ -1,12 +1,10 @@
 "use client";
 
 import Link              from "next/link";
-import { usePathname, useRouter } from "next/navigation";
-import { useState, useEffect }    from "react";
-import { useAuth }  from "@/hooks/useAuth";
-import { signOut }  from "@/lib/auth";
+import { usePathname }   from "next/navigation";
+import { useState, useEffect } from "react";
 
-/* Pages staff are allowed to visit */
+/* Pages staff role is allowed to visit */
 const STAFF_ALLOWED = ["/admin/orders", "/admin/restaurants", "/admin/drivers"];
 
 const C = {
@@ -157,16 +155,14 @@ function AuthLoadingScreen() {
 }
 
 /* ── Staff session type (from localStorage) ── */
-type StaffUser = { id: number; name: string; phone: string; [key: string]: unknown };
+type StaffUser = { id: number; name: string; phone: string; role: string; [key: string]: unknown };
 
 export default function AdminLayout({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
-  const router   = useRouter();
 
   /* ── Login page: skip ALL auth checks, render immediately ── */
   if (pathname === "/admin/login") return <>{children}</>;
 
-  /* ── localStorage staff session (checked before Supabase auth) ── */
   const [staffUser,    setStaffUser]    = useState<StaffUser | null>(null);
   const [staffChecked, setStaffChecked] = useState(false);
 
@@ -189,73 +185,45 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
     setStaffChecked(true);
   }, []);
 
-  /* ── Supabase auth (admin users only) ── */
-  const { user, profile, loading: authLoading } = useAuth();
-
   const [collapsed,  setCollapsed]  = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
   const title = pageTitle[pathname] ?? "لوحة التحكم";
 
-  /* ── Staff route guard ── */
+  /* ── Staff role: restrict to allowed routes ── */
   useEffect(() => {
     if (!staffChecked || !staffUser) return;
-
+    if (staffUser.role !== "staff") return;
     const allowed = STAFF_ALLOWED.some((p) => pathname.startsWith(p));
-    if (!allowed) {
-      window.location.href = "/admin/orders";
-    }
+    if (!allowed) window.location.href = "/admin/orders";
   }, [staffChecked, staffUser, pathname]);
 
-  /* ── Admin/Supabase auth guard (only when no staff session) ── */
+  /* ── No session: redirect to login ── */
   useEffect(() => {
-    if (!staffChecked || staffUser) return;   /* skip if staff session exists */
-    if (authLoading) return;
+    if (!staffChecked) return;
+    if (!staffUser) window.location.href = "/admin/login";
+  }, [staffChecked, staffUser]);
 
-    if (!user) {
-      router.replace("/admin/login");
-      return;
-    }
-    if (profile?.role === "driver") { router.replace("/driver/orders");    return; }
-    if (profile?.role === "customer") { router.replace("/");               return; }
-    if (profile?.role === "staff") {
-      const allowed = STAFF_ALLOWED.some((p) => pathname.startsWith(p));
-      if (!allowed) router.replace("/admin/orders");
-    }
-  }, [staffChecked, staffUser, authLoading, user, profile, pathname, router]);
-
-  /* ── Logout ── */
-  async function handleLogout() {
-    if (staffUser) {
-      localStorage.removeItem("staff_user");
-      document.cookie = "staff_session=; path=/; max-age=0";
-      window.location.href = "/staff/login";
-      return;
-    }
-    await signOut();
-    router.replace("/admin/login");
+  /* ── Logout: clear session, redirect to login ── */
+  function handleLogout() {
+    localStorage.removeItem("staff_user");
+    document.cookie = "staff_session=; path=/; max-age=0";
+    window.location.href = "/admin/login";
   }
 
-  /* ── Wait until localStorage is read ── */
+  /* ── Wait until localStorage check completes ── */
   if (!staffChecked) return <AuthLoadingScreen />;
 
-  /* ── Staff mode: render immediately, no Supabase session needed ── */
-  const isStaffMode = Boolean(staffUser);
+  /* ── No session: show loading screen while redirect fires ── */
+  if (!staffUser) return <AuthLoadingScreen />;
 
-  /* ── Admin mode: wait for Supabase auth ── */
-  if (!isStaffMode && (authLoading || !user)) return <AuthLoadingScreen />;
-
-  /* ── Nav links: staff sees filtered list, admin sees all ── */
-  const navLinks = isStaffMode
+  /* ── Nav links: staff role sees restricted list, admin sees all ── */
+  const navLinks = staffUser.role === "staff"
     ? allNavLinks.filter((l) => STAFF_ALLOWED.includes(l.href))
-    : profile?.role === "staff"
-      ? allNavLinks.filter((l) => STAFF_ALLOWED.includes(l.href))
-      : allNavLinks;
+    : allNavLinks;
 
   /* ── Header display info ── */
-  const displayName  = isStaffMode
-    ? (staffUser?.name ?? "موظف")
-    : (profile?.name ?? user?.email ?? "مدير");
-  const displayRole  = isStaffMode ? "موظف" : (profile?.role === "admin" ? "مدير النظام" : profile?.role ?? "");
+  const displayName  = staffUser.name ?? "مدير";
+  const displayRole  = staffUser.role === "admin" ? "مدير النظام" : "موظف";
   const avatarLetter = displayName[0] ?? "م";
 
   const sidebarW = collapsed ? 64 : 260;

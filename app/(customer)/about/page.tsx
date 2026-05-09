@@ -83,7 +83,7 @@ export default function AboutPage() {
               const cls = `flex items-center justify-between px-4 py-4 active:bg-[var(--color-surface)] transition-colors ${
                 i < allLinks.length - 1 ? "border-b border-[var(--color-border)]" : ""
               }`;
-              return link.external ? (
+              return ('external' in link && link.external) ? (
                 <a key={link.label} href={link.href} target="_blank" rel="noopener noreferrer" className={cls}>
                   {inner}
                 </a>

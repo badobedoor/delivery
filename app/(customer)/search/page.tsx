@@ -48,7 +48,7 @@ export default function SearchPage() {
           .limit(10),
       ]);
       setRestaurants(restData ?? []);
-      setMeals(mealData ?? []);
+      setMeals((mealData ?? []) as unknown as Meal[]);
       setSearching(false);
     }, 400);
 
