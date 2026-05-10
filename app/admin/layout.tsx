@@ -154,79 +154,71 @@ function AuthLoadingScreen() {
   );
 }
 
-/* ── Staff session type (from localStorage) ── */
-type StaffUser = { id: number; name: string; phone: string; role: string; [key: string]: unknown };
+type AuthUser = { id: string; name: string; role: string; type: string };
 
 export default function AdminLayout({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
 
-  /* ── Login page: skip ALL auth checks, render immediately ── */
-  if (pathname === "/admin/login") return <>{children}</>;
-
-  const [staffUser,    setStaffUser]    = useState<StaffUser | null>(null);
-  const [staffChecked, setStaffChecked] = useState(false);
-
-  useEffect(() => {
-    /* If a driver session exists, they should not be here */
-    try {
-      const driverRaw = localStorage.getItem("driver_user");
-      if (driverRaw && JSON.parse(driverRaw)) {
-        window.location.href = "/driver/orders";
-        return;
-      }
-    } catch { /* ignore */ }
-
-    try {
-      const raw = localStorage.getItem("staff_user");
-      setStaffUser(raw ? (JSON.parse(raw) as StaffUser) : null);
-    } catch {
-      setStaffUser(null);
-    }
-    setStaffChecked(true);
-  }, []);
-
+  /* ── All hooks declared before any conditional return ── */
+  const [user,       setUser]       = useState<AuthUser | null>(null);
+  const [checked,    setChecked]    = useState(false);
   const [collapsed,  setCollapsed]  = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
-  const title = pageTitle[pathname] ?? "لوحة التحكم";
+
+  const isLoginPage = pathname === "/admin/login";
+
+  /* ── Fetch current user from secure cookie ── */
+  useEffect(() => {
+    if (isLoginPage) { setChecked(true); return; }
+
+    fetch("/api/auth/me", { credentials: "include" })
+      .then((r) => r.json())
+      .then((data) => setUser(data.authenticated ? (data.user as AuthUser) : null))
+      .catch(() => setUser(null))
+      .finally(() => setChecked(true));
+  }, [isLoginPage]);
 
   /* ── Staff role: restrict to allowed routes ── */
   useEffect(() => {
-    if (!staffChecked || !staffUser) return;
-    if (staffUser.role !== "staff") return;
+    if (isLoginPage || !checked || !user) return;
+    if (user.role !== "staff") return;
     const allowed = STAFF_ALLOWED.some((p) => pathname.startsWith(p));
     if (!allowed) window.location.href = "/admin/orders";
-  }, [staffChecked, staffUser, pathname]);
+  }, [isLoginPage, checked, user, pathname]);
 
   /* ── No session: redirect to login ── */
   useEffect(() => {
-    if (!staffChecked) return;
-    if (!staffUser) window.location.href = "/admin/login";
-  }, [staffChecked, staffUser]);
+    if (isLoginPage || !checked) return;
+    if (!user) window.location.href = "/admin/login";
+  }, [isLoginPage, checked, user]);
 
-  /* ── Logout: clear session, redirect to login ── */
-  function handleLogout() {
-    localStorage.removeItem("staff_user");
-    document.cookie = "staff_session=; path=/; max-age=0";
+  /* ── Login page: skip ALL auth checks, render immediately ── */
+  if (isLoginPage) return <>{children}</>;
+
+  /* ── Logout: clear auth cookie via API ── */
+  async function handleLogout() {
+    await fetch("/api/auth/logout", { method: "POST", credentials: "include" });
     window.location.href = "/admin/login";
   }
 
-  /* ── Wait until localStorage check completes ── */
-  if (!staffChecked) return <AuthLoadingScreen />;
+  /* ── Wait until auth check completes ── */
+  if (!checked) return <AuthLoadingScreen />;
 
   /* ── No session: show loading screen while redirect fires ── */
-  if (!staffUser) return <AuthLoadingScreen />;
+  if (!user) return <AuthLoadingScreen />;
 
   /* ── Nav links: staff role sees restricted list, admin sees all ── */
-  const navLinks = staffUser.role === "staff"
+  const navLinks = user.role === "staff"
     ? allNavLinks.filter((l) => STAFF_ALLOWED.includes(l.href))
     : allNavLinks;
 
-  /* ── Header display info ── */
-  const displayName  = staffUser.name ?? "مدير";
-  const displayRole  = staffUser.role === "admin" ? "مدير النظام" : "موظف";
+  const title        = pageTitle[pathname] ?? "لوحة التحكم";
+  const displayName  = user.name ?? "مدير";
+  const displayRole  = (user.role === "admin" || user.role === "super_admin")
+    ? "مدير النظام"
+    : "موظف";
   const avatarLetter = displayName[0] ?? "م";
-
-  const sidebarW = collapsed ? 64 : 260;
+  const sidebarW     = collapsed ? 64 : 260;
 
   return (
     <div

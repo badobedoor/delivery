@@ -1,7 +1,9 @@
 "use client";
 
 import { useState, useEffect, useCallback, useMemo } from "react";
+import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase";
+import { useCurrentUser } from "@/hooks/useCurrentUser";
 
 const C = {
   bg:     "#0F172A",
@@ -23,7 +25,9 @@ type TodayOrder = {
   id:             string;
   num:            string;
   restaurant:     string;
+  area:           string;
   subtotal:       number;
+  deliveryFee:    number;
   total:          number;
   status:         "accepted" | "on_the_way" | "delivered";
   restaurantPaid: boolean | null;
@@ -73,6 +77,19 @@ function todayStartISO() {
 }
 
 function isoDateStr(iso: string) { return iso.slice(0, 10); }
+
+/* How much of an order's delivery fee was paid in cash (safe, no NaN/negative) */
+function cashDeliveryShare(o: TodayOrder): number {
+  const fee = o.deliveryFee;
+  if (o.paymentMethod === "cash")     return fee;
+  if (o.paymentMethod === "vodafone") return 0;
+  if (o.paymentMethod === "mixed") {
+    if (o.cashAmount >= fee)               return fee;
+    if (o.cashAmount > o.vodafoneAmount)   return fee;
+    return 0;
+  }
+  return 0;
+}
 
 /* ── Chevron ── */
 function ChevronIcon({ open }: { open: boolean }) {
@@ -169,61 +186,67 @@ function AdvanceModal({
    ReadOnlyOrderCard — no action buttons
 ───────────────────────────────────────────── */
 function ReadOnlyOrderCard({ order }: { order: TodayOrder }) {
-  const statusLabel =
-    order.status === "accepted"   ? "مع السائق"  :
-    order.status === "on_the_way" ? "في الطريق" : "تم التسليم";
-  const statusColor =
-    order.status === "accepted"   ? C.yellow :
-    order.status === "on_the_way" ? C.blue   : C.green;
+  /* ── Delivered card — compact layout ── */
+  if (order.status === "delivered") {
+    let payLabel = "";
+    if (order.paymentMethod === "cash") {
+      payLabel = "نقدي";
+    } else if (order.paymentMethod === "vodafone") {
+      payLabel = "فودافون كاش";
+    } else if (order.paymentMethod === "mixed") {
+      const parts: string[] = [];
+      if (order.cashAmount > 0)     parts.push(`${order.cashAmount} نقدي`);
+      if (order.vodafoneAmount > 0) parts.push(`${order.vodafoneAmount} فودافون`);
+      payLabel = parts.join(" • ");
+    }
+
+    return (
+      <div className="rounded-2xl overflow-hidden"
+        style={{ background: C.card, border: `1px solid ${C.border}` }}>
+        <div className="px-4 py-3 flex flex-col gap-1.5">
+          {/* Row 1: restaurant name | total */}
+          <div className="flex items-center justify-between gap-2">
+            <div className="flex items-center gap-1.5 min-w-0">
+              <span className="text-sm font-semibold truncate" style={{ color: C.text }}>{order.restaurant}</span>
+              <span className="text-xs font-black flex-shrink-0" style={{ color: C.teal }}>{order.num}</span>
+            </div>
+            <span className="text-lg font-black flex-shrink-0" style={{ color: C.green }}>{fmtAmt(order.total)}</span>
+          </div>
+          {/* Row 2: area | payment method */}
+          <div className="flex items-center justify-between gap-2">
+            <span className="text-xs truncate" style={{ color: C.muted }}>📍 {order.area}</span>
+            {payLabel && (
+              <span className="text-xs font-semibold flex-shrink-0" style={{ color: C.muted }}>{payLabel}</span>
+            )}
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  /* ── Active card — same two-row layout as delivered card ── */
+  const statusLabel = order.status === "accepted" ? "مع السائق" : "في الطريق";
+  const statusColor = order.status === "accepted" ? C.yellow    : C.blue;
 
   return (
     <div className="rounded-2xl overflow-hidden"
       style={{ background: C.card, border: `1px solid ${C.border}` }}>
-
-      <div className="px-4 py-3 flex items-center justify-between">
-        <div className="flex flex-col gap-0.5">
-          <div className="flex items-center gap-2">
-            <span className="text-sm font-black" style={{ color: C.teal }}>{order.num}</span>
-            <span className="text-sm font-semibold" style={{ color: C.text }}>{order.restaurant}</span>
+      <div className="px-4 py-3 flex flex-col gap-1.5">
+        {/* Row 1: restaurant name | total */}
+        <div className="flex items-center justify-between gap-2">
+          <div className="flex items-center gap-1.5 min-w-0">
+            <span className="text-sm font-semibold truncate" style={{ color: C.text }}>{order.restaurant}</span>
+            <span className="text-xs font-black flex-shrink-0" style={{ color: C.teal }}>{order.num}</span>
           </div>
-          <span className="text-lg font-black" style={{ color: C.text }}>{fmtAmt(order.total)}</span>
+          <span className="text-lg font-black flex-shrink-0" style={{ color: C.green }}>{fmtAmt(order.total)}</span>
         </div>
-        <span className="text-[10px] px-2 py-1 rounded-full font-bold"
-          style={{ background: `${statusColor}20`, color: statusColor }}>
-          {statusLabel}
-        </span>
-      </div>
-
-      {/* Payment + restaurant indicators */}
-      <div className="px-4 pb-3 flex flex-col gap-1.5">
-        {order.restaurantPaid !== null && (
-          <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg"
-            style={{ background: order.restaurantPaid ? `${C.green}15` : `${C.red}15` }}>
-            <span className="text-xs">{order.restaurantPaid ? "✓" : "⚠"}</span>
-            <span className="text-xs font-semibold"
-              style={{ color: order.restaurantPaid ? C.green : C.red }}>
-              {order.restaurantPaid ? "✓ دفع مطعم" : "⚠ لم يدفع للمطعم"}
-            </span>
-          </div>
-        )}
-        {order.status === "delivered" && (
-          <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg"
-            style={{ background: order.paymentMethod ? `${C.green}12` : `${C.orange}12` }}>
-            {order.paymentMethod ? (
-              <>
-                <span className="text-xs font-semibold" style={{ color: C.green }}>✓ تم التحصيل</span>
-                {order.cashAmount > 0 && (
-                  <span className="text-xs mr-2" style={{ color: C.muted }}>نقدي: {fmtAmt(order.cashAmount)}</span>
-                )}
-                {order.vodafoneAmount > 0 && (
-                  <span className="text-xs" style={{ color: C.muted }}>فودافون: {fmtAmt(order.vodafoneAmount)}</span>
-                )}
-              </>
-            ) : (
-              <span className="text-xs font-semibold" style={{ color: C.orange }}>لم يُسجّل طريقة الدفع بعد</span>
-            )}
-          </div>
-        )}
+        {/* Row 2: area | order status */}
+        <div className="flex items-center justify-between gap-2">
+          <span className="text-xs truncate" style={{ color: C.muted }}>📍 {order.area}</span>
+          <span className="text-xs font-semibold flex-shrink-0" style={{ color: statusColor }}>
+            {statusLabel}
+          </span>
+        </div>
       </div>
     </div>
   );
@@ -232,23 +255,27 @@ function ReadOnlyOrderCard({ order }: { order: TodayOrder }) {
 /* ─────────────────────────────────────────────
    ShiftSummary — driver gives ALL money to office
 ───────────────────────────────────────────── */
-function ShiftSummary({ orders }: { orders: TodayOrder[] }) {
+function ShiftSummary({ orders, officeAdvance }: { orders: TodayOrder[]; officeAdvance?: number | null }) {
   const collected = orders.filter((o) => o.status === "delivered" && o.paymentMethod !== null);
   if (collected.length === 0) return null;
 
-  const cashTotal     = collected.reduce((s, o) => s + o.cashAmount, 0);
-  const vodafoneTotal = collected.reduce((s, o) => s + o.vodafoneAmount, 0);
-  const paidToRest    = collected.filter((o) => o.restaurantPaid === true).reduce((s, o) => s + o.subtotal, 0);
-  const restDebt      = collected.filter((o) => o.restaurantPaid === false).reduce((s, o) => s + o.restaurantDebt, 0);
-  /* Driver hands over everything minus what they already paid to restaurants */
-  const toHandOver    = cashTotal + vodafoneTotal - paidToRest;
+  const { cashFees, vodafoneFees } = collected.reduce(
+    (acc, o) => {
+      const cashShare = cashDeliveryShare(o);
+      return { cashFees: acc.cashFees + cashShare, vodafoneFees: acc.vodafoneFees + (o.deliveryFee - cashShare) };
+    },
+    { cashFees: 0, vodafoneFees: 0 },
+  );
+  const restDebt   = collected.filter((o) => o.restaurantPaid === false).reduce((s, o) => s + o.restaurantDebt, 0);
+  const advance    = officeAdvance ?? 0;
+  const toHandOver = advance + cashFees + vodafoneFees;
 
   const rows = [
-    { icon: "💰", label: "نقدي معاك",              value: cashTotal,    color: C.green  },
-    { icon: "📱", label: "فودافون كاش",            value: vodafoneTotal, color: C.blue   },
-    { icon: "🏪", label: "دفعت للمطاعم",           value: paidToRest,   color: C.orange },
+    { icon: "🏦", label: "العهدة",         value: advance,      color: C.purple },
+    { icon: "💰", label: "نقدي معاك",      value: cashFees,     color: C.green  },
+    { icon: "📱", label: "فودافون كاش",    value: vodafoneFees,  color: C.blue   },
     ...(restDebt > 0 ? [{ icon: "⚠️", label: "ديون مطاعم", value: restDebt, color: C.red }] : []),
-    { icon: "🏢", label: "تسلّمه للمكتب",         value: toHandOver,   color: toHandOver >= 0 ? C.teal : C.red },
+    { icon: "🏢", label: "تسلّمه للمكتب", value: toHandOver,   color: toHandOver >= 0 ? C.teal : C.red },
   ];
 
   return (
@@ -265,6 +292,62 @@ function ShiftSummary({ orders }: { orders: TodayOrder[] }) {
           <span className="text-sm font-black" style={{ color: row.color }}>{fmtAmt(row.value)}</span>
         </div>
       ))}
+    </div>
+  );
+}
+
+/* ─────────────────────────────────────────────
+   SettlementConfirmModal
+───────────────────────────────────────────── */
+function SettlementConfirmModal({
+  toHandOver, onConfirm, onClose, submitting,
+}: {
+  toHandOver: number;
+  onConfirm:  () => void;
+  onClose:    () => void;
+  submitting: boolean;
+}) {
+  return (
+    <div className="fixed inset-0 z-50 flex items-end justify-center p-4"
+      style={{ background: "rgba(0,0,0,0.85)" }}
+      onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}>
+      <div className="w-full max-w-sm rounded-2xl flex flex-col"
+        style={{ background: C.card, border: `1px solid ${C.border}` }}>
+
+        <div className="flex items-center justify-between px-5 py-4 border-b" style={{ borderColor: C.border }}>
+          <h2 className="text-base font-black" style={{ color: C.text }}>تأكيد تقفيل الوردية</h2>
+          <button onClick={onClose}
+            className="w-8 h-8 rounded-full flex items-center justify-center hover:opacity-70"
+            style={{ background: C.bg, color: C.muted }}>✕</button>
+        </div>
+
+        <div className="px-5 py-5 flex flex-col gap-4">
+          <p className="text-sm leading-relaxed text-center" style={{ color: C.muted }}>
+            أنت على وشك تقفيل الوردية وإرسال طلب التسوية إلى الإدارة.
+          </p>
+          <div className="rounded-xl p-4 flex flex-col items-center gap-1"
+            style={{ background: C.bg, border: `1px solid ${C.teal}33` }}>
+            <p className="text-xs font-semibold" style={{ color: C.muted }}>المفروض تسلّم المكتب</p>
+            <p className="text-3xl font-black mt-1" style={{ color: C.teal }}>{fmtAmt(toHandOver)}</p>
+          </div>
+          <p className="text-xs text-center leading-relaxed px-2" style={{ color: C.muted }}>
+            راجع المبلغ الذي معك جيدًا وتأكد من الحسابات قبل المتابعة.
+          </p>
+        </div>
+
+        <div className="flex gap-3 px-5 py-4 border-t" style={{ borderColor: C.border }}>
+          <button onClick={onConfirm} disabled={submitting}
+            className="flex-1 py-2.5 rounded-xl text-sm font-bold hover:opacity-90 disabled:opacity-50 transition-opacity"
+            style={{ background: C.teal, color: "#fff" }}>
+            {submitting ? "جارٍ الإرسال..." : "✓ تأكيد التقفيل"}
+          </button>
+          <button onClick={onClose} disabled={submitting}
+            className="flex-1 py-2.5 rounded-xl text-sm font-bold hover:opacity-80 disabled:opacity-50 transition-opacity"
+            style={{ background: C.bg, color: C.muted, border: `1px solid ${C.border}` }}>
+            مراجعة
+          </button>
+        </div>
+      </div>
     </div>
   );
 }
@@ -349,10 +432,12 @@ function ArchiveDayCard({
    Page
 ───────────────────────────────────────────── */
 export default function DriverAccountsPage() {
+  const router = useRouter();
   const [tab,           setTab]           = useState<"current" | "archive">("current");
   const [loading,       setLoading]       = useState(true);
   const [driverId,      setDriverId]      = useState<string | null>(null);
   const [driverInitial, setDriverInitial] = useState("م");
+  const { user: authUser, loading: authLoading } = useCurrentUser();
   const [shiftId,       setShiftId]       = useState<string | null>(null);
 
   const [todayOrders,   setTodayOrders]   = useState<TodayOrder[]>([]);
@@ -360,12 +445,16 @@ export default function DriverAccountsPage() {
   const [archiveOrders, setArchiveOrders] = useState<ArchiveOrder[]>([]);
   const [archiveLoaded, setArchiveLoaded] = useState(false);
 
-  const [showAdv,             setShowAdv]             = useState(false);
-  const [advSubmit,           setAdvSubmit]           = useState(false);
-  const [advSuccess,          setAdvSuccess]          = useState(false);
-  const [settlementSubmitting, setSettlementSubmitting] = useState(false);
-  const [settlementSent,      setSettlementSent]      = useState(false);
-  const [pageError,           setPageError]           = useState("");
+  // TODO: fetch actual value from delivery_shifts (e.g. office_advance column) when available
+  const [officeAdvance] = useState<number | null>(null);
+
+  const [showAdv,               setShowAdv]               = useState(false);
+  const [advSubmit,             setAdvSubmit]             = useState(false);
+  const [advSuccess,            setAdvSuccess]            = useState(false);
+  const [settlementSubmitting,  setSettlementSubmitting]  = useState(false);
+  const [settlementSent,        setSettlementSent]        = useState(false);
+  const [showSettlementConfirm, setShowSettlementConfirm] = useState(false);
+  const [pageError,             setPageError]             = useState("");
 
   /* ── Load today's data ── */
   const loadData = useCallback(async (did: string) => {
@@ -376,8 +465,9 @@ export default function DriverAccountsPage() {
       supabase
         .from("orders")
         .select(
-          "id, status, total, subtotal, user_order_number, restaurant_paid, restaurant_debt, " +
-          "payment_method, cash_amount, vodafone_amount, restaurants!restaurant_id(name)",
+          "id, status, total, subtotal, delivery_fee, user_order_number, restaurant_paid, restaurant_debt, " +
+          "payment_method, cash_amount, vodafone_amount, restaurants!restaurant_id(name), " +
+          "addresses!address_id(areas(name))",
         )
         .eq("delivery_id", did)
         .in("status", ["accepted", "on_the_way", "delivered"])
@@ -399,7 +489,9 @@ export default function DriverAccountsPage() {
         id:             o.id,
         num:            `#${o.user_order_number ?? "—"}`,
         restaurant:     (o.restaurants as any)?.name ?? "—",
+        area:           (o.addresses as any)?.areas?.name ?? "—",
         subtotal:       o.subtotal         ?? 0,
+        deliveryFee:    o.delivery_fee     ?? 0,
         total:          o.total            ?? 0,
         status:         o.status,
         restaurantPaid: o.restaurant_paid  ?? null,
@@ -457,13 +549,14 @@ export default function DriverAccountsPage() {
 
   /* ── Init ── */
   useEffect(() => {
+    if (authLoading) return;
+
     async function init() {
-      const stored = JSON.parse(localStorage.getItem("driver_user") || "{}");
-      const did    = stored.id as string | undefined;
+      const did = authUser?.id;
       if (!did) { setLoading(false); return; }
 
       setDriverId(did);
-      setDriverInitial((stored.name ?? "م")[0] ?? "م");
+      setDriverInitial((authUser?.name ?? "م")[0] ?? "م");
 
       /* Get active shift */
       const { data: shiftData } = await supabase
@@ -489,7 +582,7 @@ export default function DriverAccountsPage() {
       setLoading(false);
     }
     init();
-  }, [loadData]);
+  }, [authLoading, authUser, loadData]);
 
   /* ── Archive lazy load ── */
   useEffect(() => {
@@ -517,21 +610,18 @@ export default function DriverAccountsPage() {
     finally   { setAdvSubmit(false); }
   }
 
-  /* ── Shift settlement request ── */
-  async function handleSettlement() {
+  /* ── Shift settlement — step 1: validate then show confirm modal ── */
+  function openSettlementConfirm() {
     if (!driverId || !shiftId) return;
 
-    /* Prevent double submission */
-    const { data: existing } = await supabase
-      .from("shift_settlement_requests")
-      .select("id")
-      .eq("delivery_id", driverId)
-      .eq("shift_id", shiftId)
-      .maybeSingle();
+    /* Block if any active (non-delivered) orders still exist */
+    const activeCount = todayOrders.filter((o) => o.status !== "delivered").length;
+    if (activeCount > 0) {
+      setPageError(`لا يمكن تقفيل الوردية — لديك ${activeCount} أوردر قيد التنفيذ. أنهِ جميع الأوردرات أولاً.`);
+      return;
+    }
 
-    if (existing) { setSettlementSent(true); return; }
-
-    /* Validate all delivered orders have payment recorded */
+    /* Block if delivered orders have no payment recorded */
     const unrecorded = todayOrders.filter(
       (o) => o.status === "delivered" && o.paymentMethod === null,
     );
@@ -539,15 +629,39 @@ export default function DriverAccountsPage() {
       setPageError(`${unrecorded.length} أوردر لم يُسجّل فيه طريقة الدفع — افتح صفحة الطلبات لإكمال التحصيل`);
       return;
     }
+    setShowSettlementConfirm(true);
+  }
 
+  /* ── Shift settlement — step 2: actually submit ── */
+  async function confirmSettlement() {
+    if (!driverId || !shiftId) return;
+
+    const { data: existing } = await supabase
+      .from("shift_settlement_requests")
+      .select("id")
+      .eq("delivery_id", driverId)
+      .eq("shift_id", shiftId)
+      .maybeSingle();
+
+    if (existing) { setSettlementSent(true); setShowSettlementConfirm(false); return; }
+
+    const currentShiftId = shiftId;
     setSettlementSubmitting(true);
     try {
       await supabase.from("shift_settlement_requests").insert({
         delivery_id: driverId,
-        shift_id:    shiftId,
+        shift_id:    currentShiftId,
         status:      "pending",
       });
+      /* Mark driver inactive immediately — prevents new orders after settlement */
+      await supabase
+        .from("delivery_shifts")
+        .update({ is_active: false })
+        .eq("delivery_id", driverId)
+        .eq("shift_id", currentShiftId);
       setSettlementSent(true);
+      setShowSettlementConfirm(false);
+      setShiftId(null);
     } catch { setPageError("خطأ في إرسال طلب التقفيل، حاول مرة أخرى"); }
     finally   { setSettlementSubmitting(false); }
   }
@@ -575,8 +689,11 @@ export default function DriverAccountsPage() {
   }), [archiveOrders]);
 
   /* Derived */
-  const deliveredOrders = todayOrders.filter((o) => o.status === "delivered");
-  const activeOrders    = todayOrders.filter((o) => o.status !== "delivered");
+  const deliveredOrders    = todayOrders.filter((o) => o.status === "delivered");
+  const activeOrders       = todayOrders.filter((o) => o.status !== "delivered");
+  const collectedOrders    = deliveredOrders.filter((o) => o.paymentMethod !== null);
+  const totalDeliveryFees  = collectedOrders.reduce((s, o) => s + o.deliveryFee, 0);
+  const settlementAmount   = (officeAdvance ?? 0) + totalDeliveryFees;
 
   /* ── Loading ── */
   if (loading) {
@@ -621,13 +738,18 @@ export default function DriverAccountsPage() {
 
       {/* Tabs */}
       <div className="flex gap-1 p-3" style={{ background: C.card, borderBottom: `1px solid ${C.border}` }}>
-        {(["current", "archive"] as const).map((t) => (
-          <button key={t} onClick={() => setTab(t)}
-            className="flex-1 py-2 rounded-xl text-sm font-bold transition-colors"
-            style={{ background: tab === t ? C.teal : "transparent", color: tab === t ? "#fff" : C.muted }}>
-            {t === "current" ? "الوردية الحالية" : "الأرشيف المالي"}
-          </button>
-        ))}
+        <button
+          onClick={() => setTab("current")}
+          className="flex-1 py-2 rounded-xl text-sm font-bold transition-colors"
+          style={{ background: C.teal, color: "#fff" }}>
+          الوردية الحالية
+        </button>
+        <button
+          onClick={() => router.push("/driver/accounts/archive")}
+          className="flex-1 py-2 rounded-xl text-sm font-bold transition-colors"
+          style={{ background: "transparent", color: C.muted }}>
+          الأرشيف المالي
+        </button>
       </div>
 
       {/* Error banner */}
@@ -644,11 +766,24 @@ export default function DriverAccountsPage() {
         {/* ── TAB: الوردية الحالية ── */}
         {tab === "current" && (
           <>
+            {/* No-shift / inactive driver state */}
+            {!shiftId && !settlementSent && (
+              <div className="flex flex-col items-center justify-center gap-5 py-20 text-center px-4">
+                <span style={{ fontSize: 52 }}>🏁</span>
+                <p className="text-base font-black" style={{ color: C.text }}>أنت لست على وردية حالياً</p>
+                <p className="text-sm leading-relaxed" style={{ color: C.muted }}>
+                  تم تقفيل وردياتك أو لم تُضَف إلى وردية جديدة بعد.
+                  <br />تواصل مع الإدارة لبدء وردية جديدة.
+                </p>
+              </div>
+            )}
+
             {/* Stats */}
+            {(shiftId || settlementSent) && (
             <div className="rounded-2xl p-4 flex flex-col gap-3"
               style={{ background: C.card, border: `1px solid ${C.border}` }}>
               <div className="flex items-center justify-between">
-                <p className="text-base font-black" style={{ color: C.text }}>وردية اليوم</p>
+                <p className="text-base font-black" style={{ color: C.text }}>الأوردرات</p>
                 <span className="px-2.5 py-1 rounded-full text-[10px] font-bold"
                   style={{ background: `${C.green}20`, color: C.green }}>نشطة الآن</span>
               </div>
@@ -665,9 +800,15 @@ export default function DriverAccountsPage() {
                 ))}
               </div>
             </div>
+            )}
+
+            {/* Shift summary */}
+            {(shiftId || settlementSent) && (
+              <ShiftSummary orders={todayOrders} officeAdvance={officeAdvance} />
+            )}
 
             {/* Active orders — read-only */}
-            {activeOrders.length > 0 && (
+            {(shiftId || settlementSent) && activeOrders.length > 0 && (
               <div className="flex flex-col gap-3">
                 <p className="text-xs font-semibold px-1" style={{ color: C.muted }}>الأوردرات الجارية</p>
                 {activeOrders.map((o) => <ReadOnlyOrderCard key={o.id} order={o} />)}
@@ -675,23 +816,20 @@ export default function DriverAccountsPage() {
             )}
 
             {/* Delivered orders — read-only */}
-            {deliveredOrders.length > 0 && (
+            {(shiftId || settlementSent) && deliveredOrders.length > 0 && (
               <div className="flex flex-col gap-3">
                 <p className="text-xs font-semibold px-1" style={{ color: C.muted }}>تم التسليم</p>
                 {deliveredOrders.map((o) => <ReadOnlyOrderCard key={o.id} order={o} />)}
               </div>
             )}
 
-            {/* Empty state */}
-            {todayOrders.length === 0 && (
+            {/* Empty state (on shift but no orders yet) */}
+            {(shiftId || settlementSent) && todayOrders.length === 0 && (
               <div className="flex flex-col items-center justify-center gap-4 py-16">
                 <span style={{ fontSize: 48 }}>📭</span>
                 <p className="text-sm font-semibold" style={{ color: C.muted }}>لا توجد أوردرات اليوم</p>
               </div>
             )}
-
-            {/* Shift summary */}
-            <ShiftSummary orders={todayOrders} />
 
             {/* Settlement sent confirmation */}
             {settlementSent && (
@@ -791,11 +929,11 @@ export default function DriverAccountsPage() {
             </div>
           ) : (
             <button
-              onClick={handleSettlement}
+              onClick={openSettlementConfirm}
               disabled={settlementSubmitting}
               className="pointer-events-auto flex items-center gap-2 px-5 py-3 rounded-2xl text-sm font-bold shadow-lg hover:opacity-90 disabled:opacity-60 transition-opacity"
               style={{ background: C.teal, color: "#fff" }}>
-              {settlementSubmitting ? "جارٍ الإرسال..." : "🔒 تقفيل الوردية"}
+              🔒 تقفيل الوردية
             </button>
           )
         )}
@@ -822,6 +960,16 @@ export default function DriverAccountsPage() {
           onConfirm={handleAdvanceRequest}
           onClose={() => setShowAdv(false)}
           submitting={advSubmit}
+        />
+      )}
+
+      {/* Settlement confirm modal */}
+      {showSettlementConfirm && (
+        <SettlementConfirmModal
+          toHandOver={settlementAmount}
+          onConfirm={confirmSettlement}
+          onClose={() => setShowSettlementConfirm(false)}
+          submitting={settlementSubmitting}
         />
       )}
     </div>

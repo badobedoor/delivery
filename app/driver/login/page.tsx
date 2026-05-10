@@ -1,7 +1,6 @@
 "use client";
 
 import { useState } from "react";
-import { supabasePublic } from "@/lib/supabasePublic";
 
 const C = {
   bg:     "#0F172A",
@@ -49,22 +48,33 @@ export default function DriverLoginPage() {
     setError("");
     setLoading(true);
 
-    const { data, error } = await supabasePublic
-      .from("delivery_staff")
-      .select("id, name, phone, password, is_active")
-      .eq("phone", phone.trim())
-      .eq("password", password)
-      .eq("is_active", true)
-      .single();
+    try {
+      const res = await fetch("/api/auth/login", {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ phone: phone.trim(), password, type: "driver" }),
+      });
 
-    if (error || !data) {
-      alert("بيانات غير صحيحة أو الحساب غير مفعل");
+      const data = await res.json();
+
+      if (!res.ok) {
+        if (res.status === 401) {
+          setError("بيانات غير صحيحة أو الحساب غير مفعل");
+        } else if (res.status === 400) {
+          setError(data.error ?? "بيانات غير صحيحة");
+        } else {
+          setError("حدث خطأ في الخادم، حاول مرة أخرى");
+        }
+        setLoading(false);
+        return;
+      }
+
+      window.location.href = "/driver/orders";
+    } catch {
+      setError("تعذر الاتصال بالخادم");
       setLoading(false);
-      return;
     }
-
-    localStorage.setItem("driver_user", JSON.stringify(data));
-    window.location.href = "/driver/orders";
   }
 
   return (

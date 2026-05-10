@@ -1,7 +1,6 @@
 "use client";
 
 import { useState } from "react";
-import { supabasePublic } from "@/lib/supabasePublic";
 
 const C = {
   bg:     "#0F172A",
@@ -46,29 +45,43 @@ export default function StaffLoginPage() {
     if (!phone.trim())    { setError("أدخل رقم الهاتف"); return; }
     if (!password.trim()) { setError("أدخل كلمة المرور"); return; }
 
-    console.log("PHONE:", phone);
-    console.log("PASSWORD:", password);
-
     setError("");
     setLoading(true);
 
-    const { data, error } = await supabasePublic
-      .from("staff")
-      .select("*")
-      .eq("phone", phone.trim())
-      .eq("password", password)
-      .single();
+    try {
+      const res = await fetch("/api/auth/login", {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ phone: phone.trim(), password, type: "staff" }),
+      });
 
-    if (error || !data) {
-      alert("بيانات غير صحيحة");
+      const data = await res.json();
+
+      if (!res.ok) {
+        if (res.status === 401) {
+          setError("رقم الهاتف أو كلمة المرور غير صحيحة");
+        } else if (res.status === 400) {
+          setError(data.error ?? "بيانات غير صحيحة");
+        } else {
+          setError("حدث خطأ في الخادم، حاول مرة أخرى");
+        }
+        setLoading(false);
+        return;
+      }
+
+      const role = data.user?.role;
+      if (role !== "staff") {
+        setError("ليس لديك صلاحية الوصول كموظف");
+        setLoading(false);
+        return;
+      }
+
+      window.location.href = "/admin/orders";
+    } catch {
+      setError("تعذر الاتصال بالخادم");
       setLoading(false);
-      return;
     }
-
-    localStorage.setItem("staff_user", JSON.stringify(data));
-    /* Set a cookie so the Edge middleware allows /admin/* access */
-    document.cookie = "staff_session=1; path=/; SameSite=Lax";
-    window.location.href = "/admin/orders";
   }
 
   return (

@@ -14,12 +14,9 @@ const C = {
   red:    "#EF4444",
 };
 
-const AVAILABLE_COUNT = 3;
-
 const navItems = [
-  { href: "/driver/orders",   emoji: "📦", label: "الطلبات",  badge: AVAILABLE_COUNT },
-  { href: "/driver/archive",  emoji: "🗄️", label: "الأرشيف",  badge: 0              },
-  { href: "/driver/accounts", emoji: "💰", label: "حساباتي", badge: 0              },
+  { href: "/driver/orders",   emoji: "📦", label: "الطلبات"  },
+  { href: "/driver/accounts", emoji: "💰", label: "حساباتي" },
 ];
 
 export default function DriverLayout({ children }: { children: React.ReactNode }) {
@@ -31,36 +28,28 @@ export default function DriverLayout({ children }: { children: React.ReactNode }
   useEffect(() => {
     if (isLoginPage) { setReady(true); return; }
 
-    /* Read driver session from localStorage */
-    let driver = null;
-    try {
-      const raw = localStorage.getItem("driver_user");
-      driver = raw ? JSON.parse(raw) : null;
-    } catch { /* ignore parse errors */ }
-
-    if (!driver) {
-      /* No session → send to login */
-      window.location.href = "/driver/login";
-      return;
-    }
-
-    /* Driver trying to access anything outside /driver → back to orders */
-    if (!pathname.startsWith("/driver")) {
-      window.location.href = "/driver/orders";
-      return;
-    }
-
-    setReady(true);
-  }, [isLoginPage, pathname]);
+    fetch("/api/auth/me", { credentials: "include" })
+      .then((r) => r.json())
+      .then((data) => {
+        if (!data.authenticated) {
+          window.location.href = "/driver/login";
+        } else {
+          setReady(true);
+        }
+      })
+      .catch(() => {
+        window.location.href = "/driver/login";
+      });
+  }, [isLoginPage]);
 
   /* Login page: no bottom nav, no auth check */
   if (isLoginPage) return <>{children}</>;
 
-  /* Wait until localStorage check completes */
+  /* Wait until auth check completes */
   if (!ready) return null;
 
-  function handleLogout() {
-    localStorage.removeItem("driver_user");
+  async function handleLogout() {
+    await fetch("/api/auth/logout", { method: "POST", credentials: "include" });
     window.location.href = "/driver/login";
   }
 
@@ -93,17 +82,7 @@ export default function DriverLayout({ children }: { children: React.ReactNode }
               className="flex-1 flex flex-col items-center justify-center gap-0.5 py-3 transition-colors"
               style={{ color: active ? C.teal : C.muted }}
             >
-              <div className="relative">
-                <span className="text-xl leading-none">{item.emoji}</span>
-                {item.badge > 0 && (
-                  <span
-                    className="absolute -top-1 -left-1 min-w-[16px] h-4 rounded-full text-[9px] font-black flex items-center justify-center px-0.5"
-                    style={{ background: C.red, color: "#fff" }}
-                  >
-                    {item.badge}
-                  </span>
-                )}
-              </div>
+              <span className="text-xl leading-none">{item.emoji}</span>
               <span className="text-[11px] font-bold">{item.label}</span>
               {active && (
                 <span className="w-1 h-1 rounded-full mt-0.5" style={{ background: C.teal }} />

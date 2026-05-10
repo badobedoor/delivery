@@ -2,6 +2,7 @@
 
 import { useState, useCallback, useEffect } from "react";
 import { supabase } from "@/lib/supabase";
+import { useCurrentUser } from "@/hooks/useCurrentUser";
 
 const C = {
   bg:     "#0F172A",
@@ -597,13 +598,15 @@ export default function DriverOrdersPage() {
   const [shiftId,       setShiftId]       = useState<string | null>(null);
   const [noShift,       setNoShift]       = useState(false);
   const [loading,       setLoading]       = useState(true);
+  const [ordersLocked,  setOrdersLocked]  = useState(false);
+  const { user: authUser, loading: authLoading } = useCurrentUser();
 
   /* ── Payment collection state ── */
   const [collectTarget, setCollectTarget] = useState<ActiveOrder | null>(null);
   const [collecting,    setCollecting]    = useState(false);
 
   const loadData = useCallback(async (did: string, sid: string | null) => {
-    /* 1. Fetch active orders first — needed to evaluate workload */
+    /* 1. Fetch active orders first */
     const { data: act } = await supabase
       .from("orders")
       .select(ORDER_SELECT)
@@ -622,12 +625,26 @@ export default function DriverOrdersPage() {
     }));
     setActive(activeOrders);
 
-    /* 2. Check workload constraints before fetching available orders */
+    /* 2. Sticky lock — triggers at 3 orders or pickup, releases only at 0 */
+    const lockKey      = sid ? `driver_locked_${did}_${sid}` : null;
+    const storedLocked = lockKey ? localStorage.getItem(lockKey) === "1" : false;
     const hasPickedUp  = activeOrders.some((o) => o.pickedUp);
     const isAtCapacity = activeOrders.length >= 3;
-    const canTakeNew   = sid && !hasPickedUp && !isAtCapacity;
 
-    if (canTakeNew) {
+    let locked: boolean;
+    if (activeOrders.length === 0) {
+      locked = false;
+      if (lockKey) localStorage.removeItem(lockKey);
+    } else if (storedLocked || hasPickedUp || isAtCapacity) {
+      locked = true;
+      if (lockKey) localStorage.setItem(lockKey, "1");
+    } else {
+      locked = false;
+    }
+    setOrdersLocked(locked);
+
+    /* 3. Fetch available orders only when unlocked and in a shift */
+    if (sid && !locked) {
       const { data: availableOrders } = await supabase
         .from("orders")
         .select(`
@@ -645,9 +662,10 @@ export default function DriverOrdersPage() {
   }, []);
 
   useEffect(() => {
+    if (authLoading) return;
+
     async function init() {
-      const driver = JSON.parse(localStorage.getItem("driver_user") || "{}");
-      const did = driver.id;
+      const did = authUser?.id;
       if (!did) { setLoading(false); return; }
       setDriverId(did);
 
@@ -684,11 +702,11 @@ export default function DriverOrdersPage() {
       setLoading(false);
     }
     init();
-  }, [loadData]);
+  }, [authLoading, authUser, loadData]);
 
   /* ── Accept order ── */
   const accept = useCallback(async (order: Order) => {
-    if (!driverId || !shiftId) return;
+    if (!driverId || !shiftId || ordersLocked) return;
     playNotif();
     await supabase
       .from("orders")
@@ -697,7 +715,7 @@ export default function DriverOrdersPage() {
       .eq("status", "pending");
     await loadData(driverId, shiftId);
     setTab("active");
-  }, [driverId, shiftId, loadData]);
+  }, [driverId, shiftId, ordersLocked, loadData]);
 
   /* ── Restaurant payment decision ── */
   const handleRestaurantPaid = useCallback(async (orderId: string, paid: boolean) => {
@@ -760,9 +778,7 @@ export default function DriverOrdersPage() {
     }
   }, [collectTarget]);
 
-  const hasPickedUp      = active.some((o) => o.pickedUp);
-  const isAtCapacity     = active.length >= 3;
-  const canTakeNewOrders = !hasPickedUp && !isAtCapacity;
+  const canTakeNewOrders = !ordersLocked;
 
   const availCount = available.length;
 
@@ -852,9 +868,7 @@ export default function DriverOrdersPage() {
                   وصّل الطلبات اللي معاك الأول
                 </p>
                 <p className="text-sm" style={{ color: C.muted }}>
-                  {hasPickedUp
-                    ? "لديك طلب مستلم من المطعم — أكمل التوصيل أولاً"
-                    : `وصلت الحد الأقصى (${active.length}/3 طلبات)`}
+                  أنهِ جميع الطلبات الحالية لاستقبال طلبات جديدة
                 </p>
               </div>
             ) : available.length === 0 ? (

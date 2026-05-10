@@ -1,5 +1,6 @@
 import { createClient } from "@supabase/supabase-js";
 import { NextResponse }  from "next/server";
+import { requireAdmin }  from "@/lib/server/requireAuth";
 
 function admin() {
   return createClient(
@@ -9,6 +10,9 @@ function admin() {
 }
 
 export async function GET() {
+  const auth = await requireAdmin();
+  if (!auth.ok) return auth.response;
+
   const { data, error } = await admin()
     .from("settings")
     .select("*")
@@ -20,6 +24,9 @@ export async function GET() {
 }
 
 export async function PATCH(request: Request) {
+  const auth = await requireAdmin();
+  if (!auth.ok) return auth.response;
+
   const body = await request.json();
 
   const { data: row } = await admin()

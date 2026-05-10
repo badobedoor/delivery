@@ -1,7 +1,6 @@
 "use client";
 
 import { useState } from "react";
-import { supabasePublic } from "@/lib/supabasePublic";
 
 const C = {
   bg:     "#0F172A",
@@ -50,23 +49,40 @@ export default function AdminLoginPage() {
     setError("");
     setLoading(true);
 
-    const { data, error: dbError } = await supabasePublic
-      .from("staff")
-      .select("id, name, phone, role, is_active")
-      .eq("phone", phone.trim())
-      .eq("password", password)
-      .eq("is_active", true)
-      .single();
+    try {
+      const res = await fetch("/api/auth/login", {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ phone: phone.trim(), password, type: "staff" }),
+      });
 
-    if (dbError || !data) {
-      setError("رقم الهاتف أو كلمة المرور غير صحيحة");
+      const data = await res.json();
+
+      if (!res.ok) {
+        if (res.status === 401) {
+          setError("رقم الهاتف أو كلمة المرور غير صحيحة");
+        } else if (res.status === 400) {
+          setError(data.error ?? "بيانات غير صحيحة");
+        } else {
+          setError("حدث خطأ في الخادم، حاول مرة أخرى");
+        }
+        setLoading(false);
+        return;
+      }
+
+      const role = data.user?.role;
+      if (role !== "admin" && role !== "super_admin") {
+        setError("ليس لديك صلاحية الوصول كمدير");
+        setLoading(false);
+        return;
+      }
+
+      window.location.href = "/admin/dashboard";
+    } catch {
+      setError("تعذر الاتصال بالخادم");
       setLoading(false);
-      return;
     }
-
-    localStorage.setItem("staff_user", JSON.stringify(data));
-    document.cookie = "staff_session=1; path=/; SameSite=Lax";
-    window.location.href = "/admin/dashboard";
   }
 
   return (
