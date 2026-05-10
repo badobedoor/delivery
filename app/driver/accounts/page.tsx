@@ -284,14 +284,37 @@ function ShiftSummary({ orders, officeAdvance }: { orders: TodayOrder[]; officeA
       <div className="px-4 py-3 border-b" style={{ borderColor: C.border }}>
         <h3 className="text-sm font-black" style={{ color: C.text }}>ملخص الوردية</h3>
       </div>
-      {rows.map((row, i) => (
-        <div key={row.label}
-          className="flex items-center justify-between px-4 py-3"
-          style={{ borderBottom: i < rows.length - 1 ? `1px solid ${C.border}` : "none" }}>
-          <span className="text-sm" style={{ color: C.muted }}>{row.icon} {row.label}</span>
-          <span className="text-sm font-black" style={{ color: row.color }}>{fmtAmt(row.value)}</span>
-        </div>
-      ))}
+      {rows.map((row, i) => {
+        const isHandOver = row.label === "تسلّمه للمكتب";
+        return (
+          <div key={row.label}
+            className="flex items-center justify-between px-4"
+            style={{
+              borderBottom: i < rows.length - 1 ? `1px solid ${C.border}` : "none",
+              borderTop: isHandOver ? `1px solid ${C.border}` : "none",
+              paddingTop:    isHandOver ? "14px" : "12px",
+              paddingBottom: isHandOver ? "14px" : "12px",
+              background:    isHandOver ? `${C.teal}0d`  : "transparent",
+            }}>
+            <span
+              style={{
+                color:      C.muted,
+                fontSize:   isHandOver ? "0.9rem"  : "0.875rem",
+                fontWeight: isHandOver ? 700        : 400,
+              }}>
+              {row.icon} {row.label}
+            </span>
+            <span
+              style={{
+                color:      row.color,
+                fontSize:   isHandOver ? "1.15rem" : "0.875rem",
+                fontWeight: 900,
+              }}>
+              {fmtAmt(row.value)}
+            </span>
+          </div>
+        );
+      })}
     </div>
   );
 }
