@@ -597,6 +597,10 @@ export default function DriverOrdersPage() {
   const [driverId,      setDriverId]      = useState<string | null>(null);
   const [shiftId,       setShiftId]       = useState<string | null>(null);
   const [noShift,       setNoShift]       = useState(false);
+  const [shiftStopped,  setShiftStopped]  = useState(false); // admin stopped shift — blocks new orders only
+  const [canStartShift, setCanStartShift] = useState(false); // assigned but driver hasn't started yet
+  const [startingShift, setStartingShift] = useState(false);
+  const [assignmentId,  setAssignmentId]  = useState<number | null>(null);
   const [loading,       setLoading]       = useState(true);
   const [ordersLocked,  setOrdersLocked]  = useState(false);
   const { user: authUser, loading: authLoading } = useCurrentUser();
@@ -669,7 +673,8 @@ export default function DriverOrdersPage() {
       if (!did) { setLoading(false); return; }
       setDriverId(did);
 
-      const { data: deliveryShift } = await supabase
+      /* ── Stage 1: Active session (driver already started) ── */
+      const { data: activeSess } = await supabase
         .from("delivery_shifts")
         .select("shift_id")
         .eq("delivery_id", did)
@@ -677,32 +682,123 @@ export default function DriverOrdersPage() {
         .limit(1)
         .maybeSingle();
 
-      if (!deliveryShift) {
+      if (activeSess) {
+        const { data: shiftInfo } = await supabase
+          .from("shifts")
+          .select("id, is_active")
+          .eq("id", activeSess.shift_id)
+          .single();
+
+        if (!shiftInfo) {
+          setNoShift(true);
+          await loadData(did, null);
+          setLoading(false);
+          return;
+        }
+
+        setShiftId(shiftInfo.id);
+
+        if (!shiftInfo.is_active) {
+          /* Admin stopped shift — driver keeps current session, blocks new orders only */
+          setShiftStopped(true);
+          await loadData(did, null);
+        } else {
+          await loadData(did, shiftInfo.id);
+        }
+        setLoading(false);
+        return;
+      }
+
+      /* ── Stage 2: No active session — check for a pending assignment ── */
+      const { data: pending } = await supabase
+        .from("delivery_shifts")
+        .select("id, shift_id")
+        .eq("delivery_id", did)
+        .eq("is_active", false)
+        .order("id", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+
+      if (!pending) {
         setNoShift(true);
         await loadData(did, null);
         setLoading(false);
         return;
       }
 
-      const { data: activeShift } = await supabase
+      /* Check if this assignment already has a settlement (session truly ended) */
+      const { data: settlement } = await supabase
+        .from("shift_settlement_requests")
+        .select("id")
+        .eq("delivery_id", did)
+        .eq("shift_id", pending.shift_id)
+        .maybeSingle();
+
+      if (settlement) {
+        /* Session was properly closed — treat as no active shift */
+        setNoShift(true);
+        await loadData(did, null);
+        setLoading(false);
+        return;
+      }
+
+      /* Assigned but not yet started — check if shift is open */
+      const { data: shiftInfo } = await supabase
         .from("shifts")
-        .select("id, num, start_time, is_active")
-        .eq("id", deliveryShift.shift_id)
+        .select("id, is_active")
+        .eq("id", pending.shift_id)
         .single();
 
-      if (!activeShift || !activeShift.is_active) {
+      if (!shiftInfo) {
         setNoShift(true);
         await loadData(did, null);
         setLoading(false);
         return;
       }
-      setShiftId(activeShift.id);
 
-      await loadData(did, activeShift.id);
+      if (shiftInfo.is_active) {
+        setCanStartShift(true);
+        setAssignmentId(pending.id);
+      } else {
+        /* Shift closed by admin — driver can't start */
+        setShiftStopped(true);
+      }
+      await loadData(did, null);
       setLoading(false);
     }
     init();
   }, [authLoading, authUser, loadData]);
+
+  /* ── Start shift (driver explicitly begins work) ── */
+  const startShift = useCallback(async () => {
+    if (!driverId || !assignmentId) return;
+    setStartingShift(true);
+    try {
+      const { error } = await supabase
+        .from("delivery_shifts")
+        .update({ is_active: true })
+        .eq("id", assignmentId)
+        .eq("delivery_id", driverId);
+      if (error) throw error;
+
+      const { data: ds } = await supabase
+        .from("delivery_shifts")
+        .select("shift_id")
+        .eq("id", assignmentId)
+        .single();
+
+      if (ds) {
+        setCanStartShift(false);
+        setAssignmentId(null);
+        setShiftId(ds.shift_id);
+        await loadData(driverId, ds.shift_id);
+      }
+    } catch (err) {
+      console.error("startShift:", err);
+    } finally {
+      setStartingShift(false);
+    }
+  }, [driverId, assignmentId, loadData]);
 
   /* ── Accept order ── */
   const accept = useCallback(async (order: Order) => {
@@ -845,7 +941,41 @@ export default function DriverOrdersPage() {
       <div className="flex-1 p-4 flex flex-col gap-3 pb-24">
         {tab === "available" && (
           <>
-            {noShift ? (
+            {canStartShift ? (
+              <div
+                className="rounded-2xl p-5 flex flex-col items-center gap-4 text-center"
+                style={{ background: `${C.teal}12`, border: `1px solid ${C.teal}44` }}
+              >
+                <span className="text-4xl">🟢</span>
+                <p className="text-base font-black" style={{ color: C.teal }}>
+                  الوردية متاحة الآن
+                </p>
+                <p className="text-sm" style={{ color: C.muted }}>
+                  اضغط على الزر لبدء العمل واستقبال الأوردرات
+                </p>
+                <button
+                  onClick={startShift}
+                  disabled={startingShift}
+                  className="px-8 py-3 rounded-2xl text-sm font-black transition-opacity hover:opacity-90 disabled:opacity-60"
+                  style={{ background: C.teal, color: "#fff" }}
+                >
+                  {startingShift ? "جارٍ البدء..." : "بدء العمل"}
+                </button>
+              </div>
+            ) : shiftStopped ? (
+              <div
+                className="rounded-2xl p-5 flex flex-col items-center gap-3 text-center"
+                style={{ background: `${C.red}12`, border: `1px solid ${C.red}33` }}
+              >
+                <span className="text-4xl">🚫</span>
+                <p className="text-base font-black" style={{ color: C.red }}>
+                  هذه الوردية مغلقة حاليًا
+                </p>
+                <p className="text-sm" style={{ color: C.muted }}>
+                  تم إيقاف استقبال الأوردرات الجديدة لهذه الوردية
+                </p>
+              </div>
+            ) : noShift ? (
               <div
                 className="rounded-2xl p-5 flex flex-col items-center gap-3 text-center"
                 style={{ background: `${C.yellow}12`, border: `1px solid ${C.yellow}44` }}

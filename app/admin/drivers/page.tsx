@@ -40,7 +40,7 @@ type AssignForm = {
 };
 type AssignFormErrs = Partial<Record<"driver_id" | "motorcycle_id" | "shift_ids", string>>;
 
-const emptyAssignForm: AssignForm = { driver_id: "", motorcycle_id: "", shift_ids: [], is_active: true };
+const emptyAssignForm: AssignForm = { driver_id: "", motorcycle_id: "", shift_ids: [], is_active: false };
 
 /* ─────────────────────── Row mappers ───────────────── */
 
@@ -186,6 +186,187 @@ function ActiveToggle({ active, onChange }: { active: boolean; onChange: (v: boo
   );
 }
 
+/* ─────────────────────── ShiftsSection ─────────────── */
+
+type ShiftRow = { id: number; num: number; start_time: string | null; end_time: string | null; is_active: boolean };
+
+function fmt12(t: string | null) {
+  if (!t) return "—";
+  const [h, m] = t.split(":").map(Number);
+  const ampm = h < 12 ? "ص" : "م";
+  const h12  = h % 12 || 12;
+  return `${h12}:${String(m).padStart(2, "0")} ${ampm}`;
+}
+
+function ShiftsSection({ assignments }: { assignments: Assignment[] }) {
+  const [shifts,  setShifts]  = useState<ShiftRow[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [opErr,   setOpErr]   = useState<string | null>(null);
+
+  useEffect(() => { fetchShifts(); }, []);
+
+  async function fetchShifts() {
+    setLoading(true);
+    setOpErr(null);
+    try {
+      const { data, error } = await supabase
+        .from("shifts")
+        .select("id, num, start_time, end_time, is_active")
+        .order("num");
+      if (error) throw error;
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      setShifts((data ?? []).map((r: any) => ({
+        id:         r.id,
+        num:        r.num,
+        start_time: r.start_time ?? null,
+        end_time:   r.end_time   ?? null,
+        is_active:  r.is_active  ?? true,
+      })));
+    } catch (err) {
+      console.error("ShiftsSection.fetch:", err);
+      setOpErr("تعذّر تحميل الورديات");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function toggleShift(s: ShiftRow) {
+    const next     = !s.is_active;
+    const snapshot = shifts;
+    setOpErr(null);
+    setShifts((p) => p.map((x) => x.id === s.id ? { ...x, is_active: next } : x));
+    try {
+      const { error } = await supabase.from("shifts").update({ is_active: next }).eq("id", s.id);
+      if (error) throw error;
+    } catch (err) {
+      console.error("ShiftsSection.toggle:", err);
+      setShifts(snapshot);
+      setOpErr("فشل تغيير حالة الوردية، حاول مرة أخرى");
+    }
+  }
+
+  return (
+    <div className="flex flex-col gap-4">
+      {opErr && <ErrorBanner msg={opErr} onDismiss={() => setOpErr(null)} />}
+
+      <div className="flex items-center gap-2">
+        <h2 className="text-base font-black" style={{ color: C.text }}>إدارة الورديات</h2>
+        <span className="text-xs font-semibold px-2 py-0.5 rounded-full"
+          style={{ background: `${C.teal}20`, color: C.teal }}>
+          {shifts.length} وردية
+        </span>
+      </div>
+
+      <div className="rounded-2xl overflow-hidden" style={{ background: C.card, border: `1px solid ${C.border}` }}>
+        <div className="overflow-x-auto">
+          <table className="w-full">
+            <thead>
+              <tr style={{ borderBottom: `1px solid ${C.border}` }}>
+                {[
+                  { label: "الوردية",       hide: ""                      },
+                  { label: "البداية",       hide: " hidden sm:table-cell" },
+                  { label: "النهاية",       hide: " hidden sm:table-cell" },
+                  { label: "الحالة",        hide: ""                      },
+                  { label: "السائقون",      hide: " hidden md:table-cell" },
+                  { label: "النشطون",       hide: " hidden md:table-cell" },
+                  { label: "الإجراءات",     hide: ""                      },
+                ].map(({ label, hide }) => (
+                  <th key={label}
+                    className={`px-4 py-3 text-right font-semibold text-xs whitespace-nowrap${hide}`}
+                    style={{ color: C.muted }}>
+                    {label}
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {loading ? (
+                <tr>
+                  <td colSpan={7} className="px-4 py-12 text-center text-sm animate-pulse" style={{ color: C.muted }}>
+                    جاري التحميل...
+                  </td>
+                </tr>
+              ) : shifts.length === 0 ? (
+                <tr>
+                  <td colSpan={7} className="px-4 py-12 text-center text-sm" style={{ color: C.muted }}>
+                    لا توجد ورديات
+                  </td>
+                </tr>
+              ) : shifts.map((s, i) => {
+                const shiftRows     = assignments.filter((a) => a.shift_id === s.id);
+                const totalDrivers  = shiftRows.length;
+                const activeDrivers = shiftRows.filter((a) => a.is_active).length;
+                return (
+                  <tr key={s.id}
+                    style={{ borderBottom: i < shifts.length - 1 ? `1px solid ${C.border}` : "none" }}>
+
+                    {/* الوردية */}
+                    <td className="px-4 py-3">
+                      <span className="text-sm font-bold" style={{ color: C.text }}>
+                        الوردية {s.num}
+                      </span>
+                    </td>
+
+                    {/* البداية */}
+                    <td className="hidden sm:table-cell px-4 py-3 text-xs whitespace-nowrap" style={{ color: C.muted }}>
+                      {fmt12(s.start_time)}
+                    </td>
+
+                    {/* النهاية */}
+                    <td className="hidden sm:table-cell px-4 py-3 text-xs whitespace-nowrap" style={{ color: C.muted }}>
+                      {fmt12(s.end_time)}
+                    </td>
+
+                    {/* الحالة */}
+                    <td className="px-4 py-3">
+                      <span
+                        className="px-2.5 py-1 rounded-full text-[10px] font-bold whitespace-nowrap"
+                        style={{
+                          background: s.is_active ? `${C.green}22` : `${C.red}22`,
+                          color:      s.is_active ? C.green : C.red,
+                        }}
+                      >
+                        {s.is_active ? "نشطة" : "متوقفة"}
+                      </span>
+                    </td>
+
+                    {/* السائقون */}
+                    <td className="hidden md:table-cell px-4 py-3">
+                      <span className="text-sm font-bold" style={{ color: C.teal }}>{totalDrivers}</span>
+                    </td>
+
+                    {/* النشطون */}
+                    <td className="hidden md:table-cell px-4 py-3">
+                      <span className="text-sm font-bold" style={{ color: C.green }}>{activeDrivers}</span>
+                    </td>
+
+                    {/* الإجراءات */}
+                    <td className="px-4 py-3">
+                      <button
+                        onClick={() => toggleShift(s)}
+                        className="px-3 py-1.5 rounded-lg text-xs font-bold hover:opacity-80 transition-opacity whitespace-nowrap"
+                        style={{
+                          background: s.is_active ? `${C.red}22`  : `${C.green}22`,
+                          color:      s.is_active ? C.red          : C.green,
+                        }}
+                      >
+                        {s.is_active ? "إيقاف" : "تشغيل"}
+                      </button>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+        <div className="px-4 py-3 border-t text-xs" style={{ borderColor: C.border, color: C.muted }}>
+          {loading ? "..." : `${shifts.length} وردية`}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 /* ─────────────────────── Tab 1: Assignments ────────── */
 
 function DriversTab({ staffList, motos, shifts }: {
@@ -226,9 +407,9 @@ function DriversTab({ staffList, motos, shifts }: {
     }
   }
 
-  const filtered = rows.filter(
-    (r) => !search.trim() || r.driver_name.includes(search) || r.motorcycle_name.includes(search)
-  );
+  const filtered = rows
+    .filter((r) => !search.trim() || r.driver_name.includes(search) || r.motorcycle_name.includes(search))
+    .sort((a, b) => a.shift_num - b.shift_num);
 
   function openModal() { setForm(emptyAssignForm); setFormErrs({}); setSaveErr(null); setModal(true); }
   function close()     { if (saving) return; setModal(false); setFormErrs({}); setSaveErr(null); }
@@ -306,6 +487,9 @@ function DriversTab({ staffList, motos, shifts }: {
     <>
       <div className="flex flex-col gap-4">
         {opErr && <ErrorBanner msg={opErr} onDismiss={() => setOpErr(null)} />}
+
+        {/* ── Shifts management section ── */}
+        <ShiftsSection assignments={rows} />
 
         <div className="flex items-center gap-3">
           <SearchBar value={search} onChange={setSearch} placeholder="ابحث عن سائق أو موتسكل..." />

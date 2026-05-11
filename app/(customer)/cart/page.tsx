@@ -22,11 +22,23 @@ function InfoIcon() {
   );
 }
 
+type AppliedCoupon = {
+  id:       number;
+  code:     string;
+  type:     string;
+  value:    number;
+  applies:  string;
+  discount: number;
+};
+
 export default function CartPage() {
-  const [cart,     setCart]     = useState<Cart | null>(null);
-  const [coupon,   setCoupon]   = useState("");
-  const [delivery, setDelivery] = useState(0);
-  const [service,  setService]  = useState(0);
+  const [cart,          setCart]          = useState<Cart | null>(null);
+  const [coupon,        setCoupon]        = useState("");
+  const [delivery,      setDelivery]      = useState(0);
+  const [service,       setService]       = useState(0);
+  const [applying,      setApplying]      = useState(false);
+  const [couponData,    setCouponData]    = useState<AppliedCoupon | null>(null);
+  const [couponError,   setCouponError]   = useState("");
 
   useEffect(() => {
     setCart(getCart());
@@ -49,6 +61,72 @@ export default function CartPage() {
     setCart(getCart());
   }
 
+  async function applyCoupon() {
+    const code = coupon.trim();
+    if (!code) return;
+    setApplying(true);
+    setCouponError("");
+    setCouponData(null);
+
+    const cartNow = getCart();
+    const subtotalNow = (cartNow?.items ?? []).reduce(
+      (sum, item) => sum + (item.price + (item.size?.price ?? 0) + (item.extras ?? []).reduce((s, e) => s + e.price, 0)) * item.qty,
+      0,
+    );
+
+    const { data, error } = await supabase
+      .from("coupons")
+      .select("id, code, type, value, applies_to, min_order, expires_at, is_active, restaurant_id")
+      .eq("code", code)   /* case-sensitive — no toLowerCase */
+      .eq("is_active", true)
+      .maybeSingle();
+
+    if (error || !data) {
+      setCouponError("الكوبون غير موجود أو غير صالح");
+      setApplying(false);
+      return;
+    }
+
+    if (data.expires_at && new Date(data.expires_at) < new Date()) {
+      setCouponError("انتهت صلاحية هذا الكوبون");
+      setApplying(false);
+      return;
+    }
+
+    const minOrder = data.min_order ?? 0;
+    if (minOrder > 0 && subtotalNow < minOrder) {
+      setCouponError(`الحد الأدنى لاستخدام هذا الكوبون هو ${minOrder} ج.م`);
+      setApplying(false);
+      return;
+    }
+
+    if (data.restaurant_id !== null && cartNow && data.restaurant_id !== cartNow.restaurantId) {
+      setCouponError("هذا الكوبون غير صالح لهذا المطعم");
+      setApplying(false);
+      return;
+    }
+
+    let discount = 0;
+    if (data.type === "نسبة مئوية") {
+      const base =
+        data.applies_to === "توصيل" ? delivery :
+        data.applies_to === "أكل"   ? subtotalNow :
+        subtotalNow + delivery;
+      discount = Math.min(Math.round(base * data.value / 100), base);
+    } else {
+      discount = Math.min(data.value, subtotalNow + delivery);
+    }
+
+    setCouponData({ id: data.id, code, type: data.type, value: data.value, applies: data.applies_to, discount });
+    setApplying(false);
+  }
+
+  function removeCoupon() {
+    setCouponData(null);
+    setCouponError("");
+    setCoupon("");
+  }
+
   if (!cart) {
     return (
       <div className="min-h-screen bg-[var(--color-surface)] flex flex-col items-center justify-center gap-4">
@@ -62,7 +140,8 @@ export default function CartPage() {
 
   const items    = cart.items;
   const subtotal = items.reduce((sum, item) => sum + itemUnitPrice(item) * item.qty, 0);
-  const total    = subtotal + delivery + service;
+  const discount = couponData?.discount ?? 0;
+  const total    = Math.max(0, subtotal + delivery + service - discount);
 
   return (
     <div className="min-h-screen bg-[var(--color-surface)]">
@@ -160,18 +239,51 @@ export default function CartPage() {
           {/* ── 3. رمز القسيمة ── */}
           <section className="bg-white rounded-2xl border border-[var(--color-border)] px-4 py-4">
             <h2 className="text-sm font-bold text-[var(--color-secondary)] mb-3">وفر على طلبك</h2>
-            <div className="flex items-center border border-[var(--color-border)] rounded-xl overflow-hidden bg-[var(--color-surface)]">
-              <input
-                type="text"
-                value={coupon}
-                onChange={(e) => setCoupon(e.target.value)}
-                placeholder="قم بإدخال رمز القسيمة هنا"
-                className="flex-1 text-sm px-3 py-2.5 bg-transparent outline-none text-[var(--color-secondary)] placeholder:text-[var(--color-muted)]"
-              />
-              <button className="bg-[var(--color-primary)] text-white text-sm font-bold px-4 py-2.5">
-                إرسال
-              </button>
-            </div>
+            {couponData ? (
+              <div className="flex items-center justify-between rounded-xl px-3 py-2.5 border"
+                style={{ background: "var(--color-surface)", borderColor: "var(--color-success)" }}>
+                <div>
+                  <p className="text-xs font-bold" style={{ color: "var(--color-success)" }}>
+                    ✓ كوبون مطبّق: {couponData.code}
+                  </p>
+                  <p className="text-xs mt-0.5" style={{ color: "var(--color-muted)" }}>
+                    خصم {couponData.discount} ج.م
+                  </p>
+                </div>
+                <button
+                  onClick={removeCoupon}
+                  className="text-xs font-semibold px-2 py-1 rounded-lg"
+                  style={{ color: "var(--color-error, #ef4444)", background: "rgba(239,68,68,0.1)" }}
+                >
+                  إزالة
+                </button>
+              </div>
+            ) : (
+              <>
+                <div className="flex items-center border border-[var(--color-border)] rounded-xl overflow-hidden bg-[var(--color-surface)]">
+                  <input
+                    type="text"
+                    value={coupon}
+                    onChange={(e) => { setCoupon(e.target.value); setCouponError(""); }}
+                    onKeyDown={(e) => e.key === "Enter" && applyCoupon()}
+                    placeholder="قم بإدخال رمز القسيمة هنا"
+                    className="flex-1 text-sm px-3 py-2.5 bg-transparent outline-none text-[var(--color-secondary)] placeholder:text-[var(--color-muted)]"
+                  />
+                  <button
+                    onClick={applyCoupon}
+                    disabled={applying || !coupon.trim()}
+                    className="bg-[var(--color-primary)] text-white text-sm font-bold px-4 py-2.5 disabled:opacity-50"
+                  >
+                    {applying ? "..." : "إرسال"}
+                  </button>
+                </div>
+                {couponError && (
+                  <p className="text-xs mt-2 font-semibold" style={{ color: "var(--color-error, #ef4444)" }}>
+                    ⚠ {couponError}
+                  </p>
+                )}
+              </>
+            )}
           </section>
 
           {/* ── 4. ملاحظات إضافية ── */}
@@ -207,6 +319,16 @@ export default function CartPage() {
                 </div>
                 <span className="text-sm text-[var(--color-secondary)]">{delivery} ج.م</span>
               </div>
+
+              {/* خصم الكوبون */}
+              {discount > 0 && (
+                <div className="flex items-center justify-between">
+                  <span className="text-sm" style={{ color: "var(--color-success)" }}>خصم الكوبون</span>
+                  <span className="text-sm font-semibold" style={{ color: "var(--color-success)" }}>
+                    -{discount} ج.م
+                  </span>
+                </div>
+              )}
 
               {/* فاصل */}
               <div className="border-t border-[var(--color-border)] my-1" />

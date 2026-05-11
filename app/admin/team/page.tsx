@@ -64,8 +64,10 @@ function validate(form: ModalForm, isEdit: boolean): FieldErrors {
   else if (form.name.trim().length < 3)
     errs.name = "الاسم لازم يكون 3 حروف على الأقل";
 
-  const phone = form.phone.replace(/[\s-]/g, "");
-  if (phone && !/^01[0125][0-9]{8}$/.test(phone))
+  const phone = form.phone.trim().replace(/[\s-]/g, "");
+  if (!phone)
+    errs.phone = "رقم الهاتف مطلوب";
+  else if (!/^01[0125][0-9]{8}$/.test(phone))
     errs.phone = "رقم الهاتف غير صحيح (مثال: 01012345678)";
 
   if (!isEdit && !form.password.trim())
@@ -148,7 +150,9 @@ function TeamModal({
           </div>
 
           <div className="flex flex-col gap-1.5">
-            <label className="text-xs font-semibold" style={{ color: C.muted }}>رقم الهاتف</label>
+            <label className="text-xs font-semibold" style={{ color: C.muted }}>
+              رقم الهاتف <span style={{ color: C.red }}>*</span>
+            </label>
             <input
               type="tel"
               value={form.phone}
@@ -338,7 +342,7 @@ function AdminsTab({
       .from("staff")
       .insert([{
         name:      form.name.trim(),
-        phone:     form.phone.trim() || null,
+        phone:     form.phone.trim(),
         password:  form.password,
         role:      "admin",
         is_active: true,
@@ -525,7 +529,7 @@ function StaffTab({
         .from("staff")
         .insert([{
           name:      form.name.trim(),
-          phone:     form.phone.trim() || null,
+          phone:     form.phone.trim(),
           password:  form.password,
           role:      "staff",
           is_active: form.active,
@@ -544,7 +548,7 @@ function StaffTab({
     } else {
       const update: Record<string, unknown> = {
         name:      form.name.trim(),
-        phone:     form.phone.trim() || null,
+        phone:     form.phone.trim(),
         is_active: form.active,
       };
       if (form.password.trim()) update.password = form.password;
@@ -747,7 +751,7 @@ function DriversTab({
         .from("delivery_staff")
         .insert([{
           name:      form.name.trim(),
-          phone:     form.phone.trim() || null,
+          phone:     form.phone.trim(),
           password:  form.password,
           is_active: form.active,
         }]);
@@ -765,7 +769,7 @@ function DriversTab({
     } else {
       const update: Record<string, unknown> = {
         name:      form.name.trim(),
-        phone:     form.phone.trim() || null,
+        phone:     form.phone.trim(),
         is_active: form.active,
       };
       if (form.password.trim()) update.password = form.password;

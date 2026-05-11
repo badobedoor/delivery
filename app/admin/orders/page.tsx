@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase";
 
 const C = {
@@ -93,6 +94,8 @@ export default function AdminOrdersPage() {
   const [search,        setSearch]        = useState("");
   const [confirmingId,  setConfirmingId]  = useState<string | null>(null);
   const [confirmError,  setConfirmError]  = useState<string | null>(null);
+  const [noShiftModal,  setNoShiftModal]  = useState<{ message: string } | null>(null);
+  const router = useRouter();
   const [selectedOrderModal, setSelectedOrderModal] = useState<{
     id: string;
     number:       number | null;
@@ -283,7 +286,7 @@ export default function AdminOrdersPage() {
       .maybeSingle();
 
     if (!shift) {
-      setConfirmError("🚫 لا توجد وردية نشطة حالياً، يرجى فتح وردية أولاً");
+      setNoShiftModal({ message: "يجب تشغيل وردية واحدة على الأقل قبل تأكيد الطلبات وتوزيعها على السائقين." });
       setConfirmingId(null);
       return;
     }
@@ -303,7 +306,7 @@ export default function AdminOrdersPage() {
       .eq("is_active", true);
 
     if (!count) {
-      setConfirmError("🚫 لا يوجد سائقين متاحين على هذه الوردية، يرجى إضافة سائقين أولاً");
+      setNoShiftModal({ message: "لا يوجد سائقون متاحون على هذه الوردية. يجب أن يبدأ السائقون ورديتهم أولاً قبل توزيع الطلبات." });
       setConfirmingId(null);
       return;
     }
@@ -987,6 +990,58 @@ export default function AdminOrdersPage() {
                 </div>
               </>
             )}
+          </div>
+        </div>
+      )}
+
+      {/* ── No-Shift Modal ── */}
+      {noShiftModal && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center p-4"
+          style={{ background: "rgba(0,0,0,0.75)" }}
+          onClick={(e) => { if (e.target === e.currentTarget) setNoShiftModal(null); }}
+        >
+          <div
+            className="w-full max-w-sm rounded-2xl flex flex-col overflow-hidden"
+            style={{ background: C.card, border: `1px solid ${C.border}` }}
+          >
+            {/* Header */}
+            <div className="flex items-center justify-between px-5 py-4 border-b" style={{ borderColor: C.border }}>
+              <div className="flex items-center gap-2">
+                <span className="text-xl">🚫</span>
+                <h2 className="text-base font-black" style={{ color: C.text }}>لا توجد وردية مفعلة</h2>
+              </div>
+              <button
+                onClick={() => setNoShiftModal(null)}
+                className="w-8 h-8 rounded-full flex items-center justify-center hover:opacity-70"
+                style={{ background: "#0F172A", color: C.muted }}
+              >✕</button>
+            </div>
+
+            {/* Body */}
+            <div className="px-5 py-5 flex flex-col gap-4">
+              <p className="text-sm leading-relaxed text-center" style={{ color: C.muted }}>
+                {noShiftModal.message}
+              </p>
+            </div>
+
+            {/* Footer */}
+            <div className="flex gap-3 px-5 py-4 border-t" style={{ borderColor: C.border }}>
+              <button
+                onClick={() => { setNoShiftModal(null); router.push("/admin/drivers"); }}
+                className="flex-1 py-2.5 rounded-xl text-sm font-bold hover:opacity-90 transition-opacity"
+                style={{ background: C.teal, color: "#fff" }}
+              >
+                الانتقال إلى الورديات
+              </button>
+              <button
+                onClick={() => setNoShiftModal(null)}
+                className="flex-1 py-2.5 rounded-xl text-sm font-bold hover:opacity-80 transition-opacity"
+                style={{ background: "#0F172A", color: C.muted, border: `1px solid ${C.border}` }}
+              >
+                إغلاق
+              </button>
+            </div>
           </div>
         </div>
       )}

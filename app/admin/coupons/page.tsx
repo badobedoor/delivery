@@ -17,6 +17,7 @@ const C = {
 
 type CouponType   = "قيمة ثابتة" | "نسبة مئوية";
 type AppliesTo    = "توصيل" | "أكل" | "الاتنين";
+type Restaurant   = { id: number; name: string };
 
 type Coupon = {
   id:                  number;
@@ -29,6 +30,8 @@ type Coupon = {
   usage_limit_per_user: number | null;
   expiry:              string;
   active:              boolean;
+  restaurantId:        number | null;
+  restaurantName:      string | null;
 };
 
 /* ── DB row → Coupon ── */
@@ -45,6 +48,9 @@ function fromRow(r: any): Coupon {
     usage_limit_per_user: r.usage_limit_per_user ?? null,
     expiry:               r.expires_at   ?? "",
     active:               r.is_active,
+    restaurantId:         r.restaurant_id ?? null,
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    restaurantName:       (r.restaurants as any)?.name ?? null,
   };
 }
 
@@ -58,6 +64,7 @@ const emptyForm = {
   usage_limit_per_user: "1",
   expiry:               "",
   active:               true,
+  restaurantId:         null as number | null,
 };
 
 function formatExpiry(d: string) {
@@ -68,35 +75,50 @@ function formatExpiry(d: string) {
 }
 
 export default function AdminCouponsPage() {
-  const [rows,     setRows]     = useState<Coupon[]>([]);
-  const [loading,  setLoading]  = useState(true);
-  const [fetchErr, setFetchErr] = useState<string | null>(null);
-  const [saving,   setSaving]   = useState(false);
-  const [deleting, setDeleting] = useState(false);
-  const [search,   setSearch]   = useState("");
-  const [modal,    setModal]    = useState<{ open: boolean; id?: number }>({ open: false });
-  const [form,     setForm]     = useState(emptyForm);
-  const [formErr,  setFormErr]  = useState<string | null>(null);
-  const [deleteId, setDeleteId] = useState<number | null>(null);
+  const [rows,        setRows]        = useState<Coupon[]>([]);
+  const [restaurants, setRestaurants] = useState<Restaurant[]>([]);
+  const [loading,     setLoading]     = useState(true);
+  const [fetchErr,    setFetchErr]    = useState<string | null>(null);
+  const [saving,      setSaving]      = useState(false);
+  const [deleting,    setDeleting]    = useState(false);
+  const [search,      setSearch]      = useState("");
+  const [modal,       setModal]       = useState<{ open: boolean; id?: number }>({ open: false });
+  const [form,        setForm]        = useState(emptyForm);
+  const [formErr,     setFormErr]     = useState<string | null>(null);
+  const [deleteId,    setDeleteId]    = useState<number | null>(null);
 
   const isEdit   = modal.id !== undefined;
+  /* Case-sensitive search — SAVE10 ≠ save10 */
   const filtered = rows.filter(
-    (r) => !search.trim() || r.code.toLowerCase().includes(search.toLowerCase())
+    (r) => !search.trim() || r.code.includes(search)
   );
 
   /* ── Fetch ── */
-  useEffect(() => { fetchCoupons(); }, []);
+  useEffect(() => { fetchCoupons(); fetchRestaurants(); }, []);
 
   async function fetchCoupons() {
     setLoading(true);
     setFetchErr(null);
     const { data, error } = await supabase
       .from("coupons")
-      .select("id, code, type, value, applies_to, min_order, usage_limit_total, usage_limit_per_user, expires_at, is_active")
+      .select("id, code, type, value, applies_to, min_order, usage_limit_total, usage_limit_per_user, expires_at, is_active, restaurant_id, restaurants!restaurant_id(name)")
       .order("id", { ascending: false });
     if (error) setFetchErr("تعذّر تحميل الكوبونات");
     else setRows((data ?? []).map(fromRow));
     setLoading(false);
+  }
+
+  async function fetchRestaurants() {
+    const { data, error } = await supabase
+      .from("restaurants")
+      .select("id, name")
+      .order("name");
+    if (error) {
+      console.error("fetchRestaurants failed:", error.message, error);
+      return;
+    }
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    setRestaurants((data ?? []).map((r: any) => ({ id: r.id, name: r.name })));
   }
 
   /* ── Modal helpers ── */
@@ -117,6 +139,7 @@ export default function AdminCouponsPage() {
       usage_limit_per_user: c.usage_limit_per_user != null ? String(c.usage_limit_per_user) : "",
       expiry:               c.expiry,
       active:               c.active,
+      restaurantId:         c.restaurantId,
     });
     setFormErr(null);
     setModal({ open: true, id: c.id });
@@ -152,7 +175,7 @@ export default function AdminCouponsPage() {
     }
 
     const dbPayload = {
-      code:                 form.code.trim().toUpperCase(),
+      code:                 form.code.trim(),   /* case-sensitive — stored exactly as typed */
       type:                 form.type,
       value,
       applies_to:           form.applies,
@@ -161,6 +184,7 @@ export default function AdminCouponsPage() {
       usage_limit_per_user: form.usage_limit_per_user ? Number(form.usage_limit_per_user) : null,
       expires_at:           form.expiry || null,
       is_active:            form.active,
+      restaurant_id:        form.restaurantId ?? null,
     };
 
     setSaving(true);
@@ -168,7 +192,7 @@ export default function AdminCouponsPage() {
       const { data, error } = await supabase
         .from("coupons")
         .insert({ ...dbPayload, used_count: 0 })
-        .select("id, code, type, value, applies_to, min_order, usage_limit_total, usage_limit_per_user, expires_at, is_active")
+        .select("id, code, type, value, applies_to, min_order, usage_limit_total, usage_limit_per_user, expires_at, is_active, restaurant_id, restaurants!restaurant_id(name)")
         .single();
       if (error) { setFormErr("فشل الحفظ، حاول مرة أخرى"); setSaving(false); return; }
       setRows((p) => [fromRow(data), ...p]);
@@ -178,7 +202,20 @@ export default function AdminCouponsPage() {
         .update(dbPayload)
         .eq("id", modal.id!);
       if (error) { setFormErr("فشل التعديل، حاول مرة أخرى"); setSaving(false); return; }
-      setRows((p) => p.map((r) => r.id === modal.id ? fromRow({ ...dbPayload, id: modal.id }) : r));
+      setRows((p) => p.map((r) => r.id === modal.id ? {
+        ...r,
+        code:                 dbPayload.code,
+        type:                 form.type,
+        value,
+        applies:              form.applies,
+        minOrder:             Number(form.minOrder) || 0,
+        usage_limit_total:    dbPayload.usage_limit_total,
+        usage_limit_per_user: dbPayload.usage_limit_per_user,
+        expiry:               form.expiry,
+        active:               form.active,
+        restaurantId:         form.restaurantId,
+        restaurantName:       restaurants.find((x) => x.id === form.restaurantId)?.name ?? null,
+      } : r));
     }
     setSaving(false);
     closeModal();
@@ -254,6 +291,7 @@ export default function AdminCouponsPage() {
                     { label: "النوع",           hide: " hidden sm:table-cell"   },
                     { label: "القيمة",          hide: ""                        },
                     { label: "يطبق على",        hide: " hidden md:table-cell"   },
+                    { label: "المطعم",          hide: " hidden md:table-cell"   },
                     { label: "الحد الأدنى",     hide: " hidden lg:table-cell"   },
                     { label: "عدد الاستخدام",   hide: " hidden lg:table-cell"   },
                     { label: "تاريخ الانتهاء",  hide: " hidden xl:table-cell"   },
@@ -271,20 +309,20 @@ export default function AdminCouponsPage() {
               <tbody>
                 {loading ? (
                   <tr>
-                    <td colSpan={9} className="px-4 py-12 text-center text-sm" style={{ color: C.muted }}>
+                    <td colSpan={10} className="px-4 py-12 text-center text-sm" style={{ color: C.muted }}>
                       جاري التحميل...
                     </td>
                   </tr>
                 ) : fetchErr ? (
                   <tr>
-                    <td colSpan={9} className="px-4 py-12 text-center text-sm" style={{ color: C.red }}>
+                    <td colSpan={10} className="px-4 py-12 text-center text-sm" style={{ color: C.red }}>
                       {fetchErr}
                       <button onClick={fetchCoupons} className="mr-2 underline" style={{ color: C.teal }}>إعادة المحاولة</button>
                     </td>
                   </tr>
                 ) : filtered.length === 0 ? (
                   <tr>
-                    <td colSpan={9} className="px-4 py-12 text-center text-sm" style={{ color: C.muted }}>
+                    <td colSpan={10} className="px-4 py-12 text-center text-sm" style={{ color: C.muted }}>
                       لا توجد كوبونات مطابقة
                     </td>
                   </tr>
@@ -315,6 +353,18 @@ export default function AdminCouponsPage() {
                     {/* يطبق على */}
                     <td className="hidden md:table-cell px-3 py-3 text-xs whitespace-nowrap" style={{ color: C.muted }}>
                       {c.applies}
+                    </td>
+
+                    {/* المطعم */}
+                    <td className="hidden md:table-cell px-3 py-3 text-xs whitespace-nowrap">
+                      {c.restaurantId ? (
+                        <span className="px-2 py-0.5 rounded-full font-semibold"
+                          style={{ background: `${C.teal}18`, color: C.teal }}>
+                          {c.restaurantName ?? "—"}
+                        </span>
+                      ) : (
+                        <span style={{ color: C.muted }}>عام</span>
+                      )}
                     </td>
 
                     {/* الحد الأدنى */}
@@ -409,11 +459,12 @@ export default function AdminCouponsPage() {
               <div className="flex flex-col gap-1.5">
                 <label className="text-xs font-semibold" style={{ color: C.muted }}>
                   الكود <span style={{ color: C.red }}>*</span>
+                  <span className="mr-1 font-normal" style={{ color: C.muted }}>(حساس لحالة الأحرف)</span>
                 </label>
                 <input
                   type="text"
                   value={form.code}
-                  onChange={(e) => setForm({ ...form, code: e.target.value.toUpperCase() })}
+                  onChange={(e) => setForm({ ...form, code: e.target.value })}
                   placeholder="مثال: HALA50"
                   className="w-full rounded-xl px-3 py-2.5 text-sm outline-none tracking-widest font-bold"
                   style={inp}
@@ -523,6 +574,25 @@ export default function AdminCouponsPage() {
                   className="w-full rounded-xl px-3 py-2.5 text-sm outline-none"
                   style={inp}
                 />
+              </div>
+
+              {/* المطعم (اختياري) */}
+              <div className="flex flex-col gap-1.5">
+                <label className="text-xs font-semibold" style={{ color: C.muted }}>
+                  المطعم
+                  <span className="mr-1 font-normal">(اختياري — اتركه فارغًا للكوبون العام)</span>
+                </label>
+                <select
+                  value={form.restaurantId ?? ""}
+                  onChange={(e) => setForm({ ...form, restaurantId: e.target.value ? Number(e.target.value) : null })}
+                  className="w-full rounded-xl px-3 py-2.5 text-sm outline-none"
+                  style={inp}
+                >
+                  <option value="">عام — يصلح لكل المطاعم</option>
+                  {restaurants.map((r) => (
+                    <option key={r.id} value={r.id}>{r.name}</option>
+                  ))}
+                </select>
               </div>
 
               {/* الحالة */}
