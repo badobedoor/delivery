@@ -96,17 +96,21 @@ export default function AdminOrdersPage() {
   const [confirmingId,  setConfirmingId]  = useState<string | null>(null);
   const [confirmError,  setConfirmError]  = useState<string | null>(null);
   const [noShiftModal,  setNoShiftModal]  = useState<{ message: string } | null>(null);
+  const [activeShiftLabel, setActiveShiftLabel] = useState<string | null>(null);
   const router = useRouter();
   const [selectedOrderModal, setSelectedOrderModal] = useState<{
     id: string;
-    number:       number | null;
-    total:        number;
-    subtotal:     number | null;
-    delivery_fee: number | null;
-    status:       string;
-    restaurant:   string | null;
-    area:         string | null;
-    notes:        string | null;
+    number:        number | null;
+    total:         number;
+    subtotal:      number | null;
+    delivery_fee:  number | null;
+    status:        string;
+    restaurant:    string | null;
+    area:          string | null;
+    notes:         string | null;
+    customerName:  string | null;
+    customerPhone: string | null;
+    readOnly:      boolean;
   } | null>(null);
   const [modalItems,   setModalItems]   = useState<{
     name:     string;
@@ -136,6 +140,24 @@ export default function AdminOrdersPage() {
   }
 
   async function loadData() {
+    // 0. جلب الوردية النشطة
+    const { data: shiftData } = await supabase
+      .from("shifts")
+      .select("id, num, start_time, end_time")
+      .eq("is_active", true)
+      .limit(1)
+      .maybeSingle();
+
+    if (shiftData) {
+      const fmt = (t: string) => {
+        const [h, m] = t.split(":").map(Number);
+        return `${h % 12 || 12}:${String(m).padStart(2, "0")} ${h < 12 ? "ص" : "م"}`;
+      };
+      setActiveShiftLabel(`الوردية ${shiftData.num} — ${fmt(shiftData.start_time)} إلى ${fmt(shiftData.end_time)}`);
+    } else {
+      setActiveShiftLabel(null);
+    }
+
     // 1. جلب الطلبات بدون order_items
     const { data: newOrdersData, error: e1 } = await supabase
       .from("orders")
@@ -187,7 +209,8 @@ export default function AdminOrdersPage() {
       order_items: itemsMap[o.id] ?? [],
     }));
 
-    const { data: allOrdersData, error: e2 } = await supabase
+    /* Only show orders belonging to the currently active shift */
+    let allOrdersQuery = supabase
       .from("orders")
       .select(`
         id, total, status, created_at, user_order_number, user_id, delivery_id,
@@ -198,6 +221,17 @@ export default function AdminOrdersPage() {
       `)
       .neq("status", "new")
       .order("created_at", { ascending: false });
+
+    if (shiftData?.id) {
+      allOrdersQuery = allOrdersQuery.eq("shift_id", shiftData.id);
+    } else {
+      /* No active shift — show nothing in the live table */
+      setAllOrdersList([]);
+      setNewOrdersList(finalOrders);
+      return;
+    }
+
+    const { data: allOrdersData, error: e2 } = await allOrdersQuery;
 
     console.log("All Orders Error:", e2);
     console.log("All Orders:", allOrdersData);
@@ -373,9 +407,16 @@ export default function AdminOrdersPage() {
     console.log("Cancel Error:", error);
   }
 
-  async function openModal(id: string, number: number | null, total: number, status: string) {
+  async function openModal(
+    id: string, number: number | null, total: number, status: string,
+    opts?: { readOnly?: boolean; customerName?: string | null; customerPhone?: string | null }
+  ) {
     setSelectedOrderModal({
-      id, number, total, subtotal: null, delivery_fee: null, status, restaurant: null, area: null, notes: null,
+      id, number, total, subtotal: null, delivery_fee: null, status,
+      restaurant: null, area: null, notes: null,
+      customerName:  opts?.customerName  ?? null,
+      customerPhone: opts?.customerPhone ?? null,
+      readOnly:      opts?.readOnly      ?? false,
     });
     setModalItems([]);
     setModalError(null);
@@ -404,9 +445,12 @@ export default function AdminOrdersPage() {
         subtotal:     od.subtotal     ?? null,
         delivery_fee: od.delivery_fee ?? null,
         status,
-        restaurant:   od.restaurants?.name        ?? null,
-        area:         od.addresses?.areas?.name   ?? null,
-        notes:        od.notes                    ?? null,
+        restaurant:    od.restaurants?.name        ?? null,
+        area:          od.addresses?.areas?.name   ?? null,
+        notes:         od.notes                    ?? null,
+        customerName:  opts?.customerName  ?? null,
+        customerPhone: opts?.customerPhone ?? null,
+        readOnly:      opts?.readOnly      ?? false,
       });
     }
 
@@ -442,11 +486,12 @@ export default function AdminOrdersPage() {
   const filtered = allOrdersList.filter((o) => {
     const arStatus = STATUS_AR[o.status] ?? o.status;
     const matchTab = activeTab === "الكل" || arStatus === activeTab;
-    const q = search.trim();
+    const q = search.trim().toLowerCase();
     const matchSearch = !q ||
       `#${o.user_order_number}`.includes(q) ||
-      (o.users?.name ?? "").includes(q) ||
-      (o.restaurants?.name ?? "").includes(q);
+      (o.users?.name  ?? "").toLowerCase().includes(q) ||
+      (o.users?.phone ?? "").includes(q) ||
+      (o.restaurants?.name ?? "").toLowerCase().includes(q);
     return matchTab && matchSearch;
   });
 
@@ -477,21 +522,15 @@ export default function AdminOrdersPage() {
         </div>
         <div
           className="flex items-center gap-2 px-3 py-1 rounded-full"
-          style={{ background: `${C.teal}18`, border: `1px solid ${C.teal}44` }}
+          style={{
+            background: activeShiftLabel ? `${C.teal}18` : `${C.red}18`,
+            border:     activeShiftLabel ? `1px solid ${C.teal}44` : `1px solid ${C.red}44`,
+          }}
         >
-          <span style={{ color: C.teal, fontSize: 14 }}>🕐</span>
-          <span className="text-sm font-bold" style={{ color: C.teal }}>
-            الوردية الأولى — صباحية
+          <span style={{ color: activeShiftLabel ? C.teal : C.red, fontSize: 14 }}>🕐</span>
+          <span className="text-sm font-bold" style={{ color: activeShiftLabel ? C.teal : C.red }}>
+            {activeShiftLabel ?? "لا توجد وردية نشطة"}
           </span>
-        </div>
-        <div className="flex items-center gap-2">
-          <div
-            className="w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold"
-            style={{ background: `${C.teal}33`, color: C.teal }}
-          >
-            أ
-          </div>
-          <span className="text-sm font-semibold" style={{ color: C.text }}>أحمد الموظف</span>
         </div>
       </div>
 
@@ -578,18 +617,23 @@ export default function AdminOrdersPage() {
                   key={order.id}
                   className="rounded-xl p-4 flex flex-col gap-3 cursor-pointer"
                   style={{ background: C.card, border: `1px solid ${C.border}` }}
-                  onClick={() => openModal(order.id, order.user_order_number, order.total, "new")}
+                  onClick={() => openModal(order.id, order.user_order_number, order.total, "new", { customerName: order.users?.name ?? null, customerPhone: order.users?.phone ?? null })}
                 >
                   {/* Order header */}
                   <div className="flex items-start justify-between gap-2 flex-wrap">
                     <div className="flex flex-col gap-0.5">
-                      <div className="flex items-center gap-2">
+                      <div className="flex items-center gap-2 flex-wrap">
                         <span className="text-sm font-black" style={{ color: C.teal }}>
                           #{order.user_order_number ?? "—"}
                         </span>
                         <span className="text-sm font-bold" style={{ color: C.text }}>
                           {order.users?.name ?? "—"}
                         </span>
+                        {order.users?.phone && (
+                          <span className="text-sm font-semibold" style={{ color: C.muted }}>
+                            — {order.users.phone}
+                          </span>
+                        )}
                       </div>
                       <div className="flex items-center gap-2 text-xs" style={{ color: C.muted }}>
                         <span>🍽 {order.restaurants?.name ?? "—"}</span>
@@ -679,7 +723,7 @@ export default function AdminOrdersPage() {
               type="text"
               value={search}
               onChange={(e) => setSearch(e.target.value)}
-              placeholder="بحث برقم الطلب، العميل أو المطعم..."
+              placeholder="بحث برقم الطلب، الاسم، الهاتف أو المطعم..."
               className="flex-1 text-sm bg-transparent outline-none"
               style={{ color: C.text }}
               dir="rtl"
@@ -719,16 +763,20 @@ export default function AdminOrdersPage() {
           <table className="w-full">
             <thead>
               <tr style={{ borderBottom: `1px solid ${C.border}` }}>
-                {["#", "العميل", "المطعم", "الحي", "السائق", "الأصناف", "الإجمالي", "الحالة", "الوقت"].map((col, i) => (
-                  <th
-                    key={col}
-                    className={`px-3 py-2.5 text-right font-semibold text-xs whitespace-nowrap${
-                      i === 3 ? " hidden md:table-cell" :
-                      i === 4 ? " hidden lg:table-cell" :
-                      i === 5 ? " hidden sm:table-cell" : ""
-                    }`}
-                    style={{ color: C.muted }}
-                  >
+                {[
+                  { col: "#",           hide: ""                      },
+                  { col: "العميل",      hide: ""                      },
+                  { col: "رقم الهاتف",  hide: " hidden sm:table-cell" },
+                  { col: "المطعم",      hide: ""                      },
+                  { col: "الحي",        hide: " hidden md:table-cell" },
+                  { col: "السائق",      hide: " hidden lg:table-cell" },
+                  { col: "الإجمالي",    hide: ""                      },
+                  { col: "الحالة",      hide: ""                      },
+                  { col: "الوقت",       hide: ""                      },
+                ].map(({ col, hide }) => (
+                  <th key={col}
+                    className={`px-3 py-2.5 text-right font-semibold text-xs whitespace-nowrap${hide}`}
+                    style={{ color: C.muted }}>
                     {col}
                   </th>
                 ))}
@@ -748,13 +796,15 @@ export default function AdminOrdersPage() {
                     <tr key={order.id}
                       className="cursor-pointer transition-colors hover:bg-white/5"
                       style={{ borderBottom: i < filtered.length - 1 ? `1px solid ${C.border}` : "none" }}
-                      onClick={() => openModal(order.id, order.user_order_number, order.total, order.status)}>
+                      onClick={() => openModal(order.id, order.user_order_number, order.total, order.status, { readOnly: true, customerName: order.users?.name ?? null, customerPhone: order.users?.phone ?? null })}>
                       <td className="px-3 py-2.5 font-bold text-xs whitespace-nowrap" style={{ color: C.teal }}>
                         #{order.user_order_number ?? "—"}
                       </td>
-                      <td className="px-3 py-2.5 text-xs whitespace-nowrap" style={{ color: C.text }}>
-                        <p className="font-semibold">{order.users?.name ?? "—"}</p>
-                        <p className="text-[10px] mt-0.5" style={{ color: C.muted }}>{order.users?.phone ?? "—"}</p>
+                      <td className="px-3 py-2.5 text-xs whitespace-nowrap font-semibold" style={{ color: C.text }}>
+                        {order.users?.name ?? "—"}
+                      </td>
+                      <td className="hidden sm:table-cell px-3 py-2.5 text-xs whitespace-nowrap" style={{ color: C.muted }}>
+                        {order.users?.phone ?? "—"}
                       </td>
                       <td className="px-3 py-2.5 text-xs whitespace-nowrap" style={{ color: C.muted }}>
                         {order.restaurants?.name ?? "—"}
@@ -764,9 +814,6 @@ export default function AdminOrdersPage() {
                       </td>
                       <td className="hidden lg:table-cell px-3 py-2.5 text-xs whitespace-nowrap" style={{ color: C.muted }}>
                         {order.delivery_staff?.name ?? "—"}
-                      </td>
-                      <td className="hidden sm:table-cell px-3 py-2.5 text-xs text-center" style={{ color: C.muted }}>
-                        —
                       </td>
                       <td className="px-3 py-2.5 text-xs font-semibold whitespace-nowrap" style={{ color: C.text }}>
                         {order.total} ج.م
@@ -822,6 +869,27 @@ export default function AdminOrdersPage() {
                 ✕
               </button>
             </div>
+
+            {/* ── Customer info — prominent ── */}
+            {(selectedOrderModal.customerName || selectedOrderModal.customerPhone) && (
+              <div className="rounded-xl p-3.5 flex items-center gap-3"
+                style={{ background: `${C.teal}15`, border: `1px solid ${C.teal}33` }}>
+                <div className="w-10 h-10 rounded-full flex items-center justify-center text-base font-black flex-shrink-0"
+                  style={{ background: `${C.teal}30`, color: C.teal }}>
+                  {selectedOrderModal.customerName?.[0] ?? "؟"}
+                </div>
+                <div className="flex flex-col gap-0.5">
+                  <p className="text-sm font-black" style={{ color: C.text }}>
+                    {selectedOrderModal.customerName ?? "—"}
+                  </p>
+                  {selectedOrderModal.customerPhone && (
+                    <p className="text-xs font-bold" style={{ color: C.teal }}>
+                      📞 {selectedOrderModal.customerPhone}
+                    </p>
+                  )}
+                </div>
+              </div>
+            )}
 
             {/* ── Section 1: معلومات الطلب ── */}
             <div className="rounded-xl p-3 flex flex-col gap-2.5" style={{ background: C.bg }}>
@@ -958,8 +1026,9 @@ export default function AdminOrdersPage() {
               </>
             )}
 
-            {/* ── Section 4: أزرار التحكم (فقط للطلبات الجديدة) ── */}
-            {selectedOrderModal.status === "new" &&
+            {/* ── Section 4: أزرار التحكم (فقط للطلبات الجديدة وليس read-only) ── */}
+            {!selectedOrderModal.readOnly &&
+              selectedOrderModal.status === "new" &&
               newOrdersList.some((o) => o.id === selectedOrderModal.id) && (
               <>
                 <div style={{ height: 1, background: C.border }} />

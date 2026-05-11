@@ -2,7 +2,9 @@
 
 import Link              from "next/link";
 import { usePathname }   from "next/navigation";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
+import { supabase }      from "@/lib/supabase";
+import { useAutoRefresh } from "@/hooks/useAutoRefresh";
 
 /* Pages staff role is allowed to visit */
 const STAFF_ALLOWED = ["/admin/orders", "/admin/restaurants", "/admin/drivers"];
@@ -14,11 +16,13 @@ const C = {
   text:   "#F1F5F9",
   muted:  "#94A3B8",
   border: "#334155",
+  red:    "#EF4444",
 };
 
 const allNavLinks = [
   { emoji: "📊", label: "الرئيسية",   href: "/admin/dashboard"       },
   { emoji: "📦", label: "الطلبات",    href: "/admin/orders"          },
+  { emoji: "🗂️", label: "الأرشيف",    href: "/admin/archive"         },
   { emoji: "🍔", label: "المطاعم",    href: "/admin/restaurants"     },
   { emoji: "🗺️", label: "الأحياء",    href: "/admin/areas"           },
   { emoji: "🛵", label: "الدلفري",    href: "/admin/drivers"        },
@@ -35,6 +39,7 @@ const allNavLinks = [
 const pageTitle: Record<string, string> = {
   "/admin/dashboard":      "الرئيسية",
   "/admin/orders":         "الطلبات",
+  "/admin/archive":        "الأرشيف",
   "/admin/restaurants":    "المطاعم",
   "/admin/areas":          "الأحياء",
   "/admin/drivers":       "الدلفري",
@@ -62,11 +67,13 @@ function SidebarContent({
   navLinks,
   onClose,
   onLogout,
+  newOrdersCount = 0,
 }: {
   collapsed?: boolean;
   navLinks: typeof allNavLinks;
   onClose?: () => void;
   onLogout: () => void;
+  newOrdersCount?: number;
 }) {
   const pathname = usePathname();
 
@@ -97,24 +104,59 @@ function SidebarContent({
       <nav className="flex-1 py-4 overflow-y-auto flex flex-col gap-1"
         style={{ padding: collapsed ? "16px 8px" : "16px 12px" }}>
         {navLinks.map((link) => {
-          const active = pathname.startsWith(link.href);
+          const active      = pathname.startsWith(link.href);
+          const hasNewBadge = newOrdersCount > 0 && link.href === "/admin/orders";
           return (
             <Link
               key={link.href}
               href={link.href}
               onClick={onClose}
               title={collapsed ? link.label : undefined}
-              className="flex items-center rounded-xl text-sm font-semibold transition-colors whitespace-nowrap overflow-hidden"
+              className="relative flex items-center rounded-xl text-sm font-semibold transition-all whitespace-nowrap overflow-hidden"
               style={{
                 gap:            collapsed ? 0          : "12px",
                 padding:        collapsed ? "10px 0"   : "10px 16px",
                 justifyContent: collapsed ? "center"   : "flex-start",
-                background:     active    ? C.teal     : "transparent",
-                color:          active    ? "#fff"     : C.muted,
+                background:     active        ? C.teal
+                              : hasNewBadge   ? `${C.red}18`
+                              : "transparent",
+                color:          active        ? "#fff"
+                              : hasNewBadge   ? C.red
+                              : C.muted,
+                border:         hasNewBadge && !active
+                              ? `1px solid ${C.red}44`
+                              : "1px solid transparent",
               }}
             >
-              <span className="text-base flex-shrink-0">{link.emoji}</span>
-              {!collapsed && link.label}
+              {/* Emoji — with small dot badge in collapsed mode */}
+              <div className="relative flex-shrink-0">
+                <span className="text-base">{link.emoji}</span>
+                {collapsed && hasNewBadge && (
+                  <span
+                    className="absolute -top-0.5 -right-0.5 w-2 h-2 rounded-full animate-pulse"
+                    style={{ background: C.red }}
+                  />
+                )}
+              </div>
+
+              {/* Label + blinking dot in expanded mode */}
+              {!collapsed && (
+                <div className="flex items-center justify-between flex-1 min-w-0">
+                  <span>{link.label}</span>
+                  {hasNewBadge && (
+                    <span className="relative flex h-2 w-2 mr-1 flex-shrink-0">
+                      <span
+                        className="animate-ping absolute inline-flex h-full w-full rounded-full opacity-75"
+                        style={{ background: C.red }}
+                      />
+                      <span
+                        className="relative inline-flex rounded-full h-2 w-2"
+                        style={{ background: C.red }}
+                      />
+                    </span>
+                  )}
+                </div>
+              )}
             </Link>
           );
         })}
@@ -160,12 +202,26 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
   const pathname = usePathname();
 
   /* ── All hooks declared before any conditional return ── */
-  const [user,       setUser]       = useState<AuthUser | null>(null);
-  const [checked,    setChecked]    = useState(false);
-  const [collapsed,  setCollapsed]  = useState(false);
-  const [mobileOpen, setMobileOpen] = useState(false);
+  const [user,           setUser]           = useState<AuthUser | null>(null);
+  const [checked,        setChecked]        = useState(false);
+  const [collapsed,      setCollapsed]      = useState(false);
+  const [mobileOpen,     setMobileOpen]     = useState(false);
+  const [newOrdersCount, setNewOrdersCount] = useState(0);
 
   const isLoginPage = pathname === "/admin/login";
+
+  /* ── Fetch new orders count for sidebar badge ── */
+  const fetchNewOrdersCount = useCallback(async () => {
+    if (!user || isLoginPage) { setNewOrdersCount(0); return; }
+    const { count } = await supabase
+      .from("orders")
+      .select("*", { count: "exact", head: true })
+      .eq("status", "new");
+    setNewOrdersCount(count ?? 0);
+  }, [user, isLoginPage]);
+
+  useEffect(() => { fetchNewOrdersCount(); }, [fetchNewOrdersCount]);
+  useAutoRefresh(fetchNewOrdersCount);
 
   /* ── Fetch current user from secure cookie ── */
   useEffect(() => {
@@ -236,6 +292,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
           collapsed={collapsed}
           navLinks={navLinks}
           onLogout={handleLogout}
+          newOrdersCount={newOrdersCount}
         />
       </div>
 
@@ -285,6 +342,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
               navLinks={navLinks}
               onClose={() => setMobileOpen(false)}
               onLogout={handleLogout}
+              newOrdersCount={newOrdersCount}
             />
           </div>
         </div>

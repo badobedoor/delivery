@@ -141,6 +141,14 @@ export default function AdminSettingsPage() {
   const [s3Saved,         setS3Saved]         = useState(false);
   const [s3Err,           setS3Err]           = useState<string | null>(null);
 
+  /* Card 4 — توقيت العمل */
+  const [workStart, setWorkStart] = useState("07:00");
+  const [workEnd,   setWorkEnd]   = useState("03:00");
+  const [s4Saving,  setS4Saving]  = useState(false);
+  const [s4Saved,   setS4Saved]   = useState(false);
+  const [s4Err,     setS4Err]     = useState<string | null>(null);
+  const [s4Errors,  setS4Errors]  = useState<{ workStart?: string; workEnd?: string }>({});
+
   useAutoRefresh(fetchSettings, 30_000); // settings change rarely — 30 s throttle
 
   /* ── Load on mount ── */
@@ -156,6 +164,8 @@ export default function AdminSettingsPage() {
         setOfficePct(String(d.office_percentage      ?? ""));
         setShowMostOrdered(d.show_most_ordered ?? true);
         setShowRecommended(d.show_recommended  ?? true);
+        setWorkStart(d.work_start_time ?? "07:00");
+        setWorkEnd(d.work_end_time     ?? "03:00");
       })
       .catch((e) => setLoadError(e.message))
       .finally(() => setLoading(false));
@@ -223,6 +233,24 @@ export default function AdminSettingsPage() {
       setS3Err(e instanceof Error ? e.message : "حدث خطأ");
     } finally {
       setS3Saving(false);
+    }
+  }
+
+  async function saveCard4() {
+    const errs: typeof s4Errors = {};
+    if (!workStart) errs.workStart = "وقت البداية مطلوب";
+    if (!workEnd)   errs.workEnd   = "وقت النهاية مطلوب";
+    if (Object.keys(errs).length) { setS4Errors(errs); return; }
+    setS4Errors({});
+    setS4Saving(true);
+    setS4Err(null);
+    try {
+      await patchSettings({ work_start_time: workStart, work_end_time: workEnd });
+      flashSaved(setS4Saved);
+    } catch (e) {
+      setS4Err(e instanceof Error ? e.message : "حدث خطأ");
+    } finally {
+      setS4Saving(false);
     }
   }
 
@@ -325,6 +353,58 @@ export default function AdminSettingsPage() {
         </div>
         {s3Err && <p className="text-xs font-semibold" style={{ color: C.red }}>{s3Err}</p>}
         <SaveButton onClick={saveCard3} saved={s3Saved} saving={s3Saving} />
+      </Card>
+
+      {/* Card 4 — توقيت العمل */}
+      <Card title="توقيت العمل">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <Field label="وقت بداية التشغيل" error={s4Errors.workStart}>
+            <input
+              type="time"
+              value={workStart}
+              onChange={(e) => { setWorkStart(e.target.value); setS4Errors((p) => ({ ...p, workStart: undefined })); }}
+              className="w-full rounded-xl px-3 py-2.5 text-sm outline-none"
+              style={{
+                background:  C.bg,
+                border:      `1px solid ${s4Errors.workStart ? C.red : C.border}`,
+                color:       C.text,
+                colorScheme: "dark",
+              }}
+            />
+          </Field>
+          <Field label="وقت نهاية التشغيل" error={s4Errors.workEnd}>
+            <input
+              type="time"
+              value={workEnd}
+              onChange={(e) => { setWorkEnd(e.target.value); setS4Errors((p) => ({ ...p, workEnd: undefined })); }}
+              className="w-full rounded-xl px-3 py-2.5 text-sm outline-none"
+              style={{
+                background:  C.bg,
+                border:      `1px solid ${s4Errors.workEnd ? C.red : C.border}`,
+                color:       C.text,
+                colorScheme: "dark",
+              }}
+            />
+          </Field>
+        </div>
+
+        {/* Cross-midnight indicator */}
+        {workStart && workEnd && (
+          <div className="flex items-center gap-2 rounded-xl px-4 py-2.5 text-xs font-semibold"
+            style={{ background: `${C.teal}15`, border: `1px solid ${C.teal}30`, color: C.teal }}>
+            <span>🕐</span>
+            <span>
+              {workStart === workEnd
+                ? "تشغيل على مدار الساعة"
+                : workStart > workEnd
+                  ? `${workStart} → ${workEnd} (يتجاوز منتصف الليل)`
+                  : `${workStart} → ${workEnd}`}
+            </span>
+          </div>
+        )}
+
+        {s4Err && <p className="text-xs font-semibold" style={{ color: C.red }}>{s4Err}</p>}
+        <SaveButton onClick={saveCard4} saved={s4Saved} saving={s4Saving} />
       </Card>
 
     </div>

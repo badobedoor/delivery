@@ -39,6 +39,7 @@ export default function AdminAreasPage() {
   const [deleteId, setDeleteId] = useState<number | null>(null);
   const [deleting, setDeleting] = useState(false);
   const [feeSort,  setFeeSort]  = useState<"asc" | "desc">("asc");
+  const [nameSort, setNameSort] = useState<"asc" | "desc" | null>(null);
 
   /* ── Fetch ── */
   useEffect(() => { fetchAreas(); }, []);
@@ -57,8 +58,18 @@ export default function AdminAreasPage() {
   }
 
   const filtered = rows
-    .filter((r) => !search.trim() || r.name.includes(search.trim()))
-    .sort((a, b) => feeSort === "asc" ? a.delivery_fee - b.delivery_fee : b.delivery_fee - a.delivery_fee);
+    .filter((r) => {
+      const q = search.trim();
+      if (!q) return true;
+      return r.name.includes(q) || String(r.delivery_fee).includes(q);
+    })
+    .sort((a, b) => {
+      if (nameSort) {
+        const cmp = a.name.localeCompare(b.name, "ar");
+        return nameSort === "asc" ? cmp : -cmp;
+      }
+      return feeSort === "asc" ? a.delivery_fee - b.delivery_fee : b.delivery_fee - a.delivery_fee;
+    });
 
   /* ── Modal helpers ── */
   function openAdd() {
@@ -178,11 +189,18 @@ export default function AdminAreasPage() {
             <table className="w-full">
               <thead>
                 <tr style={{ borderBottom: `1px solid ${C.border}` }}>
-                  {["اسم الحي"].concat([]).map((col) => (
-                    <th key={col}
-                      className="px-4 py-3 text-right font-semibold text-xs whitespace-nowrap"
-                      style={{ color: C.muted }}>
-                      {col}
+                  {/* اسم الحي — قابل للضغط للترتيب */}
+                  {[null].map(() => (
+                    <th key="name"
+                      className="px-4 py-3 text-right font-semibold text-xs whitespace-nowrap cursor-pointer select-none hover:opacity-80 transition-opacity"
+                      style={{ color: nameSort ? C.teal : C.muted }}
+                      onClick={() => setNameSort((p) => p === "asc" ? "desc" : "asc")}>
+                      <span className="inline-flex items-center gap-1">
+                        اسم الحي
+                        <span style={{ color: C.teal }}>
+                          {nameSort === "asc" ? "↑" : nameSort === "desc" ? "↓" : "⇅"}
+                        </span>
+                      </span>
                     </th>
                   ))}
                   <th

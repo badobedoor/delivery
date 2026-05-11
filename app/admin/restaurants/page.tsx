@@ -293,7 +293,7 @@ function ImageUploadField({
 const inputCls = "w-full rounded-xl px-3 py-2.5 text-sm outline-none";
 const inputSty = { background: C.bg, border: `1px solid ${C.border}`, color: C.text };
 
-const emptyRestForm: RestForm = { name: "", description: "", phone: "", opens_at: "10:00", closes_at: "23:00" };
+const emptyRestForm: RestForm = { name: "", description: "", phone: "", opens_at: "07:00", closes_at: "03:00" };
 const emptyItemForm = { name: "", description: "", price: "", category_id: 0 };
 
 /* ── Image upload to Supabase Storage ──
@@ -415,8 +415,8 @@ export default function AdminRestaurantsPage() {
       name:        r.name,
       description: r.description ?? "",
       phone:       r.phone       ?? "",
-      opens_at:    r.opens_at    ?? "10:00",
-      closes_at:   r.closes_at   ?? "23:00",
+      opens_at:    r.opens_at    ?? "07:00",
+      closes_at:   r.closes_at   ?? "03:00",
     });
     setImageFile(null);  setImagePreview(r.image_url       ?? null);
     setCoverFile(null);  setCoverPreview(r.cover_image_url ?? null);
@@ -442,10 +442,10 @@ export default function AdminRestaurantsPage() {
     else if (form.name.trim().length < 2)
       e.name = "الاسم يجب أن يكون حرفين على الأقل";
 
-    if (form.phone.trim()) {
-      if (!/^\d{11}$/.test(form.phone.trim()))
-        e.phone = "رقم الهاتف لازم يكون 11 رقم";
-    }
+    if (!form.phone.trim())
+      e.phone = "رقم الهاتف مطلوب";
+    else if (!/^\d{11}$/.test(form.phone.trim()))
+      e.phone = "رقم الهاتف لازم يكون 11 رقم";
 
     if (!form.opens_at)
       e.opens_at = "وقت الفتح مطلوب";
@@ -1419,7 +1419,7 @@ export default function AdminRestaurantsPage() {
                 />
               </Field>
 
-              <Field label="التليفون" error={touched.phone ? errors.phone : undefined}>
+              <Field label="التليفون *" error={touched.phone ? errors.phone : undefined}>
                 <input
                   type="tel"
                   value={restForm.phone}
