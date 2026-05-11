@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import { useAutoRefresh } from "@/hooks/useAutoRefresh";
 import { supabasePublic } from "@/lib/supabasePublic";
 
 const C = {
@@ -937,6 +938,7 @@ export default function AdminTeamPage() {
     fetchStaff();
     fetchDrivers();
   }, []);
+  useAutoRefresh(() => { fetchStaff(); fetchDrivers(); });
 
   return (
     <div className="flex flex-col gap-5">

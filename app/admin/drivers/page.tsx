@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { supabase } from "@/lib/supabase";
+import { useAutoRefresh } from "@/hooks/useAutoRefresh";
 
 const C = {
   bg:     "#0F172A",
@@ -204,6 +205,7 @@ function ShiftsSection({ assignments }: { assignments: Assignment[] }) {
   const [opErr,   setOpErr]   = useState<string | null>(null);
 
   useEffect(() => { fetchShifts(); }, []);
+  useAutoRefresh(fetchShifts);
 
   async function fetchShifts() {
     setLoading(true);
@@ -383,6 +385,7 @@ function DriversTab({ staffList, motos, shifts }: {
   const [formErrs, setFormErrs] = useState<AssignFormErrs>({});
 
   useEffect(() => { fetchAssignments(); }, []);
+  useAutoRefresh(fetchAssignments);
 
   async function fetchAssignments() {
     setLoading(true);
@@ -656,6 +659,7 @@ function MotosTab({ onRefresh }: { onRefresh: () => void }) {
   const [saveErr, setSaveErr] = useState<string | null>(null);
 
   useEffect(() => { fetchMotos(); }, []);
+  useAutoRefresh(fetchMotos);
 
   async function fetchMotos() {
     setLoading(true);
@@ -820,6 +824,7 @@ export default function AdminDriversPage() {
   const [shifts,    setShifts]    = useState<Shift[]>([]);
 
   useEffect(() => { fetchShared(); }, []);
+  useAutoRefresh(fetchShared);
 
   async function fetchShared() {
     try {

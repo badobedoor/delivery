@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import { useAutoRefresh } from "@/hooks/useAutoRefresh";
 
 const C = {
   bg:     "#0F172A",
@@ -139,6 +140,8 @@ export default function AdminSettingsPage() {
   const [s3Saving,        setS3Saving]        = useState(false);
   const [s3Saved,         setS3Saved]         = useState(false);
   const [s3Err,           setS3Err]           = useState<string | null>(null);
+
+  useAutoRefresh(fetchSettings, 30_000); // settings change rarely — 30 s throttle
 
   /* ── Load on mount ── */
   useEffect(() => {

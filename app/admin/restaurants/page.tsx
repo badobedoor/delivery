@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback, useRef } from "react";
+import { useAutoRefresh } from "@/hooks/useAutoRefresh";
 import Cropper from "react-easy-crop";
 import type { Area } from "react-easy-crop";
 import imageCompression from "browser-image-compression";
@@ -387,6 +388,7 @@ export default function AdminRestaurantsPage() {
   }
 
   useEffect(() => { fetchRestaurants(); }, []);
+  useAutoRefresh(fetchRestaurants);
 
   /* ── Filtered list ── */
   const filtered = rows.filter((r) => {

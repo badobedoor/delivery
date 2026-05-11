@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { supabase } from "@/lib/supabase";
+import { useAutoRefresh } from "@/hooks/useAutoRefresh";
 
 const C = {
   bg:     "#0F172A",
@@ -40,9 +41,8 @@ export default function AdminAreasPage() {
   const [feeSort,  setFeeSort]  = useState<"asc" | "desc">("asc");
 
   /* ── Fetch ── */
-  useEffect(() => {
-    fetchAreas();
-  }, []);
+  useEffect(() => { fetchAreas(); }, []);
+  useAutoRefresh(fetchAreas);
 
   async function fetchAreas() {
     setLoading(true);

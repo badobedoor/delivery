@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useMemo, useEffect, useCallback } from "react";
+import { useAutoRefresh } from "@/hooks/useAutoRefresh";
 import { supabase } from "@/lib/supabase";
 
 /* ── Palette ── */
@@ -1249,6 +1250,8 @@ export default function AdminAccountsPage() {
       setSettlementRequests([]);
     }
   }, []);
+
+  useAutoRefresh(loadData);
 
   /* ── Initial load + realtime subscriptions ── */
   useEffect(() => {

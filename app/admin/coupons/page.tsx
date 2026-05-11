@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { supabase } from "@/lib/supabase";
+import { useAutoRefresh } from "@/hooks/useAutoRefresh";
 
 const C = {
   bg:     "#0F172A",
@@ -95,6 +96,7 @@ export default function AdminCouponsPage() {
 
   /* ── Fetch ── */
   useEffect(() => { fetchCoupons(); fetchRestaurants(); }, []);
+  useAutoRefresh(fetchCoupons);
 
   async function fetchCoupons() {
     setLoading(true);

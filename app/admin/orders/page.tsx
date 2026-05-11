@@ -3,6 +3,7 @@
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase";
+import { useAutoRefresh } from "@/hooks/useAutoRefresh";
 
 const C = {
   card:   "#1E293B",
@@ -208,6 +209,8 @@ export default function AdminOrdersPage() {
   useEffect(() => {
     loadData().finally(() => setLoading(false));
   }, []);
+
+  useAutoRefresh(loadData);
 
   async function sendToRestaurant(order: DBNewOrder) {
     console.log("Order:", order);

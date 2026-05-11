@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback, useMemo } from "react";
+import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase";
 import { useCurrentUser } from "@/hooks/useCurrentUser";
@@ -710,6 +710,30 @@ export default function DriverAccountsPage() {
     totalOrders:     archiveOrders.length,
     totalCollected:  archiveOrders.reduce((s, o) => s + o.cashAmount + o.vodafoneAmount, 0),
   }), [archiveOrders]);
+
+  /* ── Smart auto-refresh ── */
+  const refreshFnRef   = useRef<(() => void) | null>(null);
+  const lastRefreshRef = useRef(0);
+
+  useEffect(() => {
+    refreshFnRef.current = () => { if (driverId) loadData(driverId); };
+  }, [driverId, loadData]);
+
+  useEffect(() => {
+    function onVisible() {
+      if (document.visibilityState !== "visible") return;
+      const now = Date.now();
+      if (now - lastRefreshRef.current < 5000) return;
+      lastRefreshRef.current = now;
+      refreshFnRef.current?.();
+    }
+    document.addEventListener("visibilitychange", onVisible);
+    window.addEventListener("focus", onVisible);
+    return () => {
+      document.removeEventListener("visibilitychange", onVisible);
+      window.removeEventListener("focus", onVisible);
+    };
+  }, []);
 
   /* Derived */
   const deliveredOrders    = todayOrders.filter((o) => o.status === "delivered");

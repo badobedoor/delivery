@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useCallback, useEffect } from "react";
+import { useState, useCallback, useEffect, useRef } from "react";
 import { supabase } from "@/lib/supabase";
 import { useCurrentUser } from "@/hooks/useCurrentUser";
 
@@ -841,6 +841,7 @@ export default function DriverOrdersPage() {
       .eq("id", id)
       .eq("status", "accepted");
     setActive((prev) => prev.map((o) => o.id === id ? { ...o, pickedUp: true } : o));
+    refreshFnRef.current?.(); // update lock state (hasPickedUp → ordersLocked)
   }, []);
 
   /* ── Deliver → open payment modal ── */
@@ -867,12 +868,41 @@ export default function DriverOrdersPage() {
         vodafone_amount: vodafone,
       }).eq("id", collectTarget.id);
       setCollectTarget(null);
+      refreshFnRef.current?.(); // sync accounts page data
     } catch (err) {
       console.error("Collection error:", err);
     } finally {
       setCollecting(false);
     }
   }, [collectTarget]);
+
+  /* ── Smart auto-refresh: keep a live ref to the current refresh fn ── */
+  const refreshFnRef   = useRef<(() => void) | null>(null);
+  const lastRefreshRef = useRef(0);
+
+  useEffect(() => {
+    refreshFnRef.current = () => {
+      if (!driverId) return;
+      loadData(driverId, shiftId);
+    };
+  }, [driverId, shiftId, loadData]);
+
+  /* Soft refetch on tab focus / visibility restore (throttled to 5 s) */
+  useEffect(() => {
+    function onVisible() {
+      if (document.visibilityState !== "visible") return;
+      const now = Date.now();
+      if (now - lastRefreshRef.current < 5000) return;
+      lastRefreshRef.current = now;
+      refreshFnRef.current?.();
+    }
+    document.addEventListener("visibilitychange", onVisible);
+    window.addEventListener("focus", onVisible);
+    return () => {
+      document.removeEventListener("visibilitychange", onVisible);
+      window.removeEventListener("focus", onVisible);
+    };
+  }, []);
 
   const canTakeNewOrders = !ordersLocked;
 
