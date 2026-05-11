@@ -4,9 +4,19 @@ import Link from "next/link";
 import { useEffect, useState } from "react";
 import { supabase } from "@/lib/supabase";
 
+/* ── Egyptian phone validation ── */
+function validateEgPhone(p: string): string | null {
+  const c = p.replace(/\s/g, "");
+  if (!c) return "رقم الهاتف مطلوب";
+  if (!/^01[0125][0-9]{8}$/.test(c))
+    return "رقم غير صحيح — يجب أن يبدأ بـ 010 أو 011 أو 012 أو 015 ويكون 11 رقمًا";
+  return null;
+}
+
+/* ── Menu items (القسائم before الإشعارات) ── */
 const menuItems = [
   {
-    label: "إعادة الطلب",
+    label: "طلباتي",          /* was: إعادة الطلب */
     href: "/orders",
     icon: (
       <svg width="18" height="18" viewBox="0 0 24 24" fill="none"
@@ -27,18 +37,7 @@ const menuItems = [
     ),
   },
   {
-    label: "الإشعارات",
-    href: "/notifications",
-    icon: (
-      <svg width="18" height="18" viewBox="0 0 24 24" fill="none"
-        stroke="var(--color-muted)" strokeWidth="1.8" strokeLinecap="round">
-        <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9" />
-        <path d="M13.73 21a2 2 0 0 1-3.46 0" />
-      </svg>
-    ),
-  },
-  {
-    label: "القسائم",
+    label: "القسائم",          /* swapped with الإشعارات */
     href: "/coupons",
     icon: (
       <svg width="18" height="18" viewBox="0 0 24 24" fill="none"
@@ -48,6 +47,17 @@ const menuItems = [
         <path d="M12 22V7" />
         <path d="M12 7H7.5a2.5 2.5 0 0 1 0-5C11 2 12 7 12 7z" />
         <path d="M12 7h4.5a2.5 2.5 0 0 0 0-5C13 2 12 7 12 7z" />
+      </svg>
+    ),
+  },
+  {
+    label: "الإشعارات",        /* swapped with القسائم */
+    href: "/notifications",
+    icon: (
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none"
+        stroke="var(--color-muted)" strokeWidth="1.8" strokeLinecap="round">
+        <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9" />
+        <path d="M13.73 21a2 2 0 0 1-3.46 0" />
       </svg>
     ),
   },
@@ -77,16 +87,72 @@ const menuItems = [
 ];
 
 export default function AccountPage() {
-  const [name, setName]           = useState("مرحبا");
-  const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
+  const [name,         setName]         = useState("مرحبا");
+  const [phone,        setPhone]        = useState("");
+  const [avatarUrl,    setAvatarUrl]    = useState<string | null>(null);
+  const [userId,       setUserId]       = useState<string | null>(null);
 
+  /* ── Phone modal state ── */
+  const [showModal,    setShowModal]    = useState(false);
+  const [newPhone,     setNewPhone]     = useState("");
+  const [phoneError,   setPhoneError]   = useState("");
+  const [phoneSaving,  setPhoneSaving]  = useState(false);
+  const [phoneSuccess, setPhoneSuccess] = useState(false);
+
+  /* ── Fetch user ── */
   useEffect(() => {
-    supabase.auth.getUser().then(({ data: { user } }) => {
+    supabase.auth.getUser().then(async ({ data: { user } }) => {
       if (!user) return;
+      setUserId(user.id);
       setName(user.user_metadata?.full_name || user.email || "مرحبا");
       setAvatarUrl(user.user_metadata?.avatar_url ?? null);
+
+      /* Fetch phone from users table */
+      const { data: profile } = await supabase
+        .from("users")
+        .select("phone")
+        .eq("id", user.id)
+        .maybeSingle();
+      setPhone(profile?.phone ?? user.phone ?? "");
     });
   }, []);
+
+  /* ── Save phone ── */
+  async function handleSavePhone() {
+    const err = validateEgPhone(newPhone);
+    if (err) { setPhoneError(err); return; }
+    if (!userId) return;
+
+    setPhoneSaving(true);
+    setPhoneError("");
+    const { error } = await supabase
+      .from("users")
+      .update({ phone: newPhone.trim() })
+      .eq("id", userId);
+
+    setPhoneSaving(false);
+    if (error) {
+      setPhoneError("حدث خطأ أثناء الحفظ، حاول مرة أخرى");
+      return;
+    }
+    setPhone(newPhone.trim());
+    setShowModal(false);
+    setNewPhone("");
+    setPhoneSuccess(true);
+    setTimeout(() => setPhoneSuccess(false), 2500);
+  }
+
+  function openModal() {
+    setNewPhone(phone);
+    setPhoneError("");
+    setShowModal(true);
+  }
+
+  /* ── Logout ── */
+  async function handleLogout() {
+    await supabase.auth.signOut();
+    window.location.href = "/";
+  }
 
   return (
     <div className="min-h-screen bg-[var(--color-surface)]">
@@ -95,15 +161,31 @@ export default function AccountPage() {
         {/* ── 1. Header ── */}
         <header className="bg-white px-4 pt-12 pb-5 border-b border-[var(--color-border)]">
           <div className="flex items-center justify-between">
-            {/* يمين: ترحيب */}
+
+            {/* يمين: ترحيب + اسم + هاتف */}
             <div>
               <h1 className="text-xl font-black text-[var(--color-secondary)]">مرحبا بك 👋</h1>
               <p className="text-sm text-[var(--color-muted)] mt-0.5">{name}</p>
+
+              {/* Phone row */}
+              <div className="flex items-center gap-2 mt-1">
+                <p className="text-xs text-[var(--color-muted)]">
+                  {phone || "لا يوجد رقم هاتف"}
+                </p>
+                <button
+                  onClick={openModal}
+                  className="text-[10px] font-semibold px-2 py-0.5 rounded-full border transition-colors active:scale-95"
+                  style={{ color: "var(--color-primary)", borderColor: "var(--color-primary)" }}
+                >
+                  تعديل
+                </button>
+              </div>
             </div>
 
             {/* يسار: صورة الحساب */}
             <div className="w-14 h-14 rounded-full bg-[var(--color-border)] flex items-center justify-center flex-shrink-0 overflow-hidden">
               {avatarUrl ? (
+                // eslint-disable-next-line @next/next/no-img-element
                 <img src={avatarUrl} alt="avatar" className="w-full h-full object-cover" referrerPolicy="no-referrer" />
               ) : (
                 <svg width="28" height="28" viewBox="0 0 24 24" fill="none"
@@ -114,10 +196,18 @@ export default function AccountPage() {
               )}
             </div>
           </div>
+
+          {/* Success toast */}
+          {phoneSuccess && (
+            <div className="mt-3 px-3 py-2 rounded-xl text-xs font-semibold text-center"
+              style={{ background: "#ECFDF5", color: "#059669" }}>
+              ✓ تم تحديث رقم الهاتف بنجاح
+            </div>
+          )}
         </header>
 
         {/* ── 2. Menu List ── */}
-        <main className="pb-24 px-4 pt-4">
+        <main className="pb-24 px-4 pt-4 flex flex-col gap-4">
           <div className="bg-white rounded-2xl border border-[var(--color-border)] overflow-hidden">
             {menuItems.map((item, i) => (
               <Link
@@ -127,12 +217,9 @@ export default function AccountPage() {
                   i < menuItems.length - 1 ? "border-b border-[var(--color-border)]" : ""
                 }`}
               >
-                {/* يمين: النص */}
                 <span className="text-sm font-semibold text-[var(--color-secondary)]">
                   {item.label}
                 </span>
-
-                {/* يسار: أيقونة + سهم */}
                 <div className="flex items-center gap-2">
                   <div className="w-8 h-8 rounded-full bg-[var(--color-surface)] flex items-center justify-center">
                     {item.icon}
@@ -145,29 +232,60 @@ export default function AccountPage() {
               </Link>
             ))}
           </div>
+
+          {/* ── Logout button ── */}
+          <button
+            onClick={handleLogout}
+            className="w-full flex items-center justify-between px-4 py-4 bg-white rounded-2xl border transition-colors active:bg-red-50"
+            style={{ borderColor: "#FECACA" }}
+          >
+            <span className="text-sm font-semibold" style={{ color: "#EF4444" }}>
+              تسجيل الخروج
+            </span>
+            <div className="flex items-center gap-2">
+              <div className="w-8 h-8 rounded-full flex items-center justify-center"
+                style={{ background: "#FEF2F2" }}>
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none"
+                  stroke="#EF4444" strokeWidth="1.8" strokeLinecap="round">
+                  <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />
+                  <polyline points="16 17 21 12 16 7" />
+                  <line x1="21" y1="12" x2="9" y2="12" />
+                </svg>
+              </div>
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none"
+                stroke="var(--color-muted)" strokeWidth="2" strokeLinecap="round">
+                <path d="M15 18l-6-6 6-6" />
+              </svg>
+            </div>
+          </button>
         </main>
 
         {/* ── 3. Bottom Navigation ── */}
         <nav className="fixed bottom-0 right-0 left-0 bg-white border-t border-[var(--color-border)] flex items-center justify-around py-2 z-20">
-          {/* الرئيسية */}
-          <Link href="/" className="flex flex-col items-center gap-0.5 px-4">
+          <Link href="/" className="flex flex-col items-center gap-0.5 px-3">
             <svg width="22" height="22" viewBox="0 0 24 24" fill="var(--color-muted)" stroke="none">
               <path d="M10 20v-6h4v6h5v-8h3L12 3 2 12h3v8z" />
             </svg>
             <span className="text-[10px] font-medium text-[var(--color-muted)]">الرئيسية</span>
           </Link>
 
-          {/* بحث */}
-          <button className="flex flex-col items-center gap-0.5 px-4">
+          <Link href="/search" className="flex flex-col items-center gap-0.5 px-3">
             <svg width="22" height="22" viewBox="0 0 24 24" fill="none"
               stroke="var(--color-muted)" strokeWidth="1.8">
               <circle cx="11" cy="11" r="8" /><path d="m21 21-4.35-4.35" />
             </svg>
             <span className="text-[10px] font-medium text-[var(--color-muted)]">بحث</span>
-          </button>
+          </Link>
 
-          {/* حسابي — active */}
-          <button className="flex flex-col items-center gap-0.5 px-4">
+          <Link href="/favorites" className="flex flex-col items-center gap-0.5 px-3">
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none"
+              stroke="var(--color-muted)" strokeWidth="1.8" strokeLinecap="round">
+              <path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z" />
+            </svg>
+            <span className="text-[10px] font-medium text-[var(--color-muted)]">المفضلة</span>
+          </Link>
+
+          <button className="flex flex-col items-center gap-0.5 px-3">
             <svg width="22" height="22" viewBox="0 0 24 24" fill="none"
               stroke="var(--color-primary)" strokeWidth="1.8">
               <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" />
@@ -178,6 +296,83 @@ export default function AccountPage() {
         </nav>
 
       </div>
+
+      {/* ── Phone Edit Modal (bottom sheet) ── */}
+      {showModal && (
+        <div
+          className="fixed inset-0 z-50 flex items-end justify-center"
+          style={{ background: "rgba(0,0,0,0.45)" }}
+          onClick={(e) => { if (e.target === e.currentTarget) setShowModal(false); }}
+        >
+          <div className="w-full max-w-[430px] bg-white rounded-t-3xl px-5 py-6 flex flex-col gap-4">
+
+            {/* Modal Header */}
+            <div className="flex items-center justify-between">
+              <h2 className="text-base font-black text-[var(--color-secondary)]">تعديل رقم الهاتف</h2>
+              <button
+                onClick={() => setShowModal(false)}
+                className="w-8 h-8 rounded-full bg-[var(--color-surface)] flex items-center justify-center text-sm"
+                style={{ color: "var(--color-muted)" }}
+              >✕</button>
+            </div>
+
+            {/* Current phone (readonly) */}
+            <div>
+              <label className="text-xs font-semibold text-[var(--color-muted)] block mb-1">
+                الرقم الحالي
+              </label>
+              <div className="w-full px-3 py-2.5 rounded-xl text-sm bg-[var(--color-surface)] text-[var(--color-muted)] border border-[var(--color-border)]">
+                {phone || "لا يوجد رقم"}
+              </div>
+            </div>
+
+            {/* New phone input */}
+            <div>
+              <label className="text-xs font-semibold text-[var(--color-muted)] block mb-1">
+                الرقم الجديد
+              </label>
+              <input
+                type="tel"
+                value={newPhone}
+                onChange={(e) => { setNewPhone(e.target.value); setPhoneError(""); }}
+                placeholder="01012345678"
+                maxLength={11}
+                className="w-full px-3 py-2.5 rounded-xl text-sm outline-none border transition-colors"
+                style={{
+                  background:   "var(--color-surface)",
+                  borderColor:  phoneError ? "#EF4444" : "var(--color-border)",
+                  color:        "var(--color-secondary)",
+                }}
+              />
+              {phoneError && (
+                <p className="text-xs mt-1.5 font-medium" style={{ color: "#EF4444" }}>
+                  ⚠ {phoneError}
+                </p>
+              )}
+            </div>
+
+            {/* Buttons */}
+            <div className="flex gap-3 pt-1">
+              <button
+                onClick={handleSavePhone}
+                disabled={phoneSaving}
+                className="flex-1 py-3 rounded-2xl text-sm font-bold transition-opacity disabled:opacity-60"
+                style={{ background: "var(--color-primary)", color: "#fff" }}
+              >
+                {phoneSaving ? "جارٍ الحفظ..." : "حفظ"}
+              </button>
+              <button
+                onClick={() => setShowModal(false)}
+                disabled={phoneSaving}
+                className="flex-1 py-3 rounded-2xl text-sm font-semibold border transition-colors"
+                style={{ color: "var(--color-muted)", borderColor: "var(--color-border)" }}
+              >
+                إلغاء
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

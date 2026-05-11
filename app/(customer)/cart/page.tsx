@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useState, useEffect } from "react";
 import { getCart, updateQty as updateCartQty, Cart, CartItem } from "@/lib/cart";
 import { supabase } from "@/lib/supabase";
+import { useRouter } from "next/navigation";
 
 function itemUnitPrice(item: CartItem): number {
   const sizePrice    = item.size?.price ?? 0;
@@ -32,6 +33,7 @@ type AppliedCoupon = {
 };
 
 export default function CartPage() {
+  const router = useRouter();
   const [cart,          setCart]          = useState<Cart | null>(null);
   const [coupon,        setCoupon]        = useState("");
   const [delivery,      setDelivery]      = useState(0);
@@ -39,6 +41,8 @@ export default function CartPage() {
   const [applying,      setApplying]      = useState(false);
   const [couponData,    setCouponData]    = useState<AppliedCoupon | null>(null);
   const [couponError,   setCouponError]   = useState("");
+  const [savingFav,     setSavingFav]     = useState(false);
+  const [favSaved,      setFavSaved]      = useState(false);
 
   useEffect(() => {
     setCart(getCart());
@@ -119,6 +123,29 @@ export default function CartPage() {
 
     setCouponData({ id: data.id, code, type: data.type, value: data.value, applies: data.applies_to, discount });
     setApplying(false);
+  }
+
+  async function handleSaveFavorite() {
+    const cartNow = getCart();
+    if (!cartNow) return;
+    setSavingFav(true);
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) { router.push("/auth/login"); setSavingFav(false); return; }
+    const subtotal = cartNow.items.reduce((s, i) => {
+      const extras = (i.extras ?? []).reduce((a, e) => a + e.price, 0);
+      return s + (i.price + (i.size?.price ?? 0) + extras) * i.qty;
+    }, 0);
+    await supabase.from("favorite_orders").insert({
+      user_id:         user.id,
+      restaurant_id:   cartNow.restaurantId,
+      restaurant_name: cartNow.restaurantName,
+      name:            cartNow.restaurantName,
+      items:           cartNow.items,
+      total:           subtotal,
+    });
+    setSavingFav(false);
+    setFavSaved(true);
+    setTimeout(() => setFavSaved(false), 2500);
   }
 
   function removeCoupon() {
@@ -347,8 +374,14 @@ export default function CartPage() {
         {/* ── 6. Bottom Bar ── */}
         <div className="fixed bottom-0 right-0 left-0 z-20">
           <div className="mx-auto w-full max-w-[430px] px-4 pb-6 pt-2 bg-white border-t border-[var(--color-border)]">
+            {/* Save favorite feedback */}
+            {favSaved && (
+              <p className="text-xs text-center font-semibold mb-2" style={{ color: "#059669" }}>
+                ✓ تم حفظ الطلب في المفضلة
+              </p>
+            )}
             <div className="flex gap-3">
-              {/* تنفيذ الطلب — يمين */}
+              {/* تنفيذ الطلب */}
               <Link
                 href="/checkout"
                 className="flex-1 bg-[var(--color-primary)] text-white text-sm font-bold py-3.5 rounded-2xl shadow-md active:scale-[0.98] transition-transform text-center"
@@ -356,13 +389,20 @@ export default function CartPage() {
                 تنفيذ الطلب
               </Link>
 
-              {/* أضف المزيد — يسار */}
-              <Link
-                href="/restaurants"
-                className="flex-1 border-2 border-[var(--color-primary)] text-[var(--color-primary)] text-sm font-bold py-3.5 rounded-2xl text-center active:scale-[0.98] transition-transform"
+              {/* حفظ في المفضلة */}
+              <button
+                onClick={handleSaveFavorite}
+                disabled={savingFav || favSaved}
+                className="px-4 py-3.5 rounded-2xl border-2 active:scale-[0.98] transition-all disabled:opacity-60 flex items-center justify-center"
+                style={{ borderColor: "#EF4444", color: "#EF4444" }}
+                title="حفظ في المفضلة"
               >
-                أضف المزيد
-              </Link>
+                <svg width="20" height="20" viewBox="0 0 24 24"
+                  fill={favSaved ? "#EF4444" : "none"}
+                  stroke="#EF4444" strokeWidth="2" strokeLinecap="round">
+                  <path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z" />
+                </svg>
+              </button>
             </div>
           </div>
         </div>

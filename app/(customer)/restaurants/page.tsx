@@ -94,25 +94,29 @@ export default function RestaurantsPage() {
       <div className="mx-auto w-full max-w-[430px]">
 
         {/* ── Header ── */}
-        <header className="bg-white px-4 pt-10 pb-4 sticky top-0 z-10 shadow-sm">
-          <div className="flex items-center justify-between">
+        <header className="bg-white px-4 pt-10 pb-3 sticky top-0 z-10 shadow-sm">
+          <div className="flex items-center justify-between gap-2">
 
-            {/* العنوان — يمين */}
-            <div className="flex items-center gap-1">
-              <span className="text-xs text-[var(--color-muted)]">التوصيل إلى</span>
-              <button className="flex items-center gap-0.5 text-sm font-semibold text-[var(--color-secondary)]">
-                {address}
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none"
-                  stroke="currentColor" strokeWidth="2.5">
-                  <path d="M6 9l6 6 6-6" />
-                </svg>
-              </button>
-            </div>
+            {/* حالا — يمين */}
+            <span className="text-xl font-black" style={{ color: "var(--color-primary)" }}>
+              حالا
+            </span>
 
-            {/* أيقونات — يسار */}
+            {/* العنوان — وسط */}
+            <button className="flex items-center gap-1 min-w-0">
+              <span className="text-sm font-semibold text-[var(--color-secondary)] truncate max-w-[180px]">
+                {address || "اختر عنوانك"}
+              </span>
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none"
+                stroke="var(--color-secondary)" strokeWidth="2.5" className="flex-shrink-0">
+                <path d="M6 9l6 6 6-6" />
+              </svg>
+            </button>
+
+            {/* بحث — يسار */}
             <button
               aria-label="بحث"
-              className="w-9 h-9 rounded-full bg-[var(--color-surface)] flex items-center justify-center"
+              className="w-9 h-9 rounded-full bg-[var(--color-surface)] flex items-center justify-center flex-shrink-0"
             >
               <svg width="18" height="18" viewBox="0 0 24 24" fill="none"
                 stroke="var(--color-secondary)" strokeWidth="1.8">
@@ -124,28 +128,33 @@ export default function RestaurantsPage() {
 
         <main className="pb-6 px-4">
 
-          {/* ── Banner ── */}
+          {/* ── Hero Banner ── */}
           <section className="pt-4">
-            <div className="relative w-full h-40 rounded-2xl overflow-hidden shadow-md">
-              {advertisement?.link ? (
-                <a href={advertisement.link} target="_blank" rel="noopener noreferrer" className="block w-full h-full">
-                  <Image
-                    src={advertisement.image_url ?? "https://images.unsplash.com/photo-1565299624946-b28f40a0ae38?w=800&h=300&fit=crop"}
-                    alt="إعلان"
-                    fill
-                    className="object-cover"
-                    priority
-                  />
-                </a>
-              ) : (
+            <div
+              className="w-full rounded-3xl flex items-center justify-between px-5 py-5 gap-2"
+              style={{ background: "#F5EDE6" }}
+            >
+              {/* Text — right (start in RTL) */}
+              <div className="flex-1 flex flex-col gap-1">
+                <p className="text-xl font-black leading-snug text-[var(--color-secondary)]">
+                  أهلاً بك في
+                </p>
+                <p className="text-2xl font-black leading-snug" style={{ color: "var(--color-primary)" }}>
+                  حالا دلفري
+                </p>
+              </div>
+
+              {/* Image — left (end in RTL) — explicit dimensions, no fill/absolute */}
+              <div className="flex-shrink-0">
                 <Image
-                  src={advertisement?.image_url ?? "https://images.unsplash.com/photo-1565299624946-b28f40a0ae38?w=800&h=300&fit=crop"}
-                  alt="إعلان"
-                  fill
-                  className="object-cover"
+                  src="/customerHomePage.png"
+                  alt="حالا دلفري"
+                  width={140}
+                  height={140}
+                  className="object-contain"
                   priority
                 />
-              )}
+              </div>
             </div>
           </section>
 
