@@ -8,6 +8,7 @@ export type CartItem = {
   description: string | null;
   extras?: { name: string; price: number }[];
   size?: { name: string; price: number };
+  notes?: string;
 }
 
 export type Cart = {

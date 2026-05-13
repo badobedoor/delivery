@@ -103,7 +103,7 @@ export default function OrderDetailPage() {
 
   return (
     <div className="min-h-screen bg-[var(--color-surface)]">
-      <div className="mx-auto w-full max-w-[430px]">
+      <div className="w-full">
 
         {/* ── 1. Header ── */}
         <header className="bg-white px-4 pt-10 pb-4 sticky top-0 z-10 shadow-sm">
@@ -244,7 +244,7 @@ export default function OrderDetailPage() {
 
         {/* ── Bottom Bar ── */}
         <div className="fixed bottom-0 right-0 left-0 z-20">
-          <div className="mx-auto w-full max-w-[430px] px-4 pb-6 pt-3 bg-white border-t border-[var(--color-border)]">
+          <div className="w-full px-4 pb-6 pt-3 bg-white border-t border-[var(--color-border)]">
             <Link
               href="/"
               className="w-full bg-[var(--color-primary)] text-white text-sm font-bold py-3.5 rounded-2xl flex items-center justify-center"

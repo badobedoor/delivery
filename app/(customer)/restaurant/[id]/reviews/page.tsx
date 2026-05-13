@@ -7,7 +7,7 @@ export default function RestaurantReviewsPage() {
 
   return (
     <div className="min-h-screen bg-white">
-      <div className="mx-auto w-full max-w-[430px]">
+      <div className="w-full">
 
         {/* ── Header ── */}
         <header className="bg-white px-4 pt-10 pb-3 border-b border-[#F3F4F6] flex items-center gap-3">

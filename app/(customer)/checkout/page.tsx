@@ -152,7 +152,7 @@ export default function CheckoutPage() {
 
   return (
     <div className="min-h-screen bg-[var(--color-surface)]">
-      <div className="mx-auto w-full max-w-[430px]">
+      <div className="w-full">
 
         {/* ── Header ── */}
         <header className="bg-white px-4 pt-10 pb-4 sticky top-0 z-10 shadow-sm">
@@ -255,7 +255,7 @@ export default function CheckoutPage() {
 
         {/* ── Bottom: تأكيد ── */}
         <div className="fixed bottom-0 right-0 left-0 z-20">
-          <div className="mx-auto w-full max-w-[430px] px-4 pb-6 pt-3 bg-white border-t border-[var(--color-border)]">
+          <div className="w-full px-4 pb-6 pt-3 bg-white border-t border-[var(--color-border)]">
             <button
               onClick={handleConfirm}
               disabled={submitting}
@@ -278,7 +278,7 @@ export default function CheckoutPage() {
           onClick={() => setShowAddressPicker(false)}
         >
           <div
-            className="fixed bottom-0 right-0 left-0 bg-white rounded-t-3xl p-4 z-50 max-w-[430px] mx-auto"
+            className="fixed bottom-0 right-0 left-0 bg-white rounded-t-3xl p-4 z-50"
             onClick={(e) => e.stopPropagation()}
           >
             {/* العنوان */}

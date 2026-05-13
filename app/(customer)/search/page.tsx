@@ -61,7 +61,7 @@ export default function SearchPage() {
 
   return (
     <div className="min-h-screen bg-[var(--color-surface)]">
-      <div className="mx-auto w-full max-w-[430px]">
+      <div className="w-full">
 
         {/* ── Header ── */}
         <header className="bg-white px-4 pt-10 pb-3 sticky top-0 z-10 shadow-sm">

@@ -80,11 +80,11 @@ function QuantityCounter({ itemId, name, price, description, imageUrl, restauran
   }
 
   return (
-    <div className="flex items-center gap-2 mt-2">
+    <>
       {qty === 0 ? (
         <button
           onClick={handleAdd}
-          className="w-7 h-7 rounded-full bg-[var(--color-primary)] flex items-center justify-center shadow"
+          className="w-8 h-8 rounded-full bg-[var(--color-primary)] flex items-center justify-center shadow"
         >
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2.5">
             <path d="M12 5v14M5 12h14" />
@@ -92,27 +92,26 @@ function QuantityCounter({ itemId, name, price, description, imageUrl, restauran
         </button>
       ) : (
         <div className="flex items-center gap-2">
-          <button
-            onClick={handleDecrease}
-            className="w-7 h-7 rounded-full bg-[var(--color-surface)] border border-[var(--color-border)] flex items-center justify-center"
-          >
-            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="var(--color-secondary)" strokeWidth="2.5">
-              <path d="M5 12h14" />
-            </svg>
-          </button>
-          <span className="text-sm font-bold text-[var(--color-secondary)] w-4 text-center">{qty}</span>
+          {/* + — أول عنصر → يمين في RTL */}
           <button
             onClick={handleIncrease}
-            className="w-7 h-7 rounded-full bg-[var(--color-primary)] flex items-center justify-center"
+            className="w-8 h-8 rounded-full bg-[var(--color-primary)] flex items-center justify-center"
           >
             <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2.5">
               <path d="M12 5v14M5 12h14" />
             </svg>
           </button>
+          <span className="text-sm font-bold text-[var(--color-secondary)] w-5 text-center">{qty}</span>
+          {/* - — آخر عنصر → يسار في RTL */}
+          <button
+            onClick={handleDecrease}
+            className="w-8 h-8 rounded-full bg-[var(--color-surface)] border border-[var(--color-border)] flex items-center justify-center"
+          >
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="var(--color-secondary)" strokeWidth="2.5">
+              <path d="M5 12h14" />
+            </svg>
+          </button>
         </div>
-      )}
-      {qty > 0 && (
-        <span className="text-xs text-[var(--color-muted)]">{formatPrice(price * qty)}</span>
       )}
       <ConfirmModal
         isOpen={conflictMsg !== null}
@@ -131,7 +130,7 @@ function QuantityCounter({ itemId, name, price, description, imageUrl, restauran
           setConflictMsg(null);
         }}
       />
-    </div>
+    </>
   );
 }
 
@@ -205,8 +204,8 @@ export default function RestaurantPage() {
   }
 
   return (
-    <div className="min-h-screen bg-[var(--color-surface)]">
-      <div className="mx-auto w-full max-w-[430px]">
+    <div className="min-h-screen bg-white">
+      <div className="w-full relative">
 
         {/* ── Header: صورة الغلاف ── */}
         <div className="relative w-full h-52">
@@ -295,50 +294,60 @@ export default function RestaurantPage() {
             <div className="flex flex-col divide-y divide-[var(--color-border)]">
               {activeMeals.map((meal) => {
                 const hasExtras = meal.extra_groups.length > 0;
-                return hasExtras ? (
-                  <button
-                    key={meal.id}
-                    onClick={() => setSheetMeal(toSheetMeal(meal))}
-                    className="flex items-start gap-3 py-3 w-full text-right"
-                  >
-                    <div className="relative w-20 h-20 flex-shrink-0 rounded-xl overflow-hidden">
-                      <Image
-                        src={meal.image_url ?? "https://images.unsplash.com/photo-1546069901-ba9599a7e63c?w=200&h=200&fit=crop"}
-                        alt={meal.name}
-                        fill
-                        className="object-cover"
-                      />
+                const FALLBACK  = "https://images.unsplash.com/photo-1546069901-ba9599a7e63c?w=200&h=200&fit=crop";
+
+                const cardInner = (
+                  <>
+                    {/* القسم 1 — الصورة (يمين في RTL) */}
+                    <div className={`relative flex-shrink-0 ${hasExtras ? "w-20 h-20" : "w-28 h-28"} ml-3 rounded-xl overflow-hidden`}>
+                      <Image src={meal.image_url ?? FALLBACK} alt={meal.name} fill className="object-cover" />
                     </div>
-                    <div className="flex-1 min-w-0">
-                      <p className="text-sm font-bold text-[var(--color-secondary)]">{meal.name}</p>
-                      <p className="text-xs text-[var(--color-muted)] mt-0.5 line-clamp-2 leading-relaxed">{meal.description}</p>
-                      <p className="text-sm font-bold text-[var(--color-primary)] mt-1.5">{formatPrice(meal.price)}</p>
+
+                    {/* القسم 2 — الاسم والوصف والزرار (وسط) */}
+                    <div className={`flex-1 flex flex-col justify-between ${hasExtras ? "h-20" : "h-28"} min-w-0 px-1`}>
+                      <div>
+                        <p className="text-base font-bold text-[#1A1A1A] leading-snug">{meal.name}</p>
+                        {meal.description && (
+                          <p className="text-sm text-[#6B7280] line-clamp-2 mt-0.5">{meal.description}</p>
+                        )}
+                      </div>
+                      {!hasExtras && (
+                        <div className="mt-3">
+                        <QuantityCounter
+                          itemId={String(meal.id)}
+                          name={meal.name}
+                          price={meal.price}
+                          description={meal.description}
+                          imageUrl={meal.image_url}
+                          restaurantId={id}
+                          restaurantName={restaurant.name}
+                        />
+                        </div>
+                      )}
                     </div>
-                  </button>
-                ) : (
-                  <div key={meal.id} className="flex items-start gap-3 py-3">
-                    <div className="relative w-20 h-20 flex-shrink-0 rounded-xl overflow-hidden">
-                      <Image
-                        src={meal.image_url ?? "https://images.unsplash.com/photo-1546069901-ba9599a7e63c?w=200&h=200&fit=crop"}
-                        alt={meal.name}
-                        fill
-                        className="object-cover"
-                      />
+
+                    {/* القسم 3 — السعر (يسار في RTL)، عرض ثابت */}
+                    <div className="flex-shrink-0 w-16 text-left">
+                      <p className="text-xl font-black text-[#FF6000]">{meal.price} ج</p>
                     </div>
-                    <div className="flex-1 min-w-0">
-                      <p className="text-sm font-bold text-[var(--color-secondary)]">{meal.name}</p>
-                      <p className="text-xs text-[var(--color-muted)] mt-0.5 line-clamp-2 leading-relaxed">{meal.description}</p>
-                      <p className="text-sm font-bold text-[var(--color-primary)] mt-1.5">{formatPrice(meal.price)}</p>
-                      <QuantityCounter
-                        itemId={String(meal.id)}
-                        name={meal.name}
-                        price={meal.price}
-                        description={meal.description}
-                        imageUrl={meal.image_url}
-                        restaurantId={id}
-                        restaurantName={restaurant.name}
-                      />
+                  </>
+                );
+
+                if (hasExtras) {
+                  return (
+                    <div
+                      key={meal.id}
+                      className="flex items-center py-3 cursor-pointer active:opacity-75 transition-opacity"
+                      onClick={() => setSheetMeal(toSheetMeal(meal))}
+                    >
+                      {cardInner}
                     </div>
+                  );
+                }
+
+                return (
+                  <div key={meal.id} className="flex items-center py-3">
+                    {cardInner}
                   </div>
                 );
               })}

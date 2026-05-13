@@ -113,7 +113,7 @@ export default function NewAddressPage() {
 
   return (
     <div className="min-h-screen bg-[var(--color-surface)]">
-      <div className="mx-auto w-full max-w-[430px]">
+      <div className="w-full">
 
         {/* ── Header ── */}
         <header className="bg-white px-4 pt-10 pb-4 sticky top-0 z-10 shadow-sm">
@@ -201,7 +201,7 @@ export default function NewAddressPage() {
 
         {/* ── Bottom: حفظ ── */}
         <div className="fixed bottom-0 right-0 left-0 z-20">
-          <div className="mx-auto w-full max-w-[430px] px-4 pb-6 pt-2 bg-white border-t border-[var(--color-border)]">
+          <div className="w-full px-4 pb-6 pt-2 bg-white border-t border-[var(--color-border)]">
             <button
               onClick={handleSave}
               disabled={saving}

@@ -156,7 +156,7 @@ export default function AccountPage() {
 
   return (
     <div className="min-h-screen bg-[var(--color-surface)]">
-      <div className="mx-auto w-full max-w-[430px]">
+      <div className="w-full">
 
         {/* ── 1. Header ── */}
         <header className="bg-white px-4 pt-12 pb-5 border-b border-[var(--color-border)]">
@@ -304,7 +304,7 @@ export default function AccountPage() {
           style={{ background: "rgba(0,0,0,0.45)" }}
           onClick={(e) => { if (e.target === e.currentTarget) setShowModal(false); }}
         >
-          <div className="w-full max-w-[430px] bg-white rounded-t-3xl px-5 py-6 flex flex-col gap-4">
+          <div className="w-full bg-white rounded-t-3xl px-5 py-6 flex flex-col gap-4">
 
             {/* Modal Header */}
             <div className="flex items-center justify-between">

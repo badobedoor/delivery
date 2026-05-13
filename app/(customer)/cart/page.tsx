@@ -172,7 +172,7 @@ export default function CartPage() {
 
   return (
     <div className="min-h-screen bg-[var(--color-surface)]">
-      <div className="mx-auto w-full max-w-[430px]">
+      <div className="w-full">
 
         {/* ── 1. Header ── */}
         <header className="bg-white px-4 pt-10 pb-4 sticky top-0 z-10 shadow-sm">
@@ -218,6 +218,9 @@ export default function CartPage() {
                     {/* المعلومات */}
                     <div className="flex-1 min-w-0">
                       <p className="text-sm font-bold text-[var(--color-secondary)]">{item.name}</p>
+                      {item.notes && (
+                        <p className="text-xs text-[#9CA3AF] mt-0.5">{item.notes}</p>
+                      )}
                       {item.size && (
                         <p className="text-xs text-[var(--color-muted)] mt-0.5">
                           {item.size.name} — {item.size.price} ج.م
@@ -373,7 +376,7 @@ export default function CartPage() {
 
         {/* ── 6. Bottom Bar ── */}
         <div className="fixed bottom-0 right-0 left-0 z-20">
-          <div className="mx-auto w-full max-w-[430px] px-4 pb-6 pt-2 bg-white border-t border-[var(--color-border)]">
+          <div className="w-full px-4 pb-6 pt-2 bg-white border-t border-[var(--color-border)]">
             {/* Save favorite feedback */}
             {favSaved && (
               <p className="text-xs text-center font-semibold mb-2" style={{ color: "#059669" }}>

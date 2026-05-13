@@ -96,6 +96,7 @@ export default function MealBottomSheet({ meal, onClose, restaurantId, restauran
         const extra = meal.extras!.find((e) => e.id === id)!;
         return { name: extra.name, price: extra.price };
       }),
+      notes: note.trim() || undefined,
     };
     const result = addToCart(restaurantId, restaurantName, cartItem);
     if (result.conflict) {
@@ -116,7 +117,7 @@ export default function MealBottomSheet({ meal, onClose, restaurantId, restauran
 
       {/* Sheet */}
       <div
-        className="relative w-full max-w-[430px] bg-white rounded-t-3xl overflow-hidden max-h-[92vh] flex flex-col animate-slide-up"
+        className="relative w-full bg-white rounded-t-3xl overflow-hidden max-h-[92vh] flex flex-col animate-slide-up"
         onClick={(e) => e.stopPropagation()}
       >
 
@@ -166,18 +167,7 @@ export default function MealBottomSheet({ meal, onClose, restaurantId, restauran
 
               {/* عداد الكمية — يسار */}
               <div className="flex items-center gap-2 mt-1">
-                <button
-                  onClick={() => setQty((q) => Math.max(1, q - 1))}
-                  className="w-8 h-8 rounded-full border border-[var(--color-border)] bg-[var(--color-surface)] flex items-center justify-center"
-                >
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none"
-                    stroke="var(--color-secondary)" strokeWidth="2.5">
-                    <path d="M5 12h14" />
-                  </svg>
-                </button>
-                <span className="text-base font-bold text-[var(--color-secondary)] w-5 text-center">
-                  {qty}
-                </span>
+                {/* + — أول عنصر → يمين في RTL */}
                 <button
                   onClick={() => setQty((q) => q + 1)}
                   className="w-8 h-8 rounded-full bg-[var(--color-primary)] flex items-center justify-center"
@@ -187,6 +177,19 @@ export default function MealBottomSheet({ meal, onClose, restaurantId, restauran
                     <path d="M12 5v14M5 12h14" />
                   </svg>
                 </button>
+                <span className="text-base font-bold text-[var(--color-secondary)] w-5 text-center">
+                  {qty}
+                </span>
+                {/* - — آخر عنصر → يسار في RTL */}
+                <button
+                  onClick={() => setQty((q) => Math.max(1, q - 1))}
+                  className="w-8 h-8 rounded-full border border-[var(--color-border)] bg-[var(--color-surface)] flex items-center justify-center"
+                >
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none"
+                    stroke="var(--color-secondary)" strokeWidth="2.5">
+                    <path d="M5 12h14" />
+                  </svg>
+                </button>
               </div>
             </div>
           </div>
@@ -194,20 +197,20 @@ export default function MealBottomSheet({ meal, onClose, restaurantId, restauran
           {/* ── 3. الحجم ── */}
           {meal.sizes && meal.sizes.length > 0 && (
             <div className="px-4 pt-4 pb-3 border-b border-[var(--color-border)]">
-              <h3 className="text-sm font-bold text-[var(--color-secondary)] mb-3">
+              <h3 className="text-base font-bold text-[var(--color-secondary)] mb-2">
                 إختيارك من الحجم:
-                <span className="text-[var(--color-muted)] font-normal"> (اختر 1)</span>
+                <span className="text-sm text-[var(--color-muted)] font-normal"> (اختر 1)</span>
               </h3>
-              <div className="flex flex-col gap-3">
+              <div className="flex flex-col">
                 {meal.sizes.map((size) => {
                   const selected = selectedSize === size.id;
                   return (
                     <label
                       key={size.id}
-                      className="flex items-center justify-between cursor-pointer"
+                      className="flex items-center justify-between cursor-pointer py-3"
                       onClick={() => setSelectedSize(size.id)}
                     >
-                      <span className={`text-sm transition-colors ${selected ? "font-bold text-[var(--color-primary)]" : "text-[var(--color-secondary)]"}`}>
+                      <span className={`text-base transition-colors ${selected ? "font-bold text-[var(--color-primary)]" : "text-[var(--color-secondary)]"}`}>
                         {size.name}
                         {size.price !== undefined && (
                           <span className="font-normal text-[var(--color-muted)] mr-1">— {size.price} ج.م</span>
@@ -232,24 +235,24 @@ export default function MealBottomSheet({ meal, onClose, restaurantId, restauran
           {/* ── 4. الإضافات ── */}
           {meal.extras && meal.extras.length > 0 && (
             <div className="px-4 pt-4 pb-3 border-b border-[var(--color-border)]">
-              <h3 className="text-sm font-bold text-[var(--color-secondary)] mb-3">
+              <h3 className="text-base font-bold text-[var(--color-secondary)] mb-2">
                 الإضافات:
-                <span className="text-[var(--color-muted)] font-normal"> (اختياري)</span>
+                <span className="text-sm text-[var(--color-muted)] font-normal"> (اختياري)</span>
               </h3>
-              <div className="flex flex-col gap-3">
+              <div className="flex flex-col">
                 {meal.extras.map((extra) => {
                   const checked = selectedExtras.includes(extra.id);
                   return (
                     <label
                       key={extra.id}
-                      className="flex items-center justify-between cursor-pointer"
+                      className="flex items-center justify-between cursor-pointer py-3"
                     >
                       {/* الاسم — يمين */}
-                      <span className="text-sm text-[var(--color-secondary)]">{extra.name}</span>
+                      <span className="text-base text-[var(--color-secondary)]">{extra.name}</span>
 
                       {/* السعر + checkbox — يسار */}
                       <div className="flex items-center gap-2">
-                        <span className="text-xs text-[var(--color-muted)]">+{extra.price} ج.م</span>
+                        <span className="text-sm font-semibold text-[var(--color-muted)]">+{extra.price} ج.م</span>
                         <div
                           className={`w-5 h-5 rounded flex items-center justify-center border-2 transition-colors ${
                             checked

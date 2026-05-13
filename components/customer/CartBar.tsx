@@ -26,8 +26,8 @@ export default function CartBar() {
   if (count === 0) return null;
 
   return (
-    <div className="fixed bottom-0 right-0 left-0 z-50">
-      <div className="mx-auto w-full max-w-[430px] px-4 pb-6 pt-2">
+    <div className="fixed bottom-0 left-0 right-0 w-full z-50">
+      <div className="px-4 pb-6 pt-2">
         <Link
           href="/cart"
           className="flex items-center justify-between bg-[var(--color-primary)] rounded-2xl px-4 py-3.5 shadow-xl active:scale-[0.98] transition-transform"
