@@ -3,126 +3,36 @@
 import Image from "next/image";
 import Link from "next/link";
 import { useState, useEffect } from "react";
-import { getCart, updateQty as updateCartQty, Cart, CartItem } from "@/lib/cart";
+import { getCart, updateQty as updateCartQty, CartItem } from "@/lib/cart";
 import { supabase } from "@/lib/supabase";
 import { useRouter } from "next/navigation";
 
 function itemUnitPrice(item: CartItem): number {
-  const sizePrice    = item.size?.price ?? 0;
-  const extrasPrice  = (item.extras ?? []).reduce((s, e) => s + e.price, 0);
+  const sizePrice   = item.size?.price ?? 0;
+  const extrasPrice = (item.extras ?? []).reduce((s, e) => s + e.price, 0);
   return item.price + sizePrice + extrasPrice;
 }
 
-function InfoIcon() {
-  return (
-    <svg width="14" height="14" viewBox="0 0 24 24" fill="none"
-      stroke="var(--color-muted)" strokeWidth="2" className="flex-shrink-0">
-      <circle cx="12" cy="12" r="10" />
-      <path d="M12 16v-4M12 8h.01" strokeLinecap="round" />
-    </svg>
-  );
-}
-
-type AppliedCoupon = {
-  id:       number;
-  code:     string;
-  type:     string;
-  value:    number;
-  applies:  string;
-  discount: number;
-};
-
 export default function CartPage() {
   const router = useRouter();
-  const [cart,          setCart]          = useState<Cart | null>(null);
-  const [coupon,        setCoupon]        = useState("");
-  const [delivery,      setDelivery]      = useState(0);
-  const [service,       setService]       = useState(0);
-  const [applying,      setApplying]      = useState(false);
-  const [couponData,    setCouponData]    = useState<AppliedCoupon | null>(null);
-  const [couponError,   setCouponError]   = useState("");
-  const [savingFav,     setSavingFav]     = useState(false);
-  const [favSaved,      setFavSaved]      = useState(false);
+  const [cart,         setCart]         = useState(getCart);
+  const [orderNote,    setOrderNote]    = useState(() =>
+    typeof window !== "undefined" ? (localStorage.getItem("hala_order_note") ?? "") : ""
+  );
+  const [savingFav,            setSavingFav]            = useState(false);
+  const [favSaved,             setFavSaved]             = useState(false);
+  const [showSaveFavModal,     setShowSaveFavModal]     = useState(false);
+  const [favoriteName,         setFavoriteName]         = useState("");
+
+  useEffect(() => { setCart(getCart()); }, []);
 
   useEffect(() => {
-    setCart(getCart());
-
-    async function fetchSettings() {
-      const { data } = await supabase
-        .from("settings")
-        .select("delivery_fee, service_fee")
-        .single();
-      if (data) {
-        setDelivery(data.delivery_fee ?? 0);
-        setService(data.service_fee  ?? 0);
-      }
-    }
-    fetchSettings();
-  }, []);
+    localStorage.setItem("hala_order_note", orderNote);
+  }, [orderNote]);
 
   function handleQtyChange(itemId: string, newQty: number) {
     updateCartQty(itemId, newQty);
     setCart(getCart());
-  }
-
-  async function applyCoupon() {
-    const code = coupon.trim();
-    if (!code) return;
-    setApplying(true);
-    setCouponError("");
-    setCouponData(null);
-
-    const cartNow = getCart();
-    const subtotalNow = (cartNow?.items ?? []).reduce(
-      (sum, item) => sum + (item.price + (item.size?.price ?? 0) + (item.extras ?? []).reduce((s, e) => s + e.price, 0)) * item.qty,
-      0,
-    );
-
-    const { data, error } = await supabase
-      .from("coupons")
-      .select("id, code, type, value, applies_to, min_order, expires_at, is_active, restaurant_id")
-      .eq("code", code)   /* case-sensitive — no toLowerCase */
-      .eq("is_active", true)
-      .maybeSingle();
-
-    if (error || !data) {
-      setCouponError("الكوبون غير موجود أو غير صالح");
-      setApplying(false);
-      return;
-    }
-
-    if (data.expires_at && new Date(data.expires_at) < new Date()) {
-      setCouponError("انتهت صلاحية هذا الكوبون");
-      setApplying(false);
-      return;
-    }
-
-    const minOrder = data.min_order ?? 0;
-    if (minOrder > 0 && subtotalNow < minOrder) {
-      setCouponError(`الحد الأدنى لاستخدام هذا الكوبون هو ${minOrder} ج.م`);
-      setApplying(false);
-      return;
-    }
-
-    if (data.restaurant_id !== null && cartNow && data.restaurant_id !== cartNow.restaurantId) {
-      setCouponError("هذا الكوبون غير صالح لهذا المطعم");
-      setApplying(false);
-      return;
-    }
-
-    let discount = 0;
-    if (data.type === "نسبة مئوية") {
-      const base =
-        data.applies_to === "توصيل" ? delivery :
-        data.applies_to === "أكل"   ? subtotalNow :
-        subtotalNow + delivery;
-      discount = Math.min(Math.round(base * data.value / 100), base);
-    } else {
-      discount = Math.min(data.value, subtotalNow + delivery);
-    }
-
-    setCouponData({ id: data.id, code, type: data.type, value: data.value, applies: data.applies_to, discount });
-    setApplying(false);
   }
 
   async function handleSaveFavorite() {
@@ -131,32 +41,28 @@ export default function CartPage() {
     setSavingFav(true);
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) { router.push("/auth/login"); setSavingFav(false); return; }
-    const subtotal = cartNow.items.reduce((s, i) => {
-      const extras = (i.extras ?? []).reduce((a, e) => a + e.price, 0);
-      return s + (i.price + (i.size?.price ?? 0) + extras) * i.qty;
+    const subtotalNow = cartNow.items.reduce((s, i) => {
+      const ex = (i.extras ?? []).reduce((a, e) => a + e.price, 0);
+      return s + (i.price + (i.size?.price ?? 0) + ex) * i.qty;
     }, 0);
     await supabase.from("favorite_orders").insert({
       user_id:         user.id,
       restaurant_id:   cartNow.restaurantId,
       restaurant_name: cartNow.restaurantName,
-      name:            cartNow.restaurantName,
+      name:            favoriteName.trim() || cartNow.restaurantName,
       items:           cartNow.items,
-      total:           subtotal,
+      total:           subtotalNow,
     });
     setSavingFav(false);
     setFavSaved(true);
-    setTimeout(() => setFavSaved(false), 2500);
-  }
-
-  function removeCoupon() {
-    setCouponData(null);
-    setCouponError("");
-    setCoupon("");
+    setShowSaveFavModal(false);
+    setFavoriteName("");
+    setTimeout(() => setFavSaved(false), 3000);
   }
 
   if (!cart) {
     return (
-      <div className="min-h-screen bg-[var(--color-surface)] flex flex-col items-center justify-center gap-4">
+      <div className="min-h-screen bg-white flex flex-col items-center justify-center gap-4">
         <p className="text-[var(--color-secondary)] font-bold">سلتك فارغة</p>
         <Link href="/restaurants" className="text-sm text-[var(--color-primary)] underline">
           تصفّح المطاعم
@@ -167,17 +73,15 @@ export default function CartPage() {
 
   const items    = cart.items;
   const subtotal = items.reduce((sum, item) => sum + itemUnitPrice(item) * item.qty, 0);
-  const discount = couponData?.discount ?? 0;
-  const total    = Math.max(0, subtotal + delivery + service - discount);
+  const FALLBACK = "https://images.unsplash.com/photo-1546069901-ba9599a7e63c?w=200&h=200&fit=crop";
 
   return (
     <div className="min-h-screen bg-[var(--color-surface)]">
       <div className="w-full">
 
-        {/* ── 1. Header ── */}
+        {/* ── Header ── */}
         <header className="bg-white px-4 pt-10 pb-4 sticky top-0 z-10 shadow-sm">
           <div className="flex items-center justify-between">
-            {/* زرار الرجوع — يسار */}
             <Link href="/restaurants"
               className="w-9 h-9 rounded-full bg-[var(--color-surface)] flex items-center justify-center">
               <svg width="20" height="20" viewBox="0 0 24 24" fill="none"
@@ -185,232 +89,196 @@ export default function CartPage() {
                 <path d="M15 18l-6-6 6-6" />
               </svg>
             </Link>
-
-            {/* العنوان — وسط */}
             <div className="text-center">
               <h1 className="text-base font-black text-[var(--color-secondary)]">سلة المشتريات</h1>
               <p className="text-xs text-[var(--color-muted)] mt-0.5">{cart.restaurantName}</p>
             </div>
-
-            {/* فراغ للتوازن */}
             <div className="w-9" />
           </div>
         </header>
 
-        <main className="pb-28 px-4 flex flex-col gap-4 pt-4">
+        <main className="pb-[240px] px-4 flex flex-col gap-4 pt-4">
 
-          {/* ── 2. قائمة الوجبات ── */}
+          {/* ── قائمة الوجبات ── */}
           <section className="bg-white rounded-2xl overflow-hidden border border-[var(--color-border)]">
             <div className="divide-y divide-[var(--color-border)]">
-              {items.map((item) => (
-                <div key={item.id} className="p-3">
-                  <div className="flex items-start gap-3">
-                    {/* صورة — يمين */}
-                    <div className="relative w-16 h-16 flex-shrink-0 rounded-xl overflow-hidden">
-                      <Image
-                        src={item.image_url ?? "https://images.unsplash.com/photo-1546069901-ba9599a7e63c?w=200&h=200&fit=crop"}
-                        alt={item.name}
-                        fill
-                        className="object-cover"
-                      />
+              {items.map((item) => {
+                const lineTotal = itemUnitPrice(item) * item.qty;
+                const subtitle  = [
+                  item.size && `${item.size.name}`,
+                  item.extras?.length && item.extras.map(e => e.name).join("، "),
+                  item.notes,
+                ].filter(Boolean).join(" · ");
+
+                return (
+                  <div key={item.id} className="flex items-center py-3 px-3">
+
+                    {/* القسم 1 — الصورة (يمين في RTL) */}
+                    <div className="relative flex-shrink-0 w-20 h-20 ml-3 rounded-xl overflow-hidden">
+                      <Image src={item.image_url ?? FALLBACK} alt={item.name} fill className="object-cover" />
                     </div>
 
-                    {/* المعلومات */}
-                    <div className="flex-1 min-w-0">
-                      <p className="text-sm font-bold text-[var(--color-secondary)]">{item.name}</p>
-                      {item.notes && (
-                        <p className="text-xs text-[#9CA3AF] mt-0.5">{item.notes}</p>
-                      )}
-                      {item.size && (
-                        <p className="text-xs text-[var(--color-muted)] mt-0.5">
-                          {item.size.name} — {item.size.price} ج.م
-                        </p>
-                      )}
-                      {item.extras && item.extras.length > 0 && (
-                        <p className="text-xs text-[var(--color-muted)] mt-0.5 line-clamp-1">
-                          {item.extras.map((e) => e.name).join("، ")}
-                        </p>
-                      )}
-                      <p className="text-sm font-bold text-[var(--color-primary)] mt-1">
-                        {itemUnitPrice(item) * item.qty} ج.م
-                      </p>
+                    {/* القسم 2 — الاسم والتفاصيل والعداد */}
+                    <div className="flex-1 flex flex-col justify-between h-20 min-w-0 px-1">
+                      <div>
+                        <p className="text-base font-bold text-[#1A1A1A] leading-snug truncate">{item.name}</p>
+                        {subtitle && (
+                          <p className="text-xs text-[#6B7280] mt-0.5 line-clamp-1">{subtitle}</p>
+                        )}
+                      </div>
+                      {/* العداد: + يمين، - يسار */}
+                      <div className="flex items-center gap-2">
+                        <button
+                          onClick={() => handleQtyChange(item.id, item.qty + 1)}
+                          className="w-9 h-9 rounded-full bg-[var(--color-primary)] flex items-center justify-center flex-shrink-0"
+                        >
+                          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2.5">
+                            <path d="M12 5v14M5 12h14" />
+                          </svg>
+                        </button>
+                        <span className="text-sm font-bold text-[#1A1A1A] w-6 text-center">{item.qty}</span>
+                        <button
+                          onClick={() => handleQtyChange(item.id, item.qty - 1)}
+                          className="w-9 h-9 rounded-full bg-white border border-[var(--color-border)] flex items-center justify-center flex-shrink-0"
+                        >
+                          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--color-secondary)" strokeWidth="2.5">
+                            <path d="M5 12h14" />
+                          </svg>
+                        </button>
+                      </div>
                     </div>
+
+                    {/* القسم 3 — السعر الكلي (يسار في RTL) */}
+                    <div className="flex-shrink-0 w-20 text-left pl-2">
+                      <p className="text-xl font-black text-[#FF6000]">{lineTotal}</p>
+                      <p className="text-xs text-[#6B7280]">ج.م</p>
+                    </div>
+
                   </div>
-
-                  {/* عداد الكمية */}
-                  <div className="flex items-center gap-2 mt-2 justify-end">
-                    <button
-                      onClick={() => handleQtyChange(item.id, item.qty - 1)}
-                      className="w-7 h-7 rounded-full bg-[var(--color-surface)] border border-[var(--color-border)] flex items-center justify-center"
-                    >
-                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none"
-                        stroke="var(--color-secondary)" strokeWidth="2.5">
-                        <path d="M5 12h14" />
-                      </svg>
-                    </button>
-                    <span className="text-sm font-bold text-[var(--color-secondary)] w-5 text-center">
-                      {item.qty}
-                    </span>
-                    <button
-                      onClick={() => handleQtyChange(item.id, item.qty + 1)}
-                      className="w-7 h-7 rounded-full bg-[var(--color-primary)] flex items-center justify-center"
-                    >
-                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none"
-                        stroke="white" strokeWidth="2.5">
-                        <path d="M12 5v14M5 12h14" />
-                      </svg>
-                    </button>
-                  </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
           </section>
 
-          {/* ── 3. رمز القسيمة ── */}
+          {/* ── ملاحظة على الطلب ── */}
           <section className="bg-white rounded-2xl border border-[var(--color-border)] px-4 py-4">
-            <h2 className="text-sm font-bold text-[var(--color-secondary)] mb-3">وفر على طلبك</h2>
-            {couponData ? (
-              <div className="flex items-center justify-between rounded-xl px-3 py-2.5 border"
-                style={{ background: "var(--color-surface)", borderColor: "var(--color-success)" }}>
-                <div>
-                  <p className="text-xs font-bold" style={{ color: "var(--color-success)" }}>
-                    ✓ كوبون مطبّق: {couponData.code}
-                  </p>
-                  <p className="text-xs mt-0.5" style={{ color: "var(--color-muted)" }}>
-                    خصم {couponData.discount} ج.م
-                  </p>
-                </div>
-                <button
-                  onClick={removeCoupon}
-                  className="text-xs font-semibold px-2 py-1 rounded-lg"
-                  style={{ color: "var(--color-error, #ef4444)", background: "rgba(239,68,68,0.1)" }}
-                >
-                  إزالة
-                </button>
+            <div className="flex items-center justify-between mb-3">
+              <div className="flex items-center gap-2">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none"
+                  stroke="var(--color-primary)" strokeWidth="2">
+                  <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
+                </svg>
+                <span className="text-sm font-bold text-[var(--color-secondary)]">ملاحظة على الطلب</span>
               </div>
-            ) : (
-              <>
-                <div className="flex items-center border border-[var(--color-border)] rounded-xl overflow-hidden bg-[var(--color-surface)]">
-                  <input
-                    type="text"
-                    value={coupon}
-                    onChange={(e) => { setCoupon(e.target.value); setCouponError(""); }}
-                    onKeyDown={(e) => e.key === "Enter" && applyCoupon()}
-                    placeholder="قم بإدخال رمز القسيمة هنا"
-                    className="flex-1 text-sm px-3 py-2.5 bg-transparent outline-none text-[var(--color-secondary)] placeholder:text-[var(--color-muted)]"
-                  />
-                  <button
-                    onClick={applyCoupon}
-                    disabled={applying || !coupon.trim()}
-                    className="bg-[var(--color-primary)] text-white text-sm font-bold px-4 py-2.5 disabled:opacity-50"
-                  >
-                    {applying ? "..." : "إرسال"}
-                  </button>
-                </div>
-                {couponError && (
-                  <p className="text-xs mt-2 font-semibold" style={{ color: "var(--color-error, #ef4444)" }}>
-                    ⚠ {couponError}
-                  </p>
-                )}
-              </>
-            )}
-          </section>
-
-          {/* ── 4. ملاحظات إضافية ── */}
-          <section className="bg-white rounded-2xl border border-[var(--color-border)] px-4 py-4">
-            <div className="flex items-center gap-2">
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none"
-                stroke="var(--color-primary)" strokeWidth="2">
-                <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
-              </svg>
-              <span className="text-sm font-bold text-[var(--color-secondary)]">دون ملاحظة</span>
+              <span className="text-xs text-[#9CA3AF]">اختياري</span>
             </div>
-            <p className="text-xs text-[var(--color-muted)] mt-1.5 leading-relaxed">
-              هل تود أن تخبرنا أي شيء آخر؟
-            </p>
-          </section>
-
-          {/* ── 5. ملخص الدفع ── */}
-          <section className="bg-white rounded-2xl border border-[var(--color-border)] px-4 py-4">
-            <h2 className="text-sm font-bold text-[var(--color-secondary)] mb-3">ملخص الدفع</h2>
-
-            <div className="flex flex-col gap-2.5">
-              {/* المجموع */}
-              <div className="flex items-center justify-between">
-                <span className="text-sm text-[var(--color-muted)]">المجموع</span>
-                <span className="text-sm text-[var(--color-secondary)]">{subtotal} ج.م</span>
-              </div>
-
-              {/* رسوم التوصيل */}
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-1">
-                  <span className="text-sm text-[var(--color-muted)]">رسوم التوصيل</span>
-                  <InfoIcon />
-                </div>
-                <span className="text-sm text-[var(--color-secondary)]">{delivery} ج.م</span>
-              </div>
-
-              {/* خصم الكوبون */}
-              {discount > 0 && (
-                <div className="flex items-center justify-between">
-                  <span className="text-sm" style={{ color: "var(--color-success)" }}>خصم الكوبون</span>
-                  <span className="text-sm font-semibold" style={{ color: "var(--color-success)" }}>
-                    -{discount} ج.م
-                  </span>
-                </div>
-              )}
-
-              {/* فاصل */}
-              <div className="border-t border-[var(--color-border)] my-1" />
-
-              {/* قيمة الطلب */}
-              <div className="flex items-center justify-between">
-                <span className="text-sm font-black text-[var(--color-secondary)]">قيمة الطلب</span>
-                <span className="text-sm font-black text-[var(--color-secondary)]">{total} ج.م</span>
-              </div>
-            </div>
-
+            <textarea
+              value={orderNote}
+              onChange={(e) => setOrderNote(e.target.value)}
+              placeholder="مثال: اطرق الباب بدل الجرس، الدور الثالث..."
+              rows={2}
+              className="w-full text-sm rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2.5 resize-none outline-none focus:border-[var(--color-primary)] text-[var(--color-secondary)] placeholder:text-[var(--color-muted)]"
+            />
           </section>
 
         </main>
 
-        {/* ── 6. Bottom Bar ── */}
-        <div className="fixed bottom-0 right-0 left-0 z-20">
-          <div className="w-full px-4 pb-6 pt-2 bg-white border-t border-[var(--color-border)]">
-            {/* Save favorite feedback */}
-            {favSaved && (
-              <p className="text-xs text-center font-semibold mb-2" style={{ color: "#059669" }}>
-                ✓ تم حفظ الطلب في المفضلة
-              </p>
-            )}
-            <div className="flex gap-3">
-              {/* تنفيذ الطلب */}
-              <Link
-                href="/checkout"
-                className="flex-1 bg-[var(--color-primary)] text-white text-sm font-bold py-3.5 rounded-2xl shadow-md active:scale-[0.98] transition-transform text-center"
-              >
-                تنفيذ الطلب
-              </Link>
+        {/* ── Bottom Bar ── */}
+        <div className="fixed bottom-0 left-0 right-0 z-20 bg-white border-t border-gray-100 shadow-lg px-4 py-3">
 
-              {/* حفظ في المفضلة */}
+          {/* بانر المفضلة */}
+          <div
+            onClick={() => !favSaved && setShowSaveFavModal(true)}
+            className={`flex items-center gap-3 bg-[#FFF5F0] border border-[#FFD5C0] rounded-2xl px-4 py-3 mb-3 cursor-pointer active:scale-[0.98] transition-transform ${favSaved ? "opacity-60 pointer-events-none" : ""}`}
+          >
+            <span className="text-2xl">{favSaved ? "💛" : "🤍"}</span>
+            <div className="flex-1 text-right">
+              <p className="text-sm font-black text-[#1A1A1A]">
+                {favSaved ? "تم الحفظ في المفضلة" : "احفظ السلة في المفضلة"}
+              </p>
+              <p className="text-xs text-[#6B7280] mt-0.5">
+                هتقدر تطلب نفس الوجبات دي تاني بضغطة واحدة من "طلباتي المفضلة"
+              </p>
+            </div>
+            {!favSaved && (
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none"
+                stroke="#FF6000" strokeWidth="2.5" strokeLinecap="round">
+                <path d="M15 18l-6-6 6-6" />
+              </svg>
+            )}
+          </div>
+
+          {/* سطر الإجمالي */}
+          <div className="flex items-center justify-between mb-3">
+            <span className="text-sm text-[#6B7280]">إجمالي طلبك</span>
+            <span className="text-2xl font-black text-[#1A1A1A]">{subtotal} ج.م</span>
+          </div>
+
+          {/* الأزرار */}
+          <div className="flex gap-3">
+            {/* تنفيذ الطلب — أول عنصر → يمين في RTL */}
+            <button
+              onClick={() => router.push("/checkout")}
+              className="flex-1 bg-[#FF6000] text-white font-black text-base py-3.5 rounded-2xl active:scale-[0.98] transition-transform shadow-md"
+            >
+              تنفيذ الطلب
+            </button>
+            {/* أضف المزيد — آخر عنصر → يسار في RTL */}
+            <button
+              onClick={() => router.back()}
+              className="flex-1 border-2 border-[#FF6000] text-[#FF6000] font-bold text-sm py-3.5 rounded-2xl active:scale-[0.98] transition-transform"
+            >
+              + أضف المزيد
+            </button>
+          </div>
+
+        </div>
+
+      </div>
+
+      {/* ── Modal: احفظ في المفضلة ── */}
+      {showSaveFavModal && (
+        <div
+          className="fixed inset-0 bg-black/50 z-50 flex items-end"
+          onClick={() => setShowSaveFavModal(false)}
+        >
+          <div
+            className="bg-white w-full rounded-t-3xl p-5"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <p className="text-base font-black text-[#1A1A1A] text-right mb-1">
+              احفظ في المفضلة 🤍
+            </p>
+            <p className="text-xs text-[#6B7280] text-right mb-4">
+              اديله اسم عشان تلاقيه بسهولة — زي "وجبتي المعتادة" أو "طلب الشغل"
+            </p>
+            <input
+              value={favoriteName}
+              onChange={(e) => setFavoriteName(e.target.value)}
+              placeholder="اسم الطلب المفضل..."
+              className="w-full border border-gray-200 rounded-xl px-4 py-3 text-sm text-right outline-none mb-3 focus:border-[#FF6000]"
+              dir="rtl"
+              autoFocus
+            />
+            <div className="flex gap-3">
               <button
                 onClick={handleSaveFavorite}
-                disabled={savingFav || favSaved}
-                className="px-4 py-3.5 rounded-2xl border-2 active:scale-[0.98] transition-all disabled:opacity-60 flex items-center justify-center"
-                style={{ borderColor: "#EF4444", color: "#EF4444" }}
-                title="حفظ في المفضلة"
+                disabled={savingFav}
+                className="flex-1 bg-[#FF6000] text-white font-bold py-3 rounded-xl active:scale-[0.98] transition-transform disabled:opacity-60"
               >
-                <svg width="20" height="20" viewBox="0 0 24 24"
-                  fill={favSaved ? "#EF4444" : "none"}
-                  stroke="#EF4444" strokeWidth="2" strokeLinecap="round">
-                  <path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z" />
-                </svg>
+                {savingFav ? "جاري الحفظ..." : "احفظ"}
+              </button>
+              <button
+                onClick={() => { setShowSaveFavModal(false); setFavoriteName(""); }}
+                className="flex-1 border border-gray-200 text-[#6B7280] py-3 rounded-xl"
+              >
+                إلغاء
               </button>
             </div>
           </div>
         </div>
+      )}
 
-      </div>
     </div>
   );
 }

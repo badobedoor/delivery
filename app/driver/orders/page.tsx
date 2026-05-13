@@ -22,7 +22,7 @@ const C = {
 type PayMethod = "cash" | "vodafone" | "mixed";
 
 type Extra  = { name: string; price: number };
-type Meal   = { name: string; qty: number; price: number; extras: Extra[] };
+type Meal   = { name: string; qty: number; price: number; extras: Extra[]; notes?: string };
 type Order  = {
   id:          string;
   num:         string;
@@ -64,6 +64,7 @@ function toOrder(o: DBOrder): Order {
       qty:    item.quantity         ?? 1,
       price:  item.price_at_order   ?? 0,
       extras: Array.isArray(item.extras) ? item.extras : [],
+      notes:  item.notes ?? "",
     })),
     note: o.notes ?? "",
   };
@@ -74,7 +75,7 @@ const ORDER_SELECT = `
   restaurant_paid, restaurant_debt, payment_method, cash_amount, vodafone_amount,
   restaurants!restaurant_id (name),
   addresses!address_id (full_address, areas (name)),
-  order_items (quantity, price_at_order, extras, menu_items (name)),
+  order_items (quantity, price_at_order, extras, notes, menu_items (name)),
   users!user_id (phone)
 `;
 
@@ -185,6 +186,11 @@ function AvailableCard({ order, onAccept }: { order: Order; onAccept: () => void
                           + {e.name} <span style={{ color: C.yellow }}>(+{e.price}ج)</span>
                         </span>
                       ))}
+                    </div>
+                  )}
+                  {m.notes && (
+                    <div className="pr-4 mt-0.5">
+                      <span className="text-[11px]" style={{ color: C.yellow }}>📝 {m.notes}</span>
                     </div>
                   )}
                 </div>
@@ -472,6 +478,11 @@ function ActiveCard({
                       ))}
                     </div>
                   )}
+                  {m.notes && (
+                    <div className="pr-4 mt-0.5">
+                      <span className="text-[11px]" style={{ color: C.yellow }}>📝 {m.notes}</span>
+                    </div>
+                  )}
                 </div>
               );
             })}
@@ -655,7 +666,7 @@ export default function DriverOrdersPage() {
           id, total, subtotal, delivery_fee, notes, user_order_number,
           restaurants!restaurant_id (name),
           addresses!address_id (full_address, areas (name)),
-          order_items (quantity, price_at_order, extras, menu_items (name))
+          order_items (quantity, price_at_order, extras, notes, menu_items (name))
         `)
         .eq("status", "pending")
         .eq("shift_id", sid);

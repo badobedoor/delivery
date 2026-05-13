@@ -31,10 +31,11 @@ type DBNewOrder = {
   restaurants: { name: string } | null;
   addresses: { full_address: string | null; areas: { name: string } | null } | null;
   order_items: {
-    quantity:      number;
+    quantity:       number;
     price_at_order: number;
-    extras:        { name: string; price: number }[] | null;
-    menu_items:    { name: string } | null;
+    extras:         { name: string; price: number }[] | null;
+    menu_items:     { name: string } | null;
+    notes?:         string | null;
   }[];
   users: { name: string | null; phone: string | null } | null;
 };
@@ -117,6 +118,7 @@ export default function AdminOrdersPage() {
     quantity: number;
     price:    number;
     extras:   { name: string; price: number }[];
+    notes:    string | null;
   }[]>([]);
   const [modalLoading, setModalLoading] = useState(false);
   const [modalError,   setModalError]   = useState<string | null>(null);
@@ -189,7 +191,7 @@ export default function AdminOrdersPage() {
     if (orderIds.length > 0) {
       const { data: itemsData } = await supabase
         .from("order_items")
-        .select("order_id, quantity, price_at_order, extras, menu_items (name)")
+        .select("order_id, quantity, price_at_order, extras, notes, menu_items (name)")
         .in("order_id", orderIds);
 
       for (const row of (itemsData ?? []) as any[]) {
@@ -199,6 +201,7 @@ export default function AdminOrdersPage() {
           price_at_order: row.price_at_order ?? 0,
           extras:         Array.isArray(row.extras) ? row.extras : [],
           menu_items:     row.menu_items ?? null,
+          notes:          row.notes ?? null,
         });
       }
     }
@@ -281,6 +284,10 @@ export default function AdminOrdersPage() {
         line += `\n  الإضافات:\n${extrasLines}`;
       }
 
+      if (item.notes) {
+        line += `\n  📝 ${item.notes}`;
+      }
+
       return line;
     }).join("\n\n");
 
@@ -290,7 +297,6 @@ export default function AdminOrdersPage() {
       "الأصناف:",
       itemsText,
       "",
-      ...(order.notes ? [`📝 ملاحظات: ${order.notes}`, ""] : []),
       `💰 الإجمالي: ${order.subtotal ?? order.total}ج`,
       "",
       "يرجى الرد لتأكيد استلام الطلب 🙏",
@@ -430,7 +436,7 @@ export default function AdminOrdersPage() {
         .single(),
       supabase
         .from("order_items")
-        .select("quantity, price_at_order, extras, menu_items (name)")
+        .select("quantity, price_at_order, extras, notes, menu_items (name)")
         .eq("order_id", id),
     ]);
 
@@ -464,6 +470,7 @@ export default function AdminOrdersPage() {
           quantity: item.quantity,
           price:    item.price_at_order            ?? 0,
           extras:   Array.isArray(item.extras) ? item.extras : [],
+          notes:    item.notes ?? null,
         }))
       );
     }
@@ -971,6 +978,11 @@ export default function AdminOrdersPage() {
                               + {e.name} <span style={{ color: C.yellow }}>(+{e.price}ج)</span>
                             </span>
                           ))}
+                        </div>
+                      )}
+                      {item.notes && (
+                        <div className="pr-8">
+                          <span className="text-[11px]" style={{ color: C.yellow }}>📝 {item.notes}</span>
                         </div>
                       )}
                     </div>
