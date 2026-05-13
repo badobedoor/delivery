@@ -217,48 +217,55 @@ export default function RestaurantPage() {
             className="object-cover"
             priority
           />
-          <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-black/20 to-transparent" />
 
           {/* زرار الرجوع */}
           <Link
             href="/restaurants"
-            className="absolute top-10 right-4 w-9 h-9 rounded-full bg-white/20 backdrop-blur-sm flex items-center justify-center"
+            className="absolute top-4 right-4 w-11 h-11 rounded-full flex items-center justify-center"
+            style={{ background: "rgba(0,0,0,0.8)", backdropFilter: "blur(8px)" }}
           >
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none"
               stroke="white" strokeWidth="2.2" strokeLinecap="round">
               <path d="M9 18l6-6-6-6" />
             </svg>
           </Link>
-
-          {/* اسم المطعم */}
-          <div className="absolute bottom-3 right-4 left-4">
-            <h1 className="text-xl font-black text-white drop-shadow">{restaurant.name}</h1>
-          </div>
         </div>
 
         <main className="pb-32">
 
           {/* ── معلومات المطعم ── */}
-          <section className="bg-white px-4 pt-4 pb-0 border-b border-[var(--color-border)]">
-            {restaurant.description && (
-              <p className="text-sm text-[var(--color-muted)]">{restaurant.description}</p>
-            )}
-
-            <div className="flex items-center gap-1.5 mt-2">
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="var(--color-primary)">
-                <path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z" />
-              </svg>
-              <span className="text-sm font-semibold text-[var(--color-secondary)]">4.5</span>
-              <span className="text-xs text-[var(--color-muted)]">(تقييمات)</span>
+          <section className="bg-white px-4 pt-4 pb-3 border-b border-[var(--color-border)]">
+            {/* الصف الأول: الاسم والوصف // رابط معلومات المطعم */}
+            <div className="flex items-start justify-between gap-3">
+              <div className="flex-1 min-w-0">
+                <h1 className="text-xl font-bold text-[#1A1A1A] leading-tight">{restaurant.name}</h1>
+                {restaurant.description && (
+                  <p className="text-sm text-[#9CA3AF] mt-0.5 leading-relaxed">{restaurant.description}</p>
+                )}
+              </div>
+              <Link
+                href={`/restaurant/${id}/info`}
+                className="flex-shrink-0 text-sm font-bold text-[#FF6000] mt-1"
+              >
+                معلومات المطعم
+              </Link>
             </div>
 
-            <div className="flex mt-3">
-              <button className="flex-1 text-sm font-medium text-[var(--color-secondary)] py-2.5 border-b-2 border-[var(--color-border)] text-center">
-                معلومات المطعم
-              </button>
-              <button className="flex-1 text-sm font-medium text-[var(--color-secondary)] py-2.5 border-b-2 border-[var(--color-border)] text-center">
-                تقييمات
-              </button>
+            {/* الصف الثاني: التقييم // رابط التقييمات */}
+            <div className="flex items-center justify-between mt-2.5">
+              <div className="flex items-center gap-1.5">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="#F59E0B">
+                  <path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z" />
+                </svg>
+                <span className="text-sm font-semibold text-[#1A1A1A]">4.5</span>
+                <span className="text-xs text-[#9CA3AF]">• 230 تقييم</span>
+              </div>
+              <Link
+                href={`/restaurant/${id}/reviews`}
+                className="text-sm font-bold text-[#FF6000]"
+              >
+                التقييمات
+              </Link>
             </div>
           </section>
 

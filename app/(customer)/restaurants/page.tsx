@@ -30,30 +30,17 @@ type FeaturedItem = {
   price: number | null;
 };
 
-const FALLBACK_IMG = "https://images.unsplash.com/photo-1552566626-52f8b828add9?w=100&h=100&fit=crop";
-
-function StarRating({ rating }: { rating: number }) {
-  return (
-    <span className="flex items-center gap-0.5">
-      {[1, 2, 3, 4, 5].map((s) => (
-        <svg key={s} width="11" height="11" viewBox="0 0 24 24"
-          fill={s <= Math.round(rating) ? "var(--color-primary)" : "var(--color-border)"}>
-          <path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z" />
-        </svg>
-      ))}
-      <span className="text-xs text-[var(--color-muted)] mr-1">{rating}</span>
-    </span>
-  );
-}
+const FALLBACK_IMG =
+  "https://images.unsplash.com/photo-1552566626-52f8b828add9?w=100&h=100&fit=crop";
 
 export default function RestaurantsPage() {
   const address = "المعادي، القاهرة";
 
-  const [restaurants,    setRestaurants]    = useState<Restaurant[]>([]);
-  const [advertisement,  setAdvertisement]  = useState<Advertisement | null>(null);
-  const [featuredItems,  setFeaturedItems]  = useState<FeaturedItem[]>([]);
-  const [loading,        setLoading]        = useState(true);
-  const [error,          setError]          = useState<string | null>(null);
+  const [restaurants,   setRestaurants]   = useState<Restaurant[]>([]);
+  const [advertisement, setAdvertisement] = useState<Advertisement | null>(null);
+  const [featuredItems, setFeaturedItems] = useState<FeaturedItem[]>([]);
+  const [loading,       setLoading]       = useState(true);
+  const [error,         setError]         = useState<string | null>(null);
 
   useEffect(() => {
     async function fetchAll() {
@@ -90,11 +77,11 @@ export default function RestaurantsPage() {
   }, []);
 
   return (
-    <div className="min-h-screen bg-[var(--color-surface)]">
+    <div className="min-h-screen bg-white">
       <div className="mx-auto w-full max-w-[430px]">
 
         {/* ── Header ── */}
-        <header className="bg-white px-4 pt-10 pb-3 sticky top-0 z-10 shadow-sm">
+        <header className="bg-white px-4 pt-10 pb-3 sticky top-0 z-10 border-b border-[#F3F4F6]">
           <div className="flex items-center justify-between gap-2">
 
             {/* حالا — يمين */}
@@ -114,140 +101,209 @@ export default function RestaurantsPage() {
             </button>
 
             {/* بحث — يسار */}
-            <button
+            <Link
+              href="/search"
               aria-label="بحث"
-              className="w-9 h-9 rounded-full bg-[var(--color-surface)] flex items-center justify-center flex-shrink-0"
+              className="w-9 h-9 rounded-full bg-[#F9FAFB] flex items-center justify-center flex-shrink-0"
             >
               <svg width="18" height="18" viewBox="0 0 24 24" fill="none"
                 stroke="var(--color-secondary)" strokeWidth="1.8">
-                <circle cx="11" cy="11" r="8" /><path d="m21 21-4.35-4.35" />
+                <circle cx="11" cy="11" r="8" />
+                <path d="m21 21-4.35-4.35" />
               </svg>
-            </button>
+            </Link>
           </div>
         </header>
 
-        <main className="pb-6 px-4">
+        <main className="pb-32 px-4">
 
-          {/* ── Hero Banner ── */}
-          <section className="pt-4">
-            <div
-              className="w-full rounded-3xl flex items-center justify-between px-5 py-5 gap-2"
-              style={{ background: "#F5EDE6" }}
-            >
-              {/* Text — right (start in RTL) */}
-              <div className="flex-1 flex flex-col gap-1">
-                <p className="text-xl font-black leading-snug text-[var(--color-secondary)]">
-                  أهلاً بك في
-                </p>
-                <p className="text-2xl font-black leading-snug" style={{ color: "var(--color-primary)" }}>
-                  حالا دلفري
-                </p>
-              </div>
-
-              {/* Image — left (end in RTL) — explicit dimensions, no fill/absolute */}
-              <div className="flex-shrink-0">
-                <Image
-                  src="/customerHomePage.png"
-                  alt="حالا دلفري"
-                  width={140}
-                  height={140}
-                  className="object-contain"
-                  priority
-                />
-              </div>
-            </div>
-          </section>
+          {/* ── بنر إعلاني ── */}
+          {advertisement?.image_url && (
+            <section className="pt-4">
+              {advertisement.link ? (
+                <Link href={advertisement.link} className="block">
+                  <div className="relative w-full h-36 rounded-2xl overflow-hidden">
+                    <Image
+                      src={advertisement.image_url}
+                      alt="إعلان"
+                      fill
+                      className="object-cover"
+                      priority
+                    />
+                  </div>
+                </Link>
+              ) : (
+                <div className="relative w-full h-36 rounded-2xl overflow-hidden">
+                  <Image
+                    src={advertisement.image_url}
+                    alt="إعلان"
+                    fill
+                    className="object-cover"
+                    priority
+                  />
+                </div>
+              )}
+            </section>
+          )}
 
           {/* ── الأكثر طلباً ── */}
-          <section className="pt-6">
-            <h2 className="text-base font-bold text-[var(--color-secondary)] mb-3">
-              الأكثر طلباً 🔥
-            </h2>
-            <div className="flex gap-3 overflow-x-auto pb-2 -mx-4 px-4 scrollbar-hide">
-              {featuredItems.map((item) => (
-                <div
-                  key={item.id}
-                  className="flex-shrink-0 w-44 bg-white rounded-2xl overflow-hidden shadow-sm border border-[var(--color-border)]"
-                >
-                  <div className="relative w-full h-28">
-                    <Image src={item.image_url ?? FALLBACK_IMG} alt={item.name} fill className="object-cover" />
-                  </div>
-                  <div className="p-2.5">
-                    <p className="text-sm font-semibold text-[var(--color-secondary)] truncate">
-                      {item.name}
-                    </p>
-                    <p className="text-xs text-[var(--color-muted)] truncate mt-0.5">
-                      {item.restaurant_name ?? ""}
-                    </p>
-                    <div className="mt-1.5">
-                      <StarRating rating={item.rating ?? 0} />
+          {featuredItems.length > 0 && (
+            <section className="pt-5">
+              <h2 className="text-base font-bold text-[var(--color-secondary)] mb-3">
+                الأكثر طلباً 🔥
+              </h2>
+              <div className="flex gap-3 overflow-x-auto pb-2 -mx-4 px-4 scrollbar-hide">
+                {featuredItems.map((item) => (
+                  <div
+                    key={item.id}
+                    className="flex-shrink-0 w-44 bg-white rounded-2xl overflow-hidden border border-[#F3F4F6]"
+                  >
+                    <div className="relative w-full h-28">
+                      <Image
+                        src={item.image_url ?? FALLBACK_IMG}
+                        alt={item.name}
+                        fill
+                        className="object-cover"
+                      />
                     </div>
-                    {item.price != null && (
-                      <p className="text-xs font-bold text-[var(--color-primary)] mt-1">
-                        {item.price} جنيه
+                    <div className="p-2.5">
+                      <p className="text-sm font-semibold text-[var(--color-secondary)] truncate">
+                        {item.name}
                       </p>
-                    )}
+                      <p className="text-xs text-[var(--color-muted)] truncate mt-0.5">
+                        {item.restaurant_name ?? ""}
+                      </p>
+                      <div className="flex items-center gap-1 mt-1.5">
+                        <svg width="12" height="12" viewBox="0 0 24 24" fill="#F59E0B">
+                          <path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z" />
+                        </svg>
+                        <span className="text-xs text-[var(--color-muted)]">
+                          {item.rating ?? 0}
+                        </span>
+                      </div>
+                      {item.price != null && (
+                        <p className="text-xs font-bold text-[var(--color-primary)] mt-1">
+                          {item.price} جنيه
+                        </p>
+                      )}
+                    </div>
                   </div>
-                </div>
-              ))}
-            </div>
-          </section>
+                ))}
+              </div>
+            </section>
+          )}
 
           {/* ── كل المطاعم ── */}
-          <section className="pt-6">
-            <h2 className="text-base font-bold text-[var(--color-secondary)] mb-3">
+          <section className="pt-5">
+            <h2 className="text-base font-bold text-[var(--color-secondary)] mb-1">
               كل المطاعم
             </h2>
 
             {loading && (
-              <p className="text-sm text-[var(--color-muted)] text-center py-6">جاري التحميل...</p>
+              <p className="text-sm text-[var(--color-muted)] text-center py-8">
+                جاري التحميل...
+              </p>
             )}
 
             {error && (
-              <p className="text-sm text-[var(--color-muted)] text-center py-6">{error}</p>
+              <p className="text-sm text-[var(--color-muted)] text-center py-8">{error}</p>
             )}
 
             {!loading && !error && restaurants.length === 0 && (
-              <p className="text-sm text-[var(--color-muted)] text-center py-6">لا توجد مطاعم متاحة حالياً</p>
+              <p className="text-sm text-[var(--color-muted)] text-center py-8">
+                لا توجد مطاعم متاحة حالياً
+              </p>
             )}
 
-            <div className="flex flex-col gap-3">
-              {restaurants.map((r) => (
-                <Link
-                  key={r.id}
-                  href={`/restaurant/${r.id}`}
-                  className="flex items-center gap-3 bg-white rounded-2xl p-3 shadow-sm border border-[var(--color-border)]"
-                >
-                  {/* صورة المطعم — يمين */}
-                  <div className="relative w-16 h-16 flex-shrink-0 rounded-xl overflow-hidden">
-                    <Image
-                      src={r.image_url ?? FALLBACK_IMG}
-                      alt={r.name}
-                      fill
-                      className="object-cover"
-                    />
-                  </div>
-
-                  {/* المعلومات */}
-                  <div className="flex-1 min-w-0">
-                    <p className="text-sm font-bold text-[var(--color-secondary)] truncate">
-                      {r.name}
-                    </p>
-                    <p className="text-xs text-[var(--color-muted)] truncate mt-0.5">
-                      {r.description ?? ""}
-                    </p>
-                    <div className="mt-1.5">
-                      <StarRating rating={4.5} />
+            <div className="flex flex-col">
+              {restaurants.map((r, index) => (
+                <div key={r.id}>
+                  <Link
+                    href={`/restaurant/${r.id}`}
+                    className="flex items-center gap-3 py-3"
+                  >
+                    {/* صورة المطعم */}
+                    <div className="relative w-[72px] h-[72px] flex-shrink-0 rounded-xl overflow-hidden">
+                      <Image
+                        src={r.image_url ?? FALLBACK_IMG}
+                        alt={r.name}
+                        fill
+                        className="object-cover"
+                      />
                     </div>
-                  </div>
-                </Link>
+
+                    {/* المعلومات */}
+                    <div className="flex-1 min-w-0">
+                      <p className="text-base font-bold text-[var(--color-secondary)] truncate">
+                        {r.name}
+                      </p>
+                      {r.description && (
+                        <p className="text-sm text-[var(--color-muted)] truncate mt-0.5">
+                          {r.description}
+                        </p>
+                      )}
+                      <div className="flex items-center gap-1 mt-1.5">
+                        <svg width="13" height="13" viewBox="0 0 24 24" fill="#F59E0B">
+                          <path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z" />
+                        </svg>
+                        <span className="text-sm font-semibold text-[var(--color-secondary)]">
+                          4.5
+                        </span>
+                        <span className="text-xs text-[#9CA3AF]">• 230 تقييم</span>
+                      </div>
+                    </div>
+                  </Link>
+
+                  {index < restaurants.length - 1 && (
+                    <div className="h-px bg-[#D1D5DB]" />
+                  )}
+                </div>
               ))}
             </div>
           </section>
 
         </main>
       </div>
+
       <CartBar />
+
+      {/* ── Bottom Navigation ── */}
+      <nav className="fixed bottom-0 right-0 left-0 bg-white border-t border-[var(--color-border)] flex items-center justify-around py-2 z-20">
+        <Link href="/" className="flex flex-col items-center gap-0.5 px-3">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none"
+            stroke="var(--color-muted)" strokeWidth="1.8">
+            <path d="M3 9.5L12 3l9 6.5V20a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V9.5z" />
+            <path d="M9 21V12h6v9" />
+          </svg>
+          <span className="text-[10px] font-medium text-[var(--color-muted)]">الرئيسية</span>
+        </Link>
+
+        <Link href="/search" className="flex flex-col items-center gap-0.5 px-3">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none"
+            stroke="var(--color-muted)" strokeWidth="1.8">
+            <circle cx="11" cy="11" r="8" />
+            <path d="m21 21-4.35-4.35" />
+          </svg>
+          <span className="text-[10px] font-medium text-[var(--color-muted)]">بحث</span>
+        </Link>
+
+        <Link href="/favorites" className="flex flex-col items-center gap-0.5 px-3">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none"
+            stroke="var(--color-muted)" strokeWidth="1.8" strokeLinecap="round">
+            <path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z" />
+          </svg>
+          <span className="text-[10px] font-medium text-[var(--color-muted)]">المفضلة</span>
+        </Link>
+
+        <Link href="/account" className="flex flex-col items-center gap-0.5 px-3">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none"
+            stroke="var(--color-muted)" strokeWidth="1.8">
+            <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" />
+            <circle cx="12" cy="7" r="4" />
+          </svg>
+          <span className="text-[10px] font-medium text-[var(--color-muted)]">حسابي</span>
+        </Link>
+      </nav>
     </div>
   );
 }
