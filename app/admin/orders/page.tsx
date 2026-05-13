@@ -285,7 +285,7 @@ export default function AdminOrdersPage() {
       }
 
       if (item.notes) {
-        line += `\n  📝 ${item.notes}`;
+        line += `\n  📝 ملاحظة: ${item.notes}`;
       }
 
       return line;
@@ -297,7 +297,7 @@ export default function AdminOrdersPage() {
       "الأصناف:",
       itemsText,
       "",
-      `💰 الإجمالي: ${order.subtotal ?? order.total}ج`,
+      `📊 الإجمالي: ${order.subtotal ?? order.total}ج`,
       "",
       "يرجى الرد لتأكيد استلام الطلب 🙏",
     ].join("\n");

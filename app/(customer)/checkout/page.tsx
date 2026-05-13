@@ -165,6 +165,7 @@ export default function CheckoutPage() {
       quantity:       item.qty,
       price_at_order: itemUnitPrice(item),
       extras:         item.extras ?? null,
+      notes:          item.notes  ?? null,
     }));
 
     await supabase.from("order_items").insert(orderItems);
@@ -322,22 +323,22 @@ export default function CheckoutPage() {
           {/* ملخص الدفع */}
           <div className="px-4 pt-3 pb-1">
             <div className="flex justify-between items-center mb-1">
-              <span className="text-sm text-[#6B7280]">المجموع</span>
-              <span className="text-sm font-semibold text-[#1A1A1A]">{subtotal} ج.م</span>
+              <span className="text-sm text-[#1A1A1A]">{subtotal} ج.م</span>
+              <span className="text-sm text-[#6B7280]">قيمة الطلب</span>
             </div>
             <div className="flex justify-between items-center mb-1">
+              <span className="text-sm text-[#1A1A1A]">{deliveryFee} ج.م</span>
               <span className="text-sm text-[#6B7280]">رسوم التوصيل</span>
-              <span className="text-sm font-semibold text-[#1A1A1A]">{deliveryFee} ج.م</span>
             </div>
             {couponDiscount > 0 && (
               <div className="flex justify-between items-center mb-1">
+                <span className="text-sm text-green-600">- {couponDiscount} ج.م</span>
                 <span className="text-sm text-green-600">خصم القسيمة</span>
-                <span className="text-sm font-semibold text-green-600">- {couponDiscount} ج.م</span>
               </div>
             )}
             <div className="flex justify-between items-center pt-2 border-t border-gray-100">
-              <span className="text-base font-black text-[#1A1A1A]">قيمة الطلب</span>
               <span className="text-base font-black text-[#FF6000]">{total} ج.م</span>
+              <span className="text-base font-black text-[#1A1A1A]">المجموع</span>
             </div>
           </div>
 
