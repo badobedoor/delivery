@@ -32,6 +32,8 @@ type Restaurant = {
   is_active:        boolean;
   image_url:        string | null;
   cover_image_url:  string | null;
+  status:           string | null;
+  address:          string | null;
 };
 type RestForm = {
   name: string; description: string; phone: string;
@@ -228,6 +230,9 @@ function ImageUploadField({
   helperText: string;
 }) {
   function handleChange(e: React.ChangeEvent<HTMLInputElement>) {
+    e.preventDefault();
+    e.stopPropagation();
+    console.log("File selected:", e.target.files?.[0]?.name, "| size:", e.target.files?.[0]?.size);
     const file = e.target.files?.[0];
     e.target.value = ""; // allow re-selecting same file
     if (!file) return;
@@ -249,7 +254,9 @@ function ImageUploadField({
 
   return (
     <Field label={label} error={sizeError ?? undefined}>
-      <label className="rounded-xl cursor-pointer overflow-hidden transition-opacity hover:opacity-80 block"
+      <label
+        onClick={(e) => e.stopPropagation()}
+        className="rounded-xl cursor-pointer overflow-hidden transition-opacity hover:opacity-80 block"
         style={{ background: C.bg, border: `1px dashed ${sizeError ? C.red : C.border}` }}>
         {preview ? (
           <div className="relative w-full overflow-hidden"
@@ -305,15 +312,23 @@ const emptyItemForm = { name: "", description: "", price: "", category_id: 0 };
      uploadImage(file, "item", "menu-items")        // restaurants/menu-items/item-{ts}.jpg
 ── */
 async function uploadImage(file: File, prefix: string, folder?: string): Promise<string | null> {
+  try {
   const ext      = file.name.split(".").pop() ?? "jpg";
   const filename = `${prefix}-${Date.now()}.${ext}`;
   const path     = folder ? `${folder}/${filename}` : filename;
-  const { error } = await supabase.storage
+  console.log("Uploading:", path, "| Size:", file.size, "| Type:", file.type);
+  const { data: uploadData, error } = await supabase.storage
     .from("restaurants")
     .upload(path, file, { upsert: true });
-  if (error) { console.error("Upload error:", error.message, error); return null; }
+  console.log("Upload result — data:", uploadData, "| error:", error);
+  if (error) { console.error("Upload error detail:", error.message, error); return null; }
   const { data } = supabase.storage.from("restaurants").getPublicUrl(path);
+  console.log("Public URL:", data.publicUrl);
   return data.publicUrl;
+  } catch (err) {
+    console.error("Unexpected upload exception:", err);
+    return null;
+  }
 }
 
 /* ════════════════════════════════════════════════════════════ */
@@ -335,10 +350,10 @@ export default function AdminRestaurantsPage() {
   const [touched,     setTouched]     = useState<Partial<Record<keyof RestForm, boolean>>>({});
 
   /* ── Image state ── */
-  const [imageFile,    setImageFile]    = useState<File | null>(null);
+  const imageFileRef   = useRef<File | null>(null);
+  const coverFileRef   = useRef<File | null>(null);
   const [imagePreview, setImagePreview] = useState<string | null>(null);
   const [imageError,   setImageError]   = useState<string | null>(null);
-  const [coverFile,    setCoverFile]    = useState<File | null>(null);
   const [coverPreview, setCoverPreview] = useState<string | null>(null);
   const [coverError,   setCoverError]   = useState<string | null>(null);
 
@@ -373,6 +388,8 @@ export default function AdminRestaurantsPage() {
   const [collapsedGroups,  setCollapsedGroups]  = useState<Set<number>>(new Set());
   const [groupNameErrors,  setGroupNameErrors]  = useState<Set<number>>(new Set());
   const [toastMsg,         setToastMsg]         = useState<string | null>(null);
+  const [restStatus,       setRestStatus]       = useState("active");
+  const [restAddress,      setRestAddress]      = useState("");
 
 
   /* ── Fetch from Supabase ── */
@@ -380,7 +397,7 @@ export default function AdminRestaurantsPage() {
     setLoading(true);
     const { data, error } = await supabase
       .from("restaurants")
-      .select("id, name, description, phone, opens_at, closes_at, is_active, image_url, cover_image_url")
+      .select("id, name, description, phone, opens_at, closes_at, is_active, image_url, cover_image_url, status, address")
       .order("created_at", { ascending: false });
     if (error) console.error("Fetch restaurants error:", error.message, error);
     if (data)  setRows(data);
@@ -405,8 +422,8 @@ export default function AdminRestaurantsPage() {
   function openCreate() {
     setEditingRest(null);
     setRestForm(emptyRestForm);
-    setImageFile(null);  setImagePreview(null);
-    setCoverFile(null);  setCoverPreview(null);
+    imageFileRef.current = null;  setImagePreview(null);
+    coverFileRef.current = null;  setCoverPreview(null);
     setShowModal(true);
   }
   function openEdit(r: Restaurant) {
@@ -418,8 +435,10 @@ export default function AdminRestaurantsPage() {
       opens_at:    r.opens_at    ?? "07:00",
       closes_at:   r.closes_at   ?? "03:00",
     });
-    setImageFile(null);  setImagePreview(r.image_url       ?? null);
-    setCoverFile(null);  setCoverPreview(r.cover_image_url ?? null);
+    setRestStatus(r.status  ?? "active");
+    setRestAddress(r.address ?? "");
+    imageFileRef.current = null;  setImagePreview(r.image_url       ?? null);
+    coverFileRef.current = null;  setCoverPreview(r.cover_image_url ?? null);
     setShowModal(true);
   }
   function closeModal() {
@@ -430,8 +449,8 @@ export default function AdminRestaurantsPage() {
     setTouched({});
     setSaveError(null);
     setCropState(null);
-    setImageFile(null);  setImagePreview(null);  setImageError(null);
-    setCoverFile(null);  setCoverPreview(null);  setCoverError(null);
+    imageFileRef.current = null;  setImagePreview(null);  setImageError(null);
+    coverFileRef.current = null;  setCoverPreview(null);  setCoverError(null);
   }
 
   /* ── Validation ── */
@@ -484,10 +503,10 @@ export default function AdminRestaurantsPage() {
     const file    = new File([blob], `${cropState.field}-${Date.now()}.jpg`, { type: "image/jpeg" });
     const preview = URL.createObjectURL(blob);
     if (cropState.field === "image") {
-      setImageFile(file);
+      imageFileRef.current = file;
       setImagePreview(preview);
     } else if (cropState.field === "cover") {
-      setCoverFile(file);
+      coverFileRef.current = file;
       setCoverPreview(preview);
     } else {
       setItemImageFile(file);
@@ -513,12 +532,12 @@ export default function AdminRestaurantsPage() {
     let image_url:       string | null = editingRest?.image_url       ?? null;
     let cover_image_url: string | null = editingRest?.cover_image_url ?? null;
 
-    if (imageFile) {
-      const url = await uploadImage(imageFile, "card");
+    if (imageFileRef.current) {
+      const url = await uploadImage(imageFileRef.current, "logo");
       if (url) image_url = url;
     }
-    if (coverFile) {
-      const url = await uploadImage(coverFile, "cover");
+    if (coverFileRef.current) {
+      const url = await uploadImage(coverFileRef.current, "cover");
       if (url) cover_image_url = url;
     }
 
@@ -530,7 +549,9 @@ export default function AdminRestaurantsPage() {
       closes_at:       restForm.closes_at           || null,
       image_url,
       cover_image_url,
-      is_active:       true,
+      is_active: true,
+      status:    restStatus,
+      address:   restAddress.trim() || null,
     };
 
     console.log("Insert payload:", payload);
@@ -732,6 +753,10 @@ export default function AdminRestaurantsPage() {
     /* Clear name error for this group since we just set a valid name */
     setGroupNameErrors((prev) => { const next = new Set(prev); next.delete(key); return next; });
   }
+
+  /* ── Image input refs ── */
+  const logoInputRef  = useRef<HTMLInputElement>(null);
+  const coverInputRef = useRef<HTMLInputElement>(null);
 
   /* ── Focus management ── */
   const pendingFocusKey = useRef<string | null>(null);
@@ -1454,29 +1479,135 @@ export default function AdminRestaurantsPage() {
                 </Field>
               </div>
 
-              <ImageUploadField
-                label="لوجو المطعم"
-                preview={imagePreview}
-                onPickFile={openCrop("image", 1)}
-                maxSize={3 * 1024 * 1024}
-                maxSizeMsg="حجم صورة الكارت أكبر من 3MB"
-                sizeError={imageError}
-                onSizeError={setImageError}
-                aspect={1}
-                helperText="PNG أو JPG - بحد أقصى 3MB - يفضل 400×400 (مربع)"
-              />
+              {/* حالة المطعم */}
+              <div className="flex flex-col gap-1.5">
+                <label className="text-xs font-semibold" style={{ color: C.muted }}>حالة المطعم</label>
+                <select value={restStatus} onChange={(e) => setRestStatus(e.target.value)}
+                  className="w-full rounded-xl px-3 py-2.5 text-sm outline-none"
+                  style={{ background: C.bg, border: `1px solid ${C.border}`, color: C.text, colorScheme: "dark" }}>
+                  <option value="active">متاح</option>
+                  <option value="busy">مشغول</option>
+                  <option value="closed">مغلق</option>
+                  <option value="maintenance">صيانة</option>
+                </select>
+              </div>
 
-              <ImageUploadField
-                label="صورة الغلاف"
-                preview={coverPreview}
-                onPickFile={openCrop("cover", 16 / 9)}
-                maxSize={5 * 1024 * 1024}
-                maxSizeMsg="حجم صورة الغلاف أكبر من 5MB"
-                sizeError={coverError}
-                onSizeError={setCoverError}
-                aspect={16 / 9}
-                helperText="PNG أو JPG - بحد أقصى 5MB - يفضل 1200×675 (16:9)"
-              />
+              {/* عنوان المطعم */}
+              <div className="flex flex-col gap-1.5">
+                <label className="text-xs font-semibold" style={{ color: C.muted }}>عنوان المطعم</label>
+                <input value={restAddress} onChange={(e) => setRestAddress(e.target.value)}
+                  placeholder="مثال: الهرم — العمرانية الغربية"
+                  className="w-full rounded-xl px-3 py-2.5 text-sm outline-none"
+                  style={{ background: C.bg, border: `1px solid ${C.border}`, color: C.text }} />
+              </div>
+
+              {/* ── لوجو المطعم ── */}
+              <div className="flex flex-col gap-1.5">
+                <label className="text-xs font-semibold" style={{ color: C.muted }}>لوجو المطعم</label>
+                <input
+                  ref={logoInputRef}
+                  type="file"
+                  accept="image/*"
+                  className="hidden"
+                  onChange={(e) => {
+                    const file = e.target.files?.[0];
+                    if (!file) return;
+                    if (file.size > 3 * 1024 * 1024) { setImageError("حجم صورة اللوجو أكبر من 3MB"); return; }
+                    setImageError(null);
+                    imageFileRef.current = file;
+                    setImagePreview(URL.createObjectURL(file));
+                  }}
+                />
+                {imagePreview ? (
+                  <div className="relative rounded-2xl overflow-hidden" style={{ aspectRatio: "1/1" }}>
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img src={imagePreview} alt="لوجو" className="w-full h-full object-cover" />
+                    <button
+                      type="button"
+                      onClick={(e) => { e.preventDefault(); e.stopPropagation(); logoInputRef.current?.click(); }}
+                      className="absolute inset-0 flex items-center justify-center text-xs font-bold text-white"
+                      style={{ background: "rgba(0,0,0,0.45)" }}
+                    >
+                      تغيير الصورة
+                    </button>
+                  </div>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={(e) => { e.preventDefault(); e.stopPropagation(); logoInputRef.current?.click(); }}
+                    className="flex items-center gap-3 rounded-xl px-3 py-3 w-full text-right"
+                    style={{ background: C.bg, border: `1px dashed ${imageError ? C.red : C.border}` }}
+                  >
+                    <div className="w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0"
+                      style={{ background: `${C.orange}22` }}>
+                      <svg width="18" height="18" viewBox="0 0 24 24" fill="none"
+                        stroke={C.orange} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+                        <polyline points="17 8 12 3 7 8" /><line x1="12" y1="3" x2="12" y2="15" />
+                      </svg>
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-semibold" style={{ color: C.text }}>اختر صورة...</p>
+                      <p className="text-xs mt-0.5" style={{ color: C.muted }}>PNG أو JPG - بحد أقصى 3MB - يفضل 400×400</p>
+                    </div>
+                  </button>
+                )}
+                {imageError && <p className="text-xs font-medium" style={{ color: C.red }}>{imageError}</p>}
+              </div>
+
+              {/* ── صورة الغلاف ── */}
+              <div className="flex flex-col gap-1.5">
+                <label className="text-xs font-semibold" style={{ color: C.muted }}>صورة الغلاف</label>
+                <input
+                  ref={coverInputRef}
+                  type="file"
+                  accept="image/*"
+                  className="hidden"
+                  onChange={(e) => {
+                    const file = e.target.files?.[0];
+                    if (!file) return;
+                    if (file.size > 5 * 1024 * 1024) { setCoverError("حجم صورة الغلاف أكبر من 5MB"); return; }
+                    setCoverError(null);
+                    coverFileRef.current = file;
+                    setCoverPreview(URL.createObjectURL(file));
+                  }}
+                />
+                {coverPreview ? (
+                  <div className="relative rounded-xl overflow-hidden" style={{ aspectRatio: "16/9" }}>
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img src={coverPreview} alt="غلاف" className="w-full h-full object-cover" />
+                    <button
+                      type="button"
+                      onClick={(e) => { e.preventDefault(); e.stopPropagation(); coverInputRef.current?.click(); }}
+                      className="absolute inset-0 flex items-center justify-center text-xs font-bold text-white"
+                      style={{ background: "rgba(0,0,0,0.45)" }}
+                    >
+                      تغيير الصورة
+                    </button>
+                  </div>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={(e) => { e.preventDefault(); e.stopPropagation(); coverInputRef.current?.click(); }}
+                    className="flex items-center gap-3 rounded-xl px-3 py-3 w-full text-right"
+                    style={{ background: C.bg, border: `1px dashed ${coverError ? C.red : C.border}` }}
+                  >
+                    <div className="w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0"
+                      style={{ background: `${C.orange}22` }}>
+                      <svg width="18" height="18" viewBox="0 0 24 24" fill="none"
+                        stroke={C.orange} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+                        <polyline points="17 8 12 3 7 8" /><line x1="12" y1="3" x2="12" y2="15" />
+                      </svg>
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-semibold" style={{ color: C.text }}>اختر صورة...</p>
+                      <p className="text-xs mt-0.5" style={{ color: C.muted }}>PNG أو JPG - بحد أقصى 5MB - يفضل 1200×675</p>
+                    </div>
+                  </button>
+                )}
+                {coverError && <p className="text-xs font-medium" style={{ color: C.red }}>{coverError}</p>}
+              </div>
 
             </div>
 

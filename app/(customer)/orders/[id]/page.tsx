@@ -3,26 +3,31 @@
 import Image from "next/image";
 import Link from "next/link";
 import { useState, useEffect } from "react";
-import { useParams } from "next/navigation";
+import { useParams, useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase";
+import { addToCart, clearCart } from "@/lib/cart";
 
 /* ── Types ── */
 type OrderItem = {
   id: string;
+  menu_item_id: string;
   quantity: number;
   price_at_order: number;
   extras: { name: string; price: number }[] | null;
+  notes: string | null;
   menu_items: { name: string; image_url: string | null } | null;
 };
 
 type Order = {
   id: string;
   status: string;
+  restaurant_id: string;
   subtotal: number;
   delivery_fee: number;
   total: number;
   created_at: string;
   notes: string | null;
+  restaurants: { name: string } | null;
   addresses: { label: string; full_address: string } | null;
   order_items: OrderItem[];
 };
@@ -57,20 +62,26 @@ const FALLBACK_IMG = "https://images.unsplash.com/photo-1546069901-ba9599a7e63c?
 
 export default function OrderDetailPage() {
   const { id }  = useParams<{ id: string }>();
+  const router  = useRouter();
 
-  const [order,   setOrder]   = useState<Order | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [notFound, setNotFound] = useState(false);
+  const [order,      setOrder]      = useState<Order | null>(null);
+  const [loading,    setLoading]    = useState(true);
+  const [notFound,   setNotFound]   = useState(false);
+  const [rated,      setRated]      = useState(false);
+  const [reordering, setReordering] = useState(false);
+  const [favSaving,  setFavSaving]  = useState(false);
+  const [favSaved,   setFavSaved]   = useState(false);
 
   useEffect(() => {
     async function load() {
       const { data, error } = await supabase
         .from("orders")
         .select(`
-          id, status, subtotal, delivery_fee, total, created_at, notes,
+          id, status, restaurant_id, subtotal, delivery_fee, total, created_at, notes,
+          restaurants (name),
           addresses (label, full_address),
           order_items (
-            id, quantity, price_at_order, extras,
+            id, menu_item_id, quantity, price_at_order, extras, notes,
             menu_items (name, image_url)
           )
         `)
@@ -83,6 +94,75 @@ export default function OrderDetailPage() {
     }
     load();
   }, [id]);
+
+  async function handleReorder() {
+    if (!order) return;
+    setReordering(true);
+
+    const itemIds = order.order_items.map((i) => i.menu_item_id);
+
+    const { data: menuItems } = await supabase
+      .from("menu_items")
+      .select("id, name, is_active")
+      .in("id", itemIds);
+
+    const unavailable = (menuItems ?? []).filter((i: { is_active: boolean }) => !i.is_active) as { id: string; name: string; is_active: boolean }[];
+
+    if (unavailable.length > 0) {
+      alert(`الوجبات دي مش متاحة دلوقتي:\n${unavailable.map((i) => i.name).join("\n")}`);
+      setReordering(false);
+      return;
+    }
+
+    clearCart();
+    order.order_items.forEach((item) => {
+      addToCart(order.restaurant_id, order.restaurants?.name ?? "", {
+        id:          item.menu_item_id,
+        name:        item.menu_items?.name ?? "",
+        price:       item.price_at_order,
+        qty:         item.quantity,
+        image_url:   item.menu_items?.image_url ?? null,
+        description: null,
+        extras:      item.extras ?? undefined,
+        notes:       item.notes ?? undefined,
+      });
+    });
+
+    router.push("/cart");
+  }
+
+  async function handleSaveFav() {
+    if (!order) return;
+    setFavSaving(true);
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) { router.push("/auth/login"); setFavSaving(false); return; }
+
+    await supabase.from("favorite_orders").insert({
+      user_id:         user.id,
+      restaurant_id:   order.restaurant_id,
+      restaurant_name: order.restaurants?.name ?? "",
+      name:            order.restaurants?.name ?? "",
+      items:           order.order_items.map((i) => ({
+        id:          i.menu_item_id,
+        name:        i.menu_items?.name ?? "",
+        price:       i.price_at_order,
+        qty:         i.quantity,
+        image_url:   i.menu_items?.image_url ?? null,
+        description: null,
+        extras:      i.extras ?? [],
+      })),
+      total: order.total,
+    });
+
+    setFavSaving(false);
+    setFavSaved(true);
+    setTimeout(() => setFavSaved(false), 3000);
+  }
+
+  function handleRate() {
+    setRated(true);
+    alert("التقييم قريباً 🌟");
+  }
 
   /* ── Loading ── */
   if (loading) {
@@ -105,7 +185,8 @@ export default function OrderDetailPage() {
     );
   }
 
-  const statusInfo = getCustomerStatus(order.status);
+  const statusInfo  = getCustomerStatus(order.status);
+  const isDelivered = order.status === "delivered";
 
   return (
     <div className="min-h-screen bg-[var(--color-surface)]">
@@ -182,7 +263,6 @@ export default function OrderDetailPage() {
             <div className="flex flex-col divide-y divide-[var(--color-border)]">
               {order.order_items.map((item) => (
                 <div key={item.id} className="flex items-center gap-3 py-2.5 first:pt-0 last:pb-0">
-                  {/* صورة */}
                   <div className="relative w-12 h-12 flex-shrink-0 rounded-xl overflow-hidden">
                     <Image
                       src={item.menu_items?.image_url ?? FALLBACK_IMG}
@@ -191,7 +271,6 @@ export default function OrderDetailPage() {
                       className="object-cover"
                     />
                   </div>
-                  {/* معلومات */}
                   <div className="flex-1 min-w-0">
                     <p className="text-sm font-bold text-[var(--color-secondary)] truncate">
                       {item.menu_items?.name ?? "—"}
@@ -201,8 +280,10 @@ export default function OrderDetailPage() {
                         {item.extras.map((e) => e.name).join("، ")}
                       </p>
                     )}
+                    {item.notes && (
+                      <p className="text-xs text-[#9CA3AF] mt-0.5 truncate">📝 {item.notes}</p>
+                    )}
                   </div>
-                  {/* الكمية والسعر */}
                   <div className="flex flex-col items-end gap-1 flex-shrink-0">
                     <span className="text-[10px] font-bold text-white bg-[var(--color-primary)] w-5 h-5 rounded-full flex items-center justify-center">
                       {item.quantity}
@@ -262,12 +343,49 @@ export default function OrderDetailPage() {
         {/* ── Bottom Bar ── */}
         <div className="fixed bottom-0 right-0 left-0 z-20">
           <div className="w-full px-4 pb-6 pt-3 bg-white border-t border-[var(--color-border)]">
-            <Link
-              href="/"
-              className="w-full bg-[var(--color-primary)] text-white text-sm font-bold py-3.5 rounded-2xl flex items-center justify-center"
-            >
-              العودة للرئيسية
-            </Link>
+
+            {isDelivered ? (
+              <div className="flex flex-col gap-2">
+                {/* تقييم + مفضلة */}
+                <div className="flex gap-2">
+                  <button
+                    disabled={rated}
+                    onClick={handleRate}
+                    className="flex-1 border-2 text-sm font-bold py-3 rounded-2xl transition-all disabled:opacity-60"
+                    style={{
+                      borderColor: rated ? "var(--color-border)" : "var(--color-primary)",
+                      color:       rated ? "var(--color-muted)" : "var(--color-primary)",
+                    }}
+                  >
+                    {rated ? "تم التقييم ✓" : "تقييم المطعم"}
+                  </button>
+                  <button
+                    disabled={favSaving || favSaved}
+                    onClick={handleSaveFav}
+                    className="flex-1 border-2 border-[#EF4444] text-sm font-bold py-3 rounded-2xl transition-all disabled:opacity-60"
+                    style={{ color: "#EF4444" }}
+                  >
+                    {favSaved ? "تم الحفظ ✓" : favSaving ? "..." : "إضافة للمفضلة ♡"}
+                  </button>
+                </div>
+                {/* إعادة الطلب */}
+                <button
+                  disabled={reordering}
+                  onClick={handleReorder}
+                  className="w-full bg-[var(--color-primary)] text-white text-sm font-bold py-3.5 rounded-2xl active:scale-[0.98] transition-transform disabled:opacity-60"
+                >
+                  {reordering ? "جاري التحقق..." : "إعادة الطلب 🔄"}
+                </button>
+              </div>
+            ) : (
+              <Link
+                href="/"
+                className="w-full bg-[var(--color-primary)] text-white text-sm font-bold py-3.5 rounded-2xl flex items-center justify-center"
+              >
+                العودة للرئيسية
+              </Link>
+            )}
+
           </div>
         </div>
 
