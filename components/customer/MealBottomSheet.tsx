@@ -245,13 +245,14 @@ export default function MealBottomSheet({ meal, onClose, restaurantId, restauran
                   return (
                     <label
                       key={extra.id}
-                      className="flex items-center justify-between cursor-pointer py-3"
+                      className="flex items-center justify-between cursor-pointer py-3 active:bg-[var(--color-surface)] rounded-lg px-1 -mx-1 transition-colors"
+                      onClick={() => toggleExtra(extra.id)}
                     >
                       {/* الاسم — يمين */}
                       <span className="text-base text-[var(--color-secondary)]">{extra.name}</span>
 
                       {/* السعر + checkbox — يسار */}
-                      <div className="flex items-center gap-2">
+                      <div className="flex items-center gap-2 pointer-events-none">
                         <span className="text-sm font-semibold text-[var(--color-muted)]">+{extra.price} ج.م</span>
                         <div
                           className={`w-5 h-5 rounded flex items-center justify-center border-2 transition-colors ${
@@ -259,7 +260,6 @@ export default function MealBottomSheet({ meal, onClose, restaurantId, restauran
                               ? "bg-[var(--color-primary)] border-[var(--color-primary)]"
                               : "border-[var(--color-border)] bg-white"
                           }`}
-                          onClick={() => toggleExtra(extra.id)}
                         >
                           {checked && (
                             <svg width="11" height="11" viewBox="0 0 24 24" fill="none"

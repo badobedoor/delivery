@@ -122,9 +122,9 @@ export default function CheckoutPage() {
       setCouponError(`الحد الأدنى للطلب ${data.min_order} ج.م`); setApplying(false); return;
     }
 
-    if (data.type === "fixed") {
+    if (data.type === "قيمة ثابتة" || data.type === "fixed") {
       setCouponDiscount(data.value);
-    } else if (data.type === "percentage") {
+    } else if (data.type === "نسبة" || data.type === "percentage" || data.type === "نسبة مئوية") {
       setCouponDiscount(Math.round(deliveryFee * data.value / 100));
     }
 
@@ -146,9 +146,10 @@ export default function CheckoutPage() {
         restaurant_id: cart.restaurantId,
         status:        "new",
         subtotal,
-        delivery_fee:  deliveryFee,
+        delivery_fee:    deliveryFee,
+        discount_amount: couponDiscount || null,
         total,
-        notes:         orderNote.trim() || null,
+        notes:           orderNote.trim() || null,
       })
       .select()
       .single();
@@ -293,8 +294,8 @@ export default function CheckoutPage() {
               <p className="text-xs text-red-500 mt-2 text-right">{couponError}</p>
             )}
             {couponDiscount > 0 && !couponError && (
-              <p className="text-xs text-green-600 mt-2 text-right">
-                ✅ تم تطبيق خصم {couponDiscount} ج.م
+              <p className="text-xs font-bold text-green-600 mt-2 text-right">
+                ✅ تم تطبيق الكود — وفرت {couponDiscount} ج.م
               </p>
             )}
           </section>
@@ -321,7 +322,7 @@ export default function CheckoutPage() {
         <div className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-100 shadow-lg z-20">
 
           {/* ملخص الدفع */}
-          <div className="px-4 pt-3 pb-1">
+          <div className="px-4 pt-3 pb-1" dir="ltr">
             <div className="flex justify-between items-center mb-1">
               <span className="text-sm text-[#1A1A1A]">{subtotal} ج.م</span>
               <span className="text-sm text-[#6B7280]">قيمة الطلب</span>
@@ -332,8 +333,8 @@ export default function CheckoutPage() {
             </div>
             {couponDiscount > 0 && (
               <div className="flex justify-between items-center mb-1">
-                <span className="text-sm text-green-600">- {couponDiscount} ج.م</span>
-                <span className="text-sm text-green-600">خصم القسيمة</span>
+                <span className="text-sm font-bold text-green-600">- {couponDiscount} ج.م</span>
+                <span className="text-sm font-bold text-green-600">خصم الكوبون</span>
               </div>
             )}
             <div className="flex justify-between items-center pt-2 border-t border-gray-100">

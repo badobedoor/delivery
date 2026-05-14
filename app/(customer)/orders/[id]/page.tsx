@@ -27,17 +27,23 @@ type Order = {
   order_items: OrderItem[];
 };
 
-/* ── Status config ── */
-const STATUS_MAP: Record<string, { label: string; bg: string; text: string }> = {
-  new:         { label: "جديد",          bg: "bg-orange-100",  text: "text-orange-600"  },
-  pending:     { label: "قيد التنفيذ",   bg: "bg-yellow-100",  text: "text-yellow-700"  },
-  on_the_way:  { label: "في الطريق",     bg: "bg-blue-100",    text: "text-blue-600"    },
-  delivered:   { label: "تم التوصيل",    bg: "bg-green-100",   text: "text-green-600"   },
-  cancelled:   { label: "ملغي",          bg: "bg-red-100",     text: "text-red-600"     },
-};
-
-function statusConfig(status: string) {
-  return STATUS_MAP[status] ?? { label: status, bg: "bg-gray-100", text: "text-gray-600" };
+/* ── Customer-facing status ── */
+function getCustomerStatus(status: string): { label: string; color: string; gif: string } {
+  switch (status) {
+    case "new":
+      return { label: "قيد المراجعة", color: "#F97316", gif: "/animations/pending.gif" };
+    case "pending":
+    case "accepted":
+      return { label: "قيد التنفيذ",  color: "#3B82F6", gif: "/animations/Food_in_progress.gif" };
+    case "on_the_way":
+      return { label: "في الطريق",    color: "#A855F7", gif: "/animations/on_the_way.gif" };
+    case "delivered":
+      return { label: "تم التسليم",   color: "#22C55E", gif: "/animations/food_delivered.gif" };
+    case "cancelled":
+      return { label: "ملغي",         color: "#EF4444", gif: "" };
+    default:
+      return { label: "قيد المراجعة", color: "#F97316", gif: "/animations/pending.gif" };
+  }
 }
 
 function formatDate(iso: string) {
@@ -99,7 +105,7 @@ export default function OrderDetailPage() {
     );
   }
 
-  const status = statusConfig(order.status);
+  const statusInfo = getCustomerStatus(order.status);
 
   return (
     <div className="min-h-screen bg-[var(--color-surface)]">
@@ -129,8 +135,19 @@ export default function OrderDetailPage() {
 
           {/* ── 2. حالة الأوردر ── */}
           <section className="bg-white rounded-2xl p-4 mb-3 flex flex-col items-center gap-2">
-            <span className={`text-sm font-black px-5 py-2 rounded-full ${status.bg} ${status.text}`}>
-              {status.label}
+            {statusInfo.gif && (
+              /* eslint-disable-next-line @next/next/no-img-element */
+              <img
+                src={statusInfo.gif}
+                alt={statusInfo.label}
+                className="w-full h-64 object-contain"
+              />
+            )}
+            <span
+              className="text-sm font-black px-5 py-2 rounded-full"
+              style={{ background: `${statusInfo.color}20`, color: statusInfo.color }}
+            >
+              {statusInfo.label}
             </span>
             <p className="text-xs text-[var(--color-muted)]">{formatDate(order.created_at)}</p>
           </section>

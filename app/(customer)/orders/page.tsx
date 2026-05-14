@@ -16,17 +16,23 @@ type Order = {
   order_items: { id: string }[];
 };
 
-/* ── Status config ── */
-const STATUS_MAP: Record<string, { label: string; bg: string; text: string }> = {
-  new:        { label: "جديد",         bg: "bg-orange-100", text: "text-orange-600" },
-  pending:    { label: "قيد التنفيذ",  bg: "bg-yellow-100", text: "text-yellow-700" },
-  on_the_way: { label: "في الطريق",    bg: "bg-blue-100",   text: "text-blue-600"   },
-  delivered:  { label: "تم التوصيل",   bg: "bg-green-100",  text: "text-green-600"  },
-  cancelled:  { label: "ملغي",         bg: "bg-red-100",    text: "text-red-600"    },
-};
-
-function statusConfig(status: string) {
-  return STATUS_MAP[status] ?? { label: status, bg: "bg-gray-100", text: "text-gray-600" };
+/* ── Customer-facing status ── */
+function getCustomerStatus(status: string): { label: string; color: string; gif: string } {
+  switch (status) {
+    case "new":
+      return { label: "قيد المراجعة", color: "#F97316", gif: "/animations/pending.gif" };
+    case "pending":
+    case "accepted":
+      return { label: "قيد التنفيذ",  color: "#3B82F6", gif: "/animations/Food_in_progress.gif" };
+    case "on_the_way":
+      return { label: "في الطريق",    color: "#A855F7", gif: "/animations/on_the_way.gif" };
+    case "delivered":
+      return { label: "تم التسليم",   color: "#22C55E", gif: "/animations/food_delivered.gif" };
+    case "cancelled":
+      return { label: "ملغي",         color: "#EF4444", gif: "" };
+    default:
+      return { label: "قيد المراجعة", color: "#F97316", gif: "/animations/pending.gif" };
+  }
 }
 
 function formatDate(iso: string) {
@@ -107,8 +113,8 @@ export default function OrdersPage() {
           {!loading && orders.length > 0 && (
             <div className="flex flex-col gap-3">
               {orders.map((order) => {
-                const status    = statusConfig(order.status);
-                const itemCount = order.order_items.length;
+                const statusInfo = getCustomerStatus(order.status);
+                const itemCount  = order.order_items.length;
                 return (
                   <div
                     key={order.id}
@@ -121,9 +127,22 @@ export default function OrdersPage() {
                         <p className="text-sm font-black text-[var(--color-secondary)]">
                           {order.restaurants?.name ?? "—"}
                         </p>
-                        <span className={`text-xs font-bold px-2.5 py-1 rounded-full flex-shrink-0 ${status.bg} ${status.text}`}>
-                          {status.label}
-                        </span>
+                        <div className="flex flex-col items-center gap-1.5 flex-shrink-0">
+                          {statusInfo.gif && (
+                            /* eslint-disable-next-line @next/next/no-img-element */
+                            <img
+                              src={statusInfo.gif}
+                              alt={statusInfo.label}
+                              className="w-16 h-16 object-contain"
+                            />
+                          )}
+                          <span
+                            className="text-xs font-bold px-2.5 py-1 rounded-full"
+                            style={{ background: `${statusInfo.color}20`, color: statusInfo.color }}
+                          >
+                            {statusInfo.label}
+                          </span>
+                        </div>
                       </div>
 
                       <div className="flex items-center gap-1.5 mt-2 flex-wrap">

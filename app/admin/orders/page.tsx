@@ -103,8 +103,9 @@ export default function AdminOrdersPage() {
     id: string;
     number:        number | null;
     total:         number;
-    subtotal:      number | null;
-    delivery_fee:  number | null;
+    subtotal:        number | null;
+    delivery_fee:    number | null;
+    discount_amount: number | null;
     status:        string;
     restaurant:    string | null;
     area:          string | null;
@@ -418,7 +419,7 @@ export default function AdminOrdersPage() {
     opts?: { readOnly?: boolean; customerName?: string | null; customerPhone?: string | null }
   ) {
     setSelectedOrderModal({
-      id, number, total, subtotal: null, delivery_fee: null, status,
+      id, number, total, subtotal: null, delivery_fee: null, discount_amount: null, status,
       restaurant: null, area: null, notes: null,
       customerName:  opts?.customerName  ?? null,
       customerPhone: opts?.customerPhone ?? null,
@@ -431,7 +432,7 @@ export default function AdminOrdersPage() {
     const [orderRes, itemsRes] = await Promise.all([
       supabase
         .from("orders")
-        .select("subtotal, delivery_fee, total, notes, restaurants!restaurant_id (name), addresses!address_id (areas (name))")
+        .select("subtotal, delivery_fee, discount_amount, total, notes, restaurants!restaurant_id (name), addresses!address_id (areas (name))")
         .eq("id", id)
         .single(),
       supabase
@@ -451,9 +452,10 @@ export default function AdminOrdersPage() {
         subtotal:     od.subtotal     ?? null,
         delivery_fee: od.delivery_fee ?? null,
         status,
-        restaurant:    od.restaurants?.name        ?? null,
-        area:          od.addresses?.areas?.name   ?? null,
-        notes:         od.notes                    ?? null,
+        restaurant:      od.restaurants?.name        ?? null,
+        area:            od.addresses?.areas?.name  ?? null,
+        notes:           od.notes                   ?? null,
+        discount_amount: od.discount_amount         ?? null,
         customerName:  opts?.customerName  ?? null,
         customerPhone: opts?.customerPhone ?? null,
         readOnly:      opts?.readOnly      ?? false,
@@ -1023,6 +1025,12 @@ export default function AdminOrdersPage() {
                     <div className="flex items-center justify-between text-xs">
                       <span style={{ color: C.muted }}>رسوم التوصيل</span>
                       <span style={{ color: C.text }}>{selectedOrderModal.delivery_fee} ج.م</span>
+                    </div>
+                  )}
+                  {(selectedOrderModal.discount_amount ?? 0) > 0 && (
+                    <div className="flex items-center justify-between text-xs">
+                      <span className="font-bold" style={{ color: C.green }}>خصم الكوبون</span>
+                      <span className="font-bold" style={{ color: C.green }}>- {selectedOrderModal.discount_amount} ج.م</span>
                     </div>
                   )}
                   <div

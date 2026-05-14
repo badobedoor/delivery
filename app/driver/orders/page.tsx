@@ -29,11 +29,12 @@ type Order  = {
   restaurant:  string;
   area:        string;
   address:     string;
-  subtotal:    number;
-  deliveryFee: number;
-  total:       number;
-  meals:       Meal[];
-  note:        string;
+  subtotal:       number;
+  deliveryFee:    number;
+  discountAmount: number;
+  total:          number;
+  meals:          Meal[];
+  note:           string;
 };
 type ActiveOrder = Order & {
   pickedUp:       boolean;
@@ -56,9 +57,10 @@ function toOrder(o: DBOrder): Order {
     restaurant:  o.restaurants?.name ?? "—",
     area:        o.addresses?.areas?.name ?? "—",
     address:     o.addresses?.full_address ?? "—",
-    subtotal:    o.subtotal     ?? 0,
-    deliveryFee: o.delivery_fee ?? 0,
-    total:       o.total        ?? 0,
+    subtotal:       o.subtotal        ?? 0,
+    deliveryFee:    o.delivery_fee    ?? 0,
+    discountAmount: o.discount_amount ?? 0,
+    total:          o.total           ?? 0,
     meals:       (o.order_items ?? []).map((item: DBOrder) => ({
       name:   item.menu_items?.name ?? "—",
       qty:    item.quantity         ?? 1,
@@ -71,7 +73,7 @@ function toOrder(o: DBOrder): Order {
 }
 
 const ORDER_SELECT = `
-  id, status, picked_up, total, subtotal, delivery_fee, notes, user_order_number,
+  id, status, picked_up, total, subtotal, delivery_fee, discount_amount, notes, user_order_number,
   restaurant_paid, restaurant_debt, payment_method, cash_amount, vodafone_amount,
   restaurants!restaurant_id (name),
   addresses!address_id (full_address, areas (name)),
@@ -216,6 +218,12 @@ function AvailableCard({ order, onAccept }: { order: Order; onAccept: () => void
               <span style={{ color: C.muted }}>🚚 التوصيل</span>
               <span className="font-semibold" style={{ color: C.blue }}>{order.deliveryFee} ج.م</span>
             </div>
+            {order.discountAmount > 0 && (
+              <div className="flex items-center justify-between text-xs">
+                <span className="font-bold" style={{ color: C.green }}>خصم الكوبون</span>
+                <span className="font-bold" style={{ color: C.green }}>- {order.discountAmount} ج.م</span>
+              </div>
+            )}
             <div
               className="flex items-center justify-between pt-2"
               style={{ borderTop: `1px solid ${C.border}` }}
@@ -506,6 +514,12 @@ function ActiveCard({
               <span style={{ color: C.muted }}>🚚 التوصيل</span>
               <span className="font-semibold" style={{ color: C.blue }}>{order.deliveryFee} ج.م</span>
             </div>
+            {order.discountAmount > 0 && (
+              <div className="flex items-center justify-between text-xs">
+                <span className="font-bold" style={{ color: C.green }}>خصم الكوبون</span>
+                <span className="font-bold" style={{ color: C.green }}>- {order.discountAmount} ج.م</span>
+              </div>
+            )}
             <div
               className="flex items-center justify-between pt-2"
               style={{ borderTop: `1px solid ${C.border}` }}
@@ -663,7 +677,7 @@ export default function DriverOrdersPage() {
       const { data: availableOrders } = await supabase
         .from("orders")
         .select(`
-          id, total, subtotal, delivery_fee, notes, user_order_number,
+          id, total, subtotal, delivery_fee, discount_amount, notes, user_order_number,
           restaurants!restaurant_id (name),
           addresses!address_id (full_address, areas (name)),
           order_items (quantity, price_at_order, extras, notes, menu_items (name))
