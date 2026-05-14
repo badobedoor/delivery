@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import { supabase } from "@/lib/supabase";
+import BottomNav from "@/components/customer/BottomNav";
 
 /* ── Egyptian phone validation ── */
 function validateEgPhone(p: string): string | null {
@@ -271,39 +272,7 @@ export default function AccountPage() {
         </main>
 
         {/* ── 3. Bottom Navigation ── */}
-        <nav className="fixed bottom-0 right-0 left-0 bg-white border-t border-[var(--color-border)] flex items-center justify-around py-2 z-20">
-          <Link href="/" className="flex flex-col items-center gap-0.5 px-3">
-            <svg width="22" height="22" viewBox="0 0 24 24" fill="var(--color-muted)" stroke="none">
-              <path d="M10 20v-6h4v6h5v-8h3L12 3 2 12h3v8z" />
-            </svg>
-            <span className="text-[10px] font-medium text-[var(--color-muted)]">الرئيسية</span>
-          </Link>
-
-          <Link href="/search" className="flex flex-col items-center gap-0.5 px-3">
-            <svg width="22" height="22" viewBox="0 0 24 24" fill="none"
-              stroke="var(--color-muted)" strokeWidth="1.8">
-              <circle cx="11" cy="11" r="8" /><path d="m21 21-4.35-4.35" />
-            </svg>
-            <span className="text-[10px] font-medium text-[var(--color-muted)]">بحث</span>
-          </Link>
-
-          <Link href="/favorites" className="flex flex-col items-center gap-0.5 px-3">
-            <svg width="22" height="22" viewBox="0 0 24 24" fill="none"
-              stroke="var(--color-muted)" strokeWidth="1.8" strokeLinecap="round">
-              <path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z" />
-            </svg>
-            <span className="text-[10px] font-medium text-[var(--color-muted)]">المفضلة</span>
-          </Link>
-
-          <button className="flex flex-col items-center gap-0.5 px-3">
-            <svg width="22" height="22" viewBox="0 0 24 24" fill="none"
-              stroke="var(--color-primary)" strokeWidth="1.8">
-              <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" />
-              <circle cx="12" cy="7" r="4" />
-            </svg>
-            <span className="text-[10px] font-semibold text-[var(--color-primary)]">حسابي</span>
-          </button>
-        </nav>
+        <BottomNav />
 
       </div>
 

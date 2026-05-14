@@ -21,6 +21,7 @@ export default function SearchPage() {
   const [restaurants, setRestaurants] = useState<Restaurant[]>([]);
   const [meals,       setMeals]       = useState<Meal[]>([]);
   const [searching,   setSearching]   = useState(false);
+  const [activeTab,   setActiveTab]   = useState<"items" | "restaurants">("items");
 
   /* ── Debounced search ── */
   useEffect(() => {
@@ -37,15 +38,15 @@ export default function SearchPage() {
         supabase
           .from("restaurants")
           .select("id, name, image_url, cuisine_type")
-          .ilike("name", `%${trimmed}%`)
+          .or(`name.ilike.%${trimmed}%,description.ilike.%${trimmed}%`)
           .eq("is_active", true)
-          .limit(5),
+          .limit(20),
         supabase
           .from("menu_items")
           .select("id, name, price, image_url, restaurant_id, restaurants(name)")
           .ilike("name", `%${trimmed}%`)
           .eq("is_active", true)
-          .limit(10),
+          .limit(20),
       ]);
       setRestaurants(restData ?? []);
       setMeals((mealData ?? []) as unknown as Meal[]);
@@ -125,65 +126,87 @@ export default function SearchPage() {
             </div>
           )}
 
-          {/* ── نتايج ── */}
+          {/* ── نتائج بالتابين ── */}
           {isTyping && !searching && hasResults && (
-            <div className="flex flex-col gap-5">
+            <div className="flex flex-col gap-3">
 
-              {/* مطاعم */}
-              {restaurants.length > 0 && (
-                <section>
-                  <h2 className="text-sm font-black text-[var(--color-secondary)] mb-3">مطاعم</h2>
-                  <div className="flex flex-col gap-2">
-                    {restaurants.map((r) => (
-                      <button
-                        key={r.id}
-                        onClick={() => router.push(`/restaurant/${r.id}`)}
-                        className="bg-white rounded-2xl p-3 flex items-center gap-3 text-right w-full"
-                      >
-                        <div className="relative w-12 h-12 flex-shrink-0 rounded-xl overflow-hidden">
-                          <Image src={r.image_url ?? FALLBACK} alt={r.name} fill className="object-cover" />
-                        </div>
-                        <div className="flex-1 min-w-0">
-                          <p className="text-sm font-bold text-[var(--color-secondary)] truncate">{r.name}</p>
-                          {r.cuisine_type && (
-                            <p className="text-xs text-[var(--color-muted)] mt-0.5">{r.cuisine_type}</p>
-                          )}
-                        </div>
-                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none"
-                          stroke="var(--color-muted)" strokeWidth="2" strokeLinecap="round" className="flex-shrink-0">
-                          <path d="M15 18l-6-6 6-6" />
-                        </svg>
-                      </button>
-                    ))}
-                  </div>
-                </section>
+              {/* التابين */}
+              <div className="flex gap-1 p-1 rounded-xl" style={{ background: "#F1F1F1" }}>
+                <button
+                  onClick={() => setActiveTab("items")}
+                  className="flex-1 py-2 rounded-lg text-sm font-bold transition-colors"
+                  style={{
+                    background: activeTab === "items" ? "#FF6000" : "transparent",
+                    color:      activeTab === "items" ? "#fff" : "#6B7280",
+                  }}
+                >
+                  🍔 وجبات ({meals.length})
+                </button>
+                <button
+                  onClick={() => setActiveTab("restaurants")}
+                  className="flex-1 py-2 rounded-lg text-sm font-bold transition-colors"
+                  style={{
+                    background: activeTab === "restaurants" ? "#FF6000" : "transparent",
+                    color:      activeTab === "restaurants" ? "#fff" : "#6B7280",
+                  }}
+                >
+                  🏪 مطاعم ({restaurants.length})
+                </button>
+              </div>
+
+              {/* نتائج الوجبات */}
+              {activeTab === "items" && (
+                <div className="flex flex-col gap-2">
+                  {meals.length === 0 ? (
+                    <p className="text-sm text-[var(--color-muted)] text-center py-6">لا توجد وجبات مطابقة</p>
+                  ) : meals.map((m) => (
+                    <button
+                      key={m.id}
+                      onClick={() => router.push(`/restaurant/${m.restaurant_id}`)}
+                      className="bg-white rounded-2xl p-3 flex items-center gap-3 text-right w-full"
+                    >
+                      <div className="relative w-12 h-12 flex-shrink-0 rounded-xl overflow-hidden">
+                        <Image src={m.image_url ?? FALLBACK} alt={m.name} fill className="object-cover" />
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm font-bold text-[var(--color-secondary)] truncate">{m.name}</p>
+                        <p className="text-xs text-[var(--color-muted)] mt-0.5 truncate">
+                          {m.restaurants?.name ?? ""}
+                        </p>
+                      </div>
+                      <p className="text-sm font-bold text-[var(--color-primary)] flex-shrink-0">{m.price} ج.م</p>
+                    </button>
+                  ))}
+                </div>
               )}
 
-              {/* وجبات */}
-              {meals.length > 0 && (
-                <section>
-                  <h2 className="text-sm font-black text-[var(--color-secondary)] mb-3">وجبات</h2>
-                  <div className="flex flex-col gap-2">
-                    {meals.map((m) => (
-                      <button
-                        key={m.id}
-                        onClick={() => router.push(`/restaurant/${m.restaurant_id}`)}
-                        className="bg-white rounded-2xl p-3 flex items-center gap-3 text-right w-full"
-                      >
-                        <div className="relative w-12 h-12 flex-shrink-0 rounded-xl overflow-hidden">
-                          <Image src={m.image_url ?? FALLBACK} alt={m.name} fill className="object-cover" />
-                        </div>
-                        <div className="flex-1 min-w-0">
-                          <p className="text-sm font-bold text-[var(--color-secondary)] truncate">{m.name}</p>
-                          <p className="text-xs text-[var(--color-muted)] mt-0.5 truncate">
-                            {m.restaurants?.name ?? ""}
-                          </p>
-                        </div>
-                        <p className="text-sm font-bold text-[var(--color-primary)] flex-shrink-0">{m.price} ج.م</p>
-                      </button>
-                    ))}
-                  </div>
-                </section>
+              {/* نتائج المطاعم */}
+              {activeTab === "restaurants" && (
+                <div className="flex flex-col gap-2">
+                  {restaurants.length === 0 ? (
+                    <p className="text-sm text-[var(--color-muted)] text-center py-6">لا توجد مطاعم مطابقة</p>
+                  ) : restaurants.map((r) => (
+                    <button
+                      key={r.id}
+                      onClick={() => router.push(`/restaurant/${r.id}`)}
+                      className="bg-white rounded-2xl p-3 flex items-center gap-3 text-right w-full"
+                    >
+                      <div className="relative w-12 h-12 flex-shrink-0 rounded-xl overflow-hidden">
+                        <Image src={r.image_url ?? FALLBACK} alt={r.name} fill className="object-cover" />
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm font-bold text-[var(--color-secondary)] truncate">{r.name}</p>
+                        {r.cuisine_type && (
+                          <p className="text-xs text-[var(--color-muted)] mt-0.5">{r.cuisine_type}</p>
+                        )}
+                      </div>
+                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none"
+                        stroke="var(--color-muted)" strokeWidth="2" strokeLinecap="round" className="flex-shrink-0">
+                        <path d="M15 18l-6-6 6-6" />
+                      </svg>
+                    </button>
+                  ))}
+                </div>
               )}
 
             </div>
