@@ -23,7 +23,7 @@ function getCustomerStatus(status: string): { label: string; color: string } {
     case "pending":
     case "accepted":   return { label: "قيد التنفيذ",  color: "#3B82F6" };
     case "on_the_way": return { label: "في الطريق",    color: "#A855F7" };
-    case "delivered":  return { label: "تم التسليم",   color: "#22C55E" };
+    case "delivered":  return { label: "تم الاستلام",   color: "#22C55E" };
     case "cancelled":  return { label: "ملغي",         color: "#EF4444" };
     default:           return { label: "قيد المراجعة", color: "#F97316" };
   }

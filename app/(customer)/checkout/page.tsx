@@ -44,6 +44,7 @@ export default function CheckoutPage() {
   const [couponError,    setCouponError]    = useState("");
   const [couponDiscount, setCouponDiscount] = useState(0);
   const [applying,       setApplying]       = useState(false);
+  const [appliedCoupon,  setAppliedCoupon]  = useState<{ id: number; used_count: number } | null>(null);
   const [areaName,       setAreaName]       = useState("");
 
   async function fetchDeliveryFee(areaId: string) {
@@ -99,6 +100,7 @@ export default function CheckoutPage() {
     setApplying(true);
     setCouponError("");
     setCouponDiscount(0);
+    setAppliedCoupon(null);
 
     const { data } = await supabase
       .from("coupons")
@@ -128,6 +130,7 @@ export default function CheckoutPage() {
       setCouponDiscount(Math.round(deliveryFee * data.value / 100));
     }
 
+    setAppliedCoupon({ id: data.id, used_count: data.used_count ?? 0 });
     setApplying(false);
   }
 
@@ -170,6 +173,33 @@ export default function CheckoutPage() {
     }));
 
     await supabase.from("order_items").insert(orderItems);
+
+    /* ── تسجيل استخدام الكوبون ── */
+    if (appliedCoupon) {
+      const { data: existingUsage } = await supabase
+        .from("coupon_usages")
+        .select("id, used_count")
+        .eq("coupon_id", appliedCoupon.id)
+        .eq("user_id", userId)
+        .maybeSingle();
+
+      if (existingUsage) {
+        await supabase
+          .from("coupon_usages")
+          .update({ used_count: existingUsage.used_count + 1 })
+          .eq("id", existingUsage.id);
+      } else {
+        await supabase
+          .from("coupon_usages")
+          .insert({ coupon_id: appliedCoupon.id, user_id: userId, used_count: 1 });
+      }
+
+      await supabase
+        .from("coupons")
+        .update({ used_count: appliedCoupon.used_count + 1 })
+        .eq("id", appliedCoupon.id);
+    }
+
     clearCart();
     localStorage.removeItem("hala_order_note");
     router.push(`/orders/${order.id}`);
@@ -324,21 +354,25 @@ export default function CheckoutPage() {
           {/* ملخص الدفع */}
           <div className="px-4 pt-3 pb-1" dir="ltr">
             <div className="flex justify-between items-center mb-1">
-              <span className="text-sm text-[#1A1A1A]">{subtotal} ج.م</span>
+              <span dir="rtl" className="text-sm text-[#1A1A1A]">{subtotal} ج.م</span>
               <span className="text-sm text-[#6B7280]">قيمة الطلب</span>
             </div>
             <div className="flex justify-between items-center mb-1">
-              <span className="text-sm text-[#1A1A1A]">{deliveryFee} ج.م</span>
+              <span dir="rtl"  className="text-sm text-[#1A1A1A]">{deliveryFee} ج.م</span>
               <span className="text-sm text-[#6B7280]">رسوم التوصيل</span>
             </div>
             {couponDiscount > 0 && (
               <div className="flex justify-between items-center mb-1">
-                <span className="text-sm font-bold text-green-600">- {couponDiscount} ج.م</span>
+                <span className="text-sm font-bold text-green-600 flex items-center gap-0.5" dir="ltr">
+                  <span>ج.م</span>
+                  <span>{couponDiscount}</span>
+                  <span>-</span>
+                </span>
                 <span className="text-sm font-bold text-green-600">خصم الكوبون</span>
               </div>
             )}
             <div className="flex justify-between items-center pt-2 border-t border-gray-100">
-              <span className="text-base font-black text-[#FF6000]">{total} ج.م</span>
+              <span dir="rtl" className="text-base font-black text-[#FF6000]">{total} ج.م</span>
               <span className="text-base font-black text-[#1A1A1A]">المجموع</span>
             </div>
           </div>

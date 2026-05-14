@@ -38,6 +38,7 @@ type DBNewOrder = {
     notes?:         string | null;
   }[];
   users: { name: string | null; phone: string | null } | null;
+  user_id: string | null;
 };
 
 type DBOrder = {
@@ -166,6 +167,7 @@ export default function AdminOrdersPage() {
       .from("orders")
       .select(`
         id,
+        user_id,
         total,
         subtotal,
         notes,
@@ -371,7 +373,18 @@ export default function AdminOrdersPage() {
       return;
     }
 
-    // 6. Optimistic UI update
+    // 6. Insert notification for customer
+    if (order.user_id) {
+      await supabase.from("notifications").insert({
+        user_id:  order.user_id,
+        title:    "تم تأكيد طلبك ✅",
+        body:     `تم استلام طلبك من ${order.restaurants?.name ?? "المطعم"} وجاري التحضير`,
+        type:     "order_confirmed",
+        order_id: order.id,
+      });
+    }
+
+    // 7. Optimistic UI update
     setNewOrdersList((prev) => prev.filter((o) => o.id !== id));
     setAllOrdersList((prev) => [{
       id:                order.id,

@@ -7,6 +7,7 @@ import { useParams, useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase";
 import { addToCart, clearCart } from "@/lib/cart";
 
+
 /* ── Types ── */
 type OrderItem = {
   id: string;
@@ -43,7 +44,7 @@ function getCustomerStatus(status: string): { label: string; color: string; gif:
     case "on_the_way":
       return { label: "في الطريق",    color: "#A855F7", gif: "/animations/on_the_way.gif" };
     case "delivered":
-      return { label: "تم التسليم",   color: "#22C55E", gif: "/animations/food_delivered.gif" };
+      return { label: "تم الاستلام",   color: "#22C55E", gif: "/animations/food_delivered.gif" };
     case "cancelled":
       return { label: "ملغي",         color: "#EF4444", gif: "" };
     default:
@@ -302,9 +303,9 @@ export default function OrderDetailPage() {
             <p className="text-[10px] font-bold text-[var(--color-muted)] mb-3 uppercase tracking-wide">
               ملخص الدفع
             </p>
-            <div className="flex flex-col gap-2.5">
+            <div className="flex flex-col gap-2.5" dir="rtl">
               <div className="flex justify-between">
-                <span className="text-sm text-[var(--color-muted)]">المجموع</span>
+                <span className="text-sm text-[var(--color-muted)]">قيمة الطلب</span>
                 <span className="text-sm text-[var(--color-secondary)]">{order.subtotal} ج.م</span>
               </div>
               <div className="flex justify-between">
@@ -313,7 +314,7 @@ export default function OrderDetailPage() {
               </div>
               <div className="border-t border-[var(--color-border)] my-1" />
               <div className="flex justify-between">
-                <span className="text-sm font-black text-[var(--color-secondary)]">قيمة الطلب</span>
+                <span className="text-sm font-black text-[var(--color-secondary)]">المجموع</span>
                 <span className="text-sm font-black text-[var(--color-secondary)]">{order.total} ج.م</span>
               </div>
             </div>
@@ -334,7 +335,7 @@ export default function OrderDetailPage() {
                   <path d="M10 14h4" />
                 </svg>
               </div>
-              <p className="text-sm font-semibold text-[var(--color-secondary)]">الدفع عند الاستلام (كاش)</p>
+              <p className="text-sm font-semibold text-[var(--color-secondary)]">الدفع عند الاستلام </p>
             </div>
           </section>
 
@@ -374,7 +375,7 @@ export default function OrderDetailPage() {
                   onClick={handleReorder}
                   className="w-full bg-[var(--color-primary)] text-white text-sm font-bold py-3.5 rounded-2xl active:scale-[0.98] transition-transform disabled:opacity-60"
                 >
-                  {reordering ? "جاري التحقق..." : "إعادة الطلب 🔄"}
+                  {reordering ? "جاري التحقق..." : "إعادة الطلب "}
                 </button>
               </div>
             ) : (

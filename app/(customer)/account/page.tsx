@@ -98,6 +98,7 @@ export default function AccountPage() {
   const [phoneError,   setPhoneError]   = useState("");
   const [phoneSaving,  setPhoneSaving]  = useState(false);
   const [phoneSuccess, setPhoneSuccess] = useState(false);
+  const [unreadCount,  setUnreadCount]  = useState(0);
 
   /* ── Fetch user ── */
   useEffect(() => {
@@ -107,13 +108,17 @@ export default function AccountPage() {
       setName(user.user_metadata?.full_name || user.email || "مرحبا");
       setAvatarUrl(user.user_metadata?.avatar_url ?? null);
 
-      /* Fetch phone from users table */
-      const { data: profile } = await supabase
-        .from("users")
-        .select("phone")
-        .eq("id", user.id)
-        .maybeSingle();
+      /* Fetch phone + unread notifications count */
+      const [{ data: profile }, { count }] = await Promise.all([
+        supabase.from("users").select("phone").eq("id", user.id).maybeSingle(),
+        supabase
+          .from("notifications")
+          .select("*", { count: "exact", head: true })
+          .eq("user_id", user.id)
+          .eq("is_read", false),
+      ]);
       setPhone(profile?.phone ?? user.phone ?? "");
+      setUnreadCount(count ?? 0);
     });
   }, []);
 
@@ -221,8 +226,13 @@ export default function AccountPage() {
                   {item.label}
                 </span>
                 <div className="flex items-center gap-2">
-                  <div className="w-8 h-8 rounded-full bg-[var(--color-surface)] flex items-center justify-center">
+                  <div className="w-8 h-8 rounded-full bg-[var(--color-surface)] flex items-center justify-center relative">
                     {item.icon}
+                    {item.label === "الإشعارات" && unreadCount > 0 && (
+                      <span className="absolute -top-1 -right-1 w-4 h-4 rounded-full bg-[var(--color-primary)] text-white text-[9px] font-bold flex items-center justify-center">
+                        {unreadCount > 9 ? "9+" : unreadCount}
+                      </span>
+                    )}
                   </div>
                   <svg width="14" height="14" viewBox="0 0 24 24" fill="none"
                     stroke="var(--color-muted)" strokeWidth="2" strokeLinecap="round">

@@ -1,37 +1,46 @@
 "use client";
 
 import Link from "next/link";
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import { supabase } from "@/lib/supabase";
 
-/* ── بيانات وهمية ── */
-const offers = [
-  {
-    id: 1,
-    title:   "خصم ٥٠٪ على أول طلب",
-    desc:    "استخدم الكود واحصل على خصم ٥٠٪ على طلبك الأول من أي مطعم",
-    code:    "HALA50",
-    expiry:  "٣٠ أبريل ٢٠٢٦",
-  },
-  {
-    id: 2,
-    title:   "توصيل مجاني طوال الأسبوع",
-    desc:    "استمتع بتوصيل مجاني على جميع طلباتك بدون حد أدنى",
-    code:    "FREESHIP",
-    expiry:  "١٥ مايو ٢٠٢٦",
-  },
-  {
-    id: 3,
-    title:   "خصم ٢٠٪ على وجبات البيتزا",
-    desc:    "خصم خاص على جميع أصناف البيتزا من ليالي بيتزا",
-    code:    "PIZZA20",
-    expiry:  "١ يونيو ٢٠٢٦",
-  },
-];
+type Offer = {
+  id:             string;
+  code:           string;
+  ad_title:       string | null;
+  ad_description: string | null;
+  expires_at:     string | null;
+};
+
+function formatExpiry(iso: string | null): string {
+  if (!iso) return "";
+  return new Date(iso).toLocaleDateString("ar-EG", {
+    day: "numeric", month: "long", year: "numeric",
+  });
+}
 
 export default function OffersPage() {
-  const [copied, setCopied] = useState<number | null>(null);
+  const [offers,  setOffers]  = useState<Offer[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [copied,  setCopied]  = useState<string | null>(null);
 
-  function copyCode(id: number, code: string) {
+  useEffect(() => {
+    async function load() {
+      const { data } = await supabase
+        .from("coupons")
+        .select("id, code, type, value, applies_to, min_order, expires_at, is_active, usage_limit_total, usage_limit_per_user, visibility, ad_title, ad_description")
+        .eq("visibility", "public")
+        .eq("is_active", true)
+        .gt("expires_at", new Date().toISOString())
+        .order("created_at", { ascending: false });
+
+      setOffers((data ?? []) as Offer[]);
+      setLoading(false);
+    }
+    load();
+  }, []);
+
+  function copyCode(id: string, code: string) {
     navigator.clipboard.writeText(code).catch(() => {});
     setCopied(id);
     setTimeout(() => setCopied(null), 2000);
@@ -58,7 +67,11 @@ export default function OffersPage() {
 
         <main className="px-4 pt-4 pb-10">
 
-          {offers.length === 0 ? (
+          {loading ? (
+            <div className="flex justify-center pt-24">
+              <div className="w-6 h-6 border-2 border-[var(--color-primary)] border-t-transparent rounded-full animate-spin" />
+            </div>
+          ) : offers.length === 0 ? (
             /* ── حالة فارغة ── */
             <div className="flex flex-col items-center justify-center pt-24 gap-3 text-center">
               <span className="text-6xl">🎁</span>
@@ -76,10 +89,14 @@ export default function OffersPage() {
                 >
                   <div className="px-5 pt-5 pb-4">
                     {/* العنوان */}
-                    <p className="text-lg font-black text-white">{offer.title}</p>
+                    <p className="text-lg font-black text-white">
+                      {offer.ad_title ?? offer.code}
+                    </p>
 
                     {/* الوصف */}
-                    <p className="text-sm text-white/80 mt-1 leading-relaxed">{offer.desc}</p>
+                    {offer.ad_description && (
+                      <p className="text-sm text-white/80 mt-1 leading-relaxed">{offer.ad_description}</p>
+                    )}
 
                     {/* الكود */}
                     <div className="mt-4 flex items-center gap-3">
@@ -97,9 +114,11 @@ export default function OffersPage() {
                     </div>
 
                     {/* تاريخ الانتهاء */}
-                    <p className="text-xs text-white/70 mt-3">
-                      ينتهي في {offer.expiry}
-                    </p>
+                    {offer.expires_at && (
+                      <p className="text-xs text-white/70 mt-3">
+                        ينتهي في {formatExpiry(offer.expires_at)}
+                      </p>
+                    )}
                   </div>
                 </div>
               ))}

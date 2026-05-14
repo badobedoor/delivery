@@ -29,6 +29,7 @@ type Order  = {
   restaurant:  string;
   area:        string;
   address:     string;
+  userId:         string;
   subtotal:       number;
   deliveryFee:    number;
   discountAmount: number;
@@ -53,6 +54,7 @@ type DBOrder = Record<string, any>;
 function toOrder(o: DBOrder): Order {
   return {
     id:          o.id,
+    userId:      (o as DBOrder).user_id ?? "",
     num:         `#${o.user_order_number ?? "—"}`,
     restaurant:  o.restaurants?.name ?? "—",
     area:        o.addresses?.areas?.name ?? "—",
@@ -73,7 +75,7 @@ function toOrder(o: DBOrder): Order {
 }
 
 const ORDER_SELECT = `
-  id, status, picked_up, total, subtotal, delivery_fee, discount_amount, notes, user_order_number,
+  id, user_id, status, picked_up, total, subtotal, delivery_fee, discount_amount, notes, user_order_number,
   restaurant_paid, restaurant_debt, payment_method, cash_amount, vodafone_amount,
   restaurants!restaurant_id (name),
   addresses!address_id (full_address, areas (name)),
@@ -865,9 +867,22 @@ export default function DriverOrdersPage() {
       .update({ picked_up: true, status: "on_the_way" })
       .eq("id", id)
       .eq("status", "accepted");
+
+    /* notify customer */
+    const order = active.find((o) => o.id === id);
+    if (order?.userId) {
+      await supabase.from("notifications").insert({
+        user_id:  order.userId,
+        title:    "طلبك في الطريق 🛵",
+        body:     "المندوب استلم طلبك وفي طريقه إليك",
+        type:     "order_in_progress",
+        order_id: id,
+      });
+    }
+
     setActive((prev) => prev.map((o) => o.id === id ? { ...o, pickedUp: true } : o));
     refreshFnRef.current?.(); // update lock state (hasPickedUp → ordersLocked)
-  }, []);
+  }, [active]);
 
   /* ── Deliver → open payment modal ── */
   const deliver = useCallback(async (order: ActiveOrder) => {
@@ -876,6 +891,17 @@ export default function DriverOrdersPage() {
       .update({ status: "delivered" })
       .eq("id", order.id)
       .eq("status", "on_the_way");
+
+    /* notify customer */
+    if (order.userId) {
+      await supabase.from("notifications").insert({
+        user_id:  order.userId,
+        title:    "تم توصيل طلبك ✅",
+        body:     "استمتع بوجبتك 🍕 شكراً لاستخدامك حالا",
+        type:     "order_delivered",
+        order_id: order.id,
+      });
+    }
 
     /* Open modal before reload so the order data is still available */
     setCollectTarget(order);

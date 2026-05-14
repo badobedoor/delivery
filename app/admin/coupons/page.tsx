@@ -33,6 +33,9 @@ type Coupon = {
   active:              boolean;
   restaurantId:        number | null;
   restaurantName:      string | null;
+  visibility:          "public" | "private";
+  adTitle:             string | null;
+  adDescription:       string | null;
 };
 
 /* ── DB row → Coupon ── */
@@ -52,6 +55,9 @@ function fromRow(r: any): Coupon {
     restaurantId:         r.restaurant_id ?? null,
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     restaurantName:       (r.restaurants as any)?.name ?? null,
+    visibility:           (r.visibility ?? "private") as "public" | "private",
+    adTitle:              r.ad_title     ?? null,
+    adDescription:        r.ad_description ?? null,
   };
 }
 
@@ -66,13 +72,14 @@ const emptyForm = {
   expiry:               "",
   active:               true,
   restaurantId:         null as number | null,
+  visibility:           "private" as "public" | "private",
+  adTitle:              "",
+  adDescription:        "",
 };
 
 function formatExpiry(d: string) {
   if (!d) return "—";
-  const [y, m, day] = d.split("-");
-  const months = ["يناير","فبراير","مارس","أبريل","مايو","يونيو","يوليو","أغسطس","سبتمبر","أكتوبر","نوفمبر","ديسمبر"];
-  return `${Number(day)} ${months[Number(m) - 1]} ${y}`;
+  return new Date(d).toLocaleDateString("ar-EG", { day: "numeric", month: "long", year: "numeric" });
 }
 
 export default function AdminCouponsPage() {
@@ -86,7 +93,11 @@ export default function AdminCouponsPage() {
   const [modal,       setModal]       = useState<{ open: boolean; id?: number }>({ open: false });
   const [form,        setForm]        = useState(emptyForm);
   const [formErr,     setFormErr]     = useState<string | null>(null);
-  const [deleteId,    setDeleteId]    = useState<number | null>(null);
+  const [deleteId,           setDeleteId]           = useState<number | null>(null);
+  const [showVisModal,       setShowVisModal]       = useState(false);
+  const [visTarget,          setVisTarget]          = useState<Coupon | null>(null);
+  const [adTitle,            setAdTitle]            = useState("");
+  const [adDescription,      setAdDescription]      = useState("");
 
   const isEdit   = modal.id !== undefined;
   /* Case-sensitive search — SAVE10 ≠ save10 */
@@ -103,7 +114,7 @@ export default function AdminCouponsPage() {
     setFetchErr(null);
     const { data, error } = await supabase
       .from("coupons")
-      .select("id, code, type, value, applies_to, min_order, usage_limit_total, usage_limit_per_user, expires_at, is_active, restaurant_id, restaurants!restaurant_id(name)")
+      .select("id, code, type, value, applies_to, min_order, expires_at, is_active, usage_limit_total, usage_limit_per_user, visibility, ad_title, ad_description, restaurant_id, restaurants!restaurant_id(name)")
       .order("id", { ascending: false });
     if (error) setFetchErr("تعذّر تحميل الكوبونات");
     else setRows((data ?? []).map(fromRow));
@@ -142,6 +153,9 @@ export default function AdminCouponsPage() {
       expiry:               c.expiry,
       active:               c.active,
       restaurantId:         c.restaurantId,
+      visibility:           c.visibility,
+      adTitle:              c.adTitle        ?? "",
+      adDescription:        c.adDescription  ?? "",
     });
     setFormErr(null);
     setModal({ open: true, id: c.id });
@@ -177,7 +191,7 @@ export default function AdminCouponsPage() {
     }
 
     const dbPayload = {
-      code:                 form.code.trim(),   /* case-sensitive — stored exactly as typed */
+      code:                 form.code.trim(),
       type:                 form.type,
       value,
       applies_to:           form.applies,
@@ -187,6 +201,9 @@ export default function AdminCouponsPage() {
       expires_at:           form.expiry || null,
       is_active:            form.active,
       restaurant_id:        form.restaurantId ?? null,
+      visibility:           form.visibility,
+      ad_title:             form.visibility === "public" ? form.adTitle.trim()       || null : null,
+      ad_description:       form.visibility === "public" ? form.adDescription.trim() || null : null,
     };
 
     setSaving(true);
@@ -194,7 +211,7 @@ export default function AdminCouponsPage() {
       const { data, error } = await supabase
         .from("coupons")
         .insert({ ...dbPayload, used_count: 0 })
-        .select("id, code, type, value, applies_to, min_order, usage_limit_total, usage_limit_per_user, expires_at, is_active, restaurant_id, restaurants!restaurant_id(name)")
+        .select("id, code, type, value, applies_to, min_order, expires_at, is_active, usage_limit_total, usage_limit_per_user, visibility, ad_title, ad_description, restaurant_id, restaurants!restaurant_id(name)")
         .single();
       if (error) { setFormErr("فشل الحفظ، حاول مرة أخرى"); setSaving(false); return; }
       setRows((p) => [fromRow(data), ...p]);
@@ -217,10 +234,40 @@ export default function AdminCouponsPage() {
         active:               form.active,
         restaurantId:         form.restaurantId,
         restaurantName:       restaurants.find((x) => x.id === form.restaurantId)?.name ?? null,
+        visibility:           form.visibility,
+        adTitle:              form.visibility === "public" ? form.adTitle.trim()       || null : null,
+        adDescription:        form.visibility === "public" ? form.adDescription.trim() || null : null,
       } : r));
     }
     setSaving(false);
     closeModal();
+  }
+
+  /* ── Toggle visibility ── */
+  async function toggleVisibility(c: Coupon) {
+    if (c.visibility === "public") {
+      await supabase.from("coupons").update({ visibility: "private", ad_title: null, ad_description: null }).eq("id", c.id);
+      setRows((p) => p.map((r) => r.id === c.id ? { ...r, visibility: "private", adTitle: null, adDescription: null } : r));
+    } else {
+      setVisTarget(c);
+      setAdTitle("");
+      setAdDescription("");
+      setShowVisModal(true);
+    }
+  }
+
+  async function confirmPublish() {
+    if (!visTarget) return;
+    await supabase.from("coupons").update({
+      visibility:     "public",
+      ad_title:       adTitle.trim()       || null,
+      ad_description: adDescription.trim() || null,
+    }).eq("id", visTarget.id);
+    setRows((p) => p.map((r) => r.id === visTarget.id ? {
+      ...r, visibility: "public", adTitle: adTitle.trim() || null, adDescription: adDescription.trim() || null,
+    } : r));
+    setShowVisModal(false);
+    setVisTarget(null);
   }
 
   /* ── Toggle active ── */
@@ -298,6 +345,7 @@ export default function AdminCouponsPage() {
                     { label: "عدد الاستخدام",   hide: " hidden lg:table-cell"   },
                     { label: "تاريخ الانتهاء",  hide: " hidden xl:table-cell"   },
                     { label: "الحالة",          hide: ""                        },
+                    { label: "الإتاحة",         hide: ""                        },
                     { label: "إجراءات",         hide: ""                        },
                   ].map(({ label, hide }) => (
                     <th key={label}
@@ -311,20 +359,20 @@ export default function AdminCouponsPage() {
               <tbody>
                 {loading ? (
                   <tr>
-                    <td colSpan={10} className="px-4 py-12 text-center text-sm" style={{ color: C.muted }}>
+                    <td colSpan={11} className="px-4 py-12 text-center text-sm" style={{ color: C.muted }}>
                       جاري التحميل...
                     </td>
                   </tr>
                 ) : fetchErr ? (
                   <tr>
-                    <td colSpan={10} className="px-4 py-12 text-center text-sm" style={{ color: C.red }}>
+                    <td colSpan={11} className="px-4 py-12 text-center text-sm" style={{ color: C.red }}>
                       {fetchErr}
                       <button onClick={fetchCoupons} className="mr-2 underline" style={{ color: C.teal }}>إعادة المحاولة</button>
                     </td>
                   </tr>
                 ) : filtered.length === 0 ? (
                   <tr>
-                    <td colSpan={10} className="px-4 py-12 text-center text-sm" style={{ color: C.muted }}>
+                    <td colSpan={11} className="px-4 py-12 text-center text-sm" style={{ color: C.muted }}>
                       لا توجد كوبونات مطابقة
                     </td>
                   </tr>
@@ -395,6 +443,20 @@ export default function AdminCouponsPage() {
                         }}
                       >
                         {c.active ? "نشط" : "مش نشط"}
+                      </button>
+                    </td>
+
+                    {/* الإتاحة */}
+                    <td className="px-3 py-3">
+                      <button
+                        onClick={() => toggleVisibility(c)}
+                        className="px-3 py-1 rounded-full text-xs font-bold whitespace-nowrap transition-all"
+                        style={{
+                          background: c.visibility === "public" ? `${C.teal}20` : `${C.muted}20`,
+                          color:      c.visibility === "public" ? C.teal : C.muted,
+                        }}
+                      >
+                        {c.visibility === "public" ? "🌐 عام" : "🔒 شخصي"}
                       </button>
                     </td>
 
@@ -614,6 +676,64 @@ export default function AdminCouponsPage() {
                 </button>
               </div>
 
+              {/* الإتاحة */}
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-semibold" style={{ color: C.muted }}>الإتاحة</span>
+                <div className="flex gap-2">
+                  {(["private", "public"] as const).map((v) => (
+                    <button
+                      key={v}
+                      type="button"
+                      onClick={() => setForm({ ...form, visibility: v })}
+                      className="px-3 py-1.5 rounded-full text-xs font-bold transition-all"
+                      style={{
+                        background: form.visibility === v
+                          ? (v === "public" ? `${C.teal}33` : `${C.muted}33`)
+                          : "transparent",
+                        color:  form.visibility === v
+                          ? (v === "public" ? C.teal : C.muted)
+                          : C.muted,
+                        border: `1px solid ${form.visibility === v
+                          ? (v === "public" ? C.teal : C.muted)
+                          : C.border}`,
+                      }}
+                    >
+                      {v === "public" ? "🌐 عام" : "🔒 شخصي"}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* حقول الإعلان — تظهر فقط لو الإتاحة = عام */}
+              {form.visibility === "public" && (
+                <>
+                  <div className="flex flex-col gap-1.5">
+                    <label className="text-xs font-semibold" style={{ color: C.muted }}>
+                      عنوان الإعلان <span style={{ color: C.red }}>*</span>
+                    </label>
+                    <input
+                      type="text"
+                      value={form.adTitle}
+                      onChange={(e) => setForm({ ...form, adTitle: e.target.value })}
+                      placeholder="مثال: خصم ٥٠٪ على أول طلب"
+                      className="w-full rounded-xl px-3 py-2.5 text-sm outline-none"
+                      style={inp}
+                    />
+                  </div>
+                  <div className="flex flex-col gap-1.5">
+                    <label className="text-xs font-semibold" style={{ color: C.muted }}>وصف الإعلان</label>
+                    <textarea
+                      value={form.adDescription}
+                      onChange={(e) => setForm({ ...form, adDescription: e.target.value })}
+                      placeholder="مثال: استخدم الكود واحصل على خصم على رسوم التوصيل"
+                      rows={2}
+                      className="w-full rounded-xl px-3 py-2.5 text-sm outline-none resize-none"
+                      style={inp}
+                    />
+                  </div>
+                </>
+              )}
+
             </div>
 
             {/* Footer */}
@@ -630,6 +750,61 @@ export default function AdminCouponsPage() {
               </button>
             </div>
 
+          </div>
+        </div>
+      )}
+
+      {/* ── Visibility / Publish Modal ── */}
+      {showVisModal && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center p-4"
+          style={{ background: "rgba(0,0,0,0.7)" }}
+          onClick={(e) => { if (e.target === e.currentTarget) setShowVisModal(false); }}
+        >
+          <div className="w-full max-w-sm rounded-2xl flex flex-col"
+            style={{ background: C.card, border: `1px solid ${C.border}` }}>
+            <div className="flex items-center justify-between px-5 py-4 border-b" style={{ borderColor: C.border }}>
+              <h2 className="text-base font-black" style={{ color: C.text }}>بيانات الإعلان 🌐</h2>
+              <button onClick={() => setShowVisModal(false)}
+                className="w-8 h-8 rounded-full flex items-center justify-center hover:opacity-70"
+                style={{ background: C.bg, color: C.muted }}>✕</button>
+            </div>
+            <div className="px-5 py-4 flex flex-col gap-4">
+              <div className="flex flex-col gap-1.5">
+                <label className="text-xs font-semibold" style={{ color: C.muted }}>عنوان العرض</label>
+                <input
+                  type="text"
+                  value={adTitle}
+                  onChange={(e) => setAdTitle(e.target.value)}
+                  placeholder="مثال: خصم ٥٠٪ على أول طلب"
+                  className="w-full rounded-xl px-3 py-2.5 text-sm outline-none"
+                  style={{ background: C.bg, border: `1px solid ${C.border}`, color: C.text }}
+                />
+              </div>
+              <div className="flex flex-col gap-1.5">
+                <label className="text-xs font-semibold" style={{ color: C.muted }}>وصف العرض</label>
+                <textarea
+                  value={adDescription}
+                  onChange={(e) => setAdDescription(e.target.value)}
+                  placeholder="مثال: استخدم الكود واحصل على خصم على رسوم التوصيل"
+                  rows={3}
+                  className="w-full rounded-xl px-3 py-2.5 text-sm outline-none resize-none"
+                  style={{ background: C.bg, border: `1px solid ${C.border}`, color: C.text }}
+                />
+              </div>
+            </div>
+            <div className="flex gap-3 px-5 py-4 border-t" style={{ borderColor: C.border }}>
+              <button onClick={confirmPublish}
+                className="flex-1 py-2.5 rounded-xl text-sm font-bold hover:opacity-90 transition-opacity"
+                style={{ background: C.teal, color: "#fff" }}>
+                نشر للعموم 🌐
+              </button>
+              <button onClick={() => setShowVisModal(false)}
+                className="flex-1 py-2.5 rounded-xl text-sm font-bold hover:opacity-80 transition-opacity"
+                style={{ background: C.bg, color: C.muted, border: `1px solid ${C.border}` }}>
+                إلغاء
+              </button>
+            </div>
           </div>
         </div>
       )}

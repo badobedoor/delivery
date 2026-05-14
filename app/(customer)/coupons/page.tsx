@@ -5,21 +5,22 @@ import { useEffect, useState } from "react";
 import { supabase } from "@/lib/supabase";
 
 type Coupon = {
-  id: string;
-  code: string;
-  type: string;
-  value: number | null;
-  applies_to: string | null;
-  expires_at: string | null;
-  is_active: boolean;
+  id:             string;
+  code:           string;
+  type:           string;
+  value:          number | null;
+  applies_to:     string | null;
+  expires_at:     string | null;
+  is_active:      boolean;
+  ad_title?:      string | null;
+  ad_description?: string | null;
 };
 
-type TabKey = "valid" | "used" | "expired";
+type TabKey = "valid" | "used";
 
 const tabs: { key: TabKey; label: string }[] = [
-  { key: "valid",   label: "صالح"   },
-  { key: "used",    label: "استخدم" },
-  { key: "expired", label: "انتهت"  },
+  { key: "valid", label: "صالح"         },
+  { key: "used",  label: "تم الاستخدام" },
 ];
 
 function formatDiscount(coupon: Coupon): string {
@@ -45,42 +46,59 @@ function EmptyState() {
   );
 }
 
-function CouponCard({ coupon, showUse }: { coupon: Coupon; showUse: boolean }) {
+function CouponCard({ coupon, isUsed }: { coupon: Coupon; isUsed: boolean }) {
   const [copied, setCopied] = useState(false);
 
-  function handleCopy() {
+  function copyCode() {
     navigator.clipboard.writeText(coupon.code);
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
   }
 
   return (
-    <div className="bg-white rounded-2xl border border-[var(--color-border)] overflow-hidden flex">
-      <div className="w-1.5 bg-[var(--color-primary)] flex-shrink-0" />
-      <div className="flex-1 py-4 px-4">
-        <p className="text-base font-black text-[var(--color-primary)] tracking-widest">
-          {coupon.code}
+    <div
+      className={`rounded-2xl overflow-hidden shadow-md transition-opacity ${isUsed ? "opacity-60" : ""}`}
+      style={{ background: "linear-gradient(135deg, #F97316 0%, #C2410C 100%)" }}
+    >
+      <div className="px-5 pt-5 pb-4">
+
+        {/* العنوان */}
+        <p className="text-lg font-black text-white">
+          {coupon.ad_title || formatDiscount(coupon)}
         </p>
-        <p className="text-sm font-semibold text-[var(--color-secondary)] mt-0.5">
-          {formatDiscount(coupon)}
-        </p>
+
+        {/* الوصف */}
+        {coupon.ad_description && (
+          <p className="text-sm text-white/80 mt-1 leading-relaxed">{coupon.ad_description}</p>
+        )}
+
+        {/* الكود */}
+        <div className="mt-4 flex items-center gap-3">
+          <div className="flex-1 border-2 border-dashed border-white/60 rounded-xl px-3 py-2">
+            <p className="text-base font-black text-white tracking-widest text-center">
+              {coupon.code}
+            </p>
+          </div>
+
+          {isUsed ? (
+            <span className="bg-white/20 text-white text-xs font-bold px-3 py-2.5 rounded-xl flex-shrink-0 text-center">
+              تم الاستخدام
+            </span>
+          ) : (
+            <button
+              onClick={copyCode}
+              className="bg-white text-[#FF6000] text-sm font-bold px-4 py-2.5 rounded-xl flex-shrink-0 active:scale-[0.97] transition-transform"
+            >
+              {copied ? "✓ تم النسخ" : "انسخ الكود"}
+            </button>
+          )}
+        </div>
+
+        {/* تاريخ الانتهاء */}
         {coupon.expires_at && (
-          <p className="text-xs text-[var(--color-muted)] mt-0.5">
+          <p className="text-xs text-white/70 mt-3">
             ينتهي في {formatArabicDate(coupon.expires_at)}
           </p>
-        )}
-        {showUse && (
-          <>
-            <div className="border-t-2 border-dashed border-[var(--color-border)] my-3" />
-            <div className="flex justify-end">
-              <button
-                onClick={handleCopy}
-                className="text-sm font-bold text-[var(--color-primary)] border-2 border-[var(--color-primary)] px-4 py-1.5 rounded-xl active:scale-[0.98] transition-transform"
-              >
-                {copied ? "تم النسخ ✓" : "نسخ الكود"}
-              </button>
-            </div>
-          </>
         )}
       </div>
     </div>
@@ -91,38 +109,48 @@ export default function CouponsPage() {
   const [activeTab, setActiveTab] = useState<TabKey>("valid");
   const [valid,   setValid]   = useState<Coupon[]>([]);
   const [used,    setUsed]    = useState<Coupon[]>([]);
-  const [expired, setExpired] = useState<Coupon[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     async function load() {
       const { data: { user } } = await supabase.auth.getUser();
+      if (!user) { setLoading(false); return; }
 
-      const [couponsRes, usageRes] = await Promise.all([
-        supabase.from("coupons").select("id, code, type, value, applies_to, expires_at, is_active"),
-        user
-          ? supabase.from("coupon_usage").select("coupon_id").eq("user_id", user.id)
-          : Promise.resolve({ data: [] as { coupon_id: string }[], error: null }),
+      const [publicRes, usageRes] = await Promise.all([
+        /* تاب "صالح" — الكوبونات العامة النشطة */
+        supabase
+          .from("coupons")
+          .select("id, code, type, value, applies_to, min_order, expires_at, is_active, usage_limit_total, usage_limit_per_user, visibility, ad_title, ad_description")
+          .eq("visibility", "public")
+          .eq("is_active", true)
+          .order("created_at", { ascending: false }),
+
+        /* تاب "تم الاستخدام" — كوبونات العميل المستخدمة */
+        supabase
+          .from("coupon_usages")
+          .select("*, coupons(id, code, type, value, applies_to, ad_title, ad_description)")
+          .eq("user_id", user.id)
+          .order("created_at", { ascending: false }),
       ]);
 
-      const coupons: Coupon[] = couponsRes.data ?? [];
-      const usedIds = new Set((usageRes.data ?? []).map((r) => r.coupon_id));
-      const now = new Date();
+      setValid((publicRes.data ?? []) as Coupon[]);
 
-      setUsed(coupons.filter((c) => usedIds.has(c.id)));
-      setExpired(coupons.filter((c) =>
-        !usedIds.has(c.id) && (!c.is_active || (c.expires_at ? new Date(c.expires_at) < now : false))
-      ));
-      setValid(coupons.filter((c) =>
-        !usedIds.has(c.id) && c.is_active && (!c.expires_at || new Date(c.expires_at) >= now)
-      ));
-
+      const usedCoupons: Coupon[] = (usageRes.data ?? []).map((row: any) => ({
+        id:         row.coupons?.id         ?? row.coupon_id,
+        code:       row.coupons?.code       ?? "",
+        type:       row.coupons?.type       ?? "",
+        value:      row.coupons?.value      ?? null,
+        applies_to: row.coupons?.applies_to ?? null,
+        expires_at: null,
+        is_active:  true,
+      }));
+      setUsed(usedCoupons);
       setLoading(false);
     }
     load();
   }, []);
 
-  const lists: Record<TabKey, Coupon[]> = { valid, used, expired };
+  const lists: Record<TabKey, Coupon[]> = { valid, used };
   const current = lists[activeTab];
 
   return (
@@ -171,7 +199,11 @@ export default function CouponsPage() {
           ) : (
             <div className="flex flex-col gap-3">
               {current.map((coupon) => (
-                <CouponCard key={coupon.id} coupon={coupon} showUse={activeTab === "valid"} />
+                <CouponCard
+                  key={coupon.id}
+                  coupon={coupon}
+                  isUsed={activeTab === "used"}
+                />
               ))}
             </div>
           )}
