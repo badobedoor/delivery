@@ -6,10 +6,26 @@ import { usePathname } from "next/navigation";
 export default function BottomNav() {
   const pathname = usePathname();
 
+  const showBottomNav =
+    pathname === "/" ||
+    pathname === "/restaurants" ||
+    pathname === "/favorites" ||
+    pathname.startsWith("/search") ||
+    pathname === "/account" ||
+    pathname === "/orders" ||
+    pathname === "/offers" ||
+    pathname === "/coupons" ||
+    pathname === "/notifications" ||
+    pathname === "/address" ||
+    pathname === "/help" ||
+    pathname === "/about";
+
   const showSearch = pathname.startsWith("/restaurants") || pathname.startsWith("/restaurant");
   const isHome     = pathname === "/";
   const isFav      = pathname.startsWith("/favorites");
   const isAccount  = pathname.startsWith("/account");
+
+  if (!showBottomNav) return null;
 
   const active = "var(--color-primary)";
   const muted  = "var(--color-muted)";

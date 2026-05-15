@@ -2,9 +2,11 @@
 
 import Link from "next/link";
 import { useState, useEffect } from "react";
+import { usePathname } from "next/navigation";
 import { getCartCount, getCartTotal } from "@/lib/cart";
 
 export default function CartBar() {
+  const pathname   = usePathname();
   const [count, setCount] = useState(0);
   const [total, setTotal] = useState(0);
 
@@ -23,7 +25,10 @@ export default function CartBar() {
     };
   }, []);
 
-  if (count === 0) return null;
+  /* مخفية في صفحة قائمة المطاعم، ظاهرة في صفحة المطعم الفردي وباقي الصفحات */
+  const showCart = pathname === "/restaurants" ? false : true;
+
+  if (count === 0 || !showCart) return null;
 
   return (
     <div className="fixed bottom-0 left-0 right-0 w-full z-50">

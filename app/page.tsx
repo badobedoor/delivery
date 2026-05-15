@@ -2,7 +2,9 @@
 import Image from "next/image";
 import Link from "next/link";
 import { useState, useEffect } from "react";
+import { useRouter } from "next/navigation";
 import BottomNav from "@/components/customer/BottomNav";
+import ClosedScreen from "@/components/customer/ClosedScreen";
 import { supabase } from "@/lib/supabase";
 
 const categories = [
@@ -22,11 +24,42 @@ const shortcuts = [
   { emoji: "🍽️", name: "وجبة اليوم" },
 ];
 
+function isOpenNow(start: string, end: string): boolean {
+  const now   = new Date();
+  const cairo = new Date(now.toLocaleString("en-US", { timeZone: "Africa/Cairo" }));
+  const current  = cairo.getHours() * 60 + cairo.getMinutes();
+  const [sh, sm] = start.split(":").map(Number);
+  const [eh, em] = end.split(":").map(Number);
+  const startMin = sh * 60 + sm;
+  const endMin   = eh * 60 + em;
+  if (endMin < startMin) return current >= startMin || current < endMin;
+  return current >= startMin && current < endMin;
+}
+
 export default function HomePage() {
+  const router = useRouter();
   const [defaultAddress, setDefaultAddress] = useState<{ full_address: string } | null>(null);
+  const [isOpen,    setIsOpen]    = useState<boolean | null>(null);
+  const [workStart, setWorkStart] = useState("");
+  const [workEnd,   setWorkEnd]   = useState("");
 
   useEffect(() => {
     async function load() {
+      /* جيب إعدادات أوقات العمل */
+      const { data: settings } = await supabase
+        .from("settings")
+        .select("work_start_time, work_end_time")
+        .single();
+
+      if (settings?.work_start_time && settings?.work_end_time) {
+        setWorkStart(settings.work_start_time);
+        setWorkEnd(settings.work_end_time);
+        setIsOpen(isOpenNow(settings.work_start_time, settings.work_end_time));
+      } else {
+        setIsOpen(true); /* لو مفيش إعدادات — افتح */
+      }
+
+      /* جيب العنوان الافتراضي */
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) return;
       const { data } = await supabase
@@ -39,6 +72,14 @@ export default function HomePage() {
     }
     load();
   }, []);
+
+  /* لو التحميل لسه — اعرض شاشة بيضاء */
+  if (isOpen === null) return <div className="min-h-screen bg-[#0F172A]" />;
+
+  /* لو مغلق — اعرض شاشة الإغلاق */
+  if (!isOpen && workStart && workEnd) {
+    return <ClosedScreen openTime={workStart} closeTime={workEnd} />;
+  }
 
   return (
     <div className="min-h-screen bg-[var(--color-surface)]">
@@ -54,7 +95,7 @@ export default function HomePage() {
             {/* Address row — top */}
             <div className="flex flex-col gap-0.5">
               <span className="text-xs" style={{ color: "#9CA3AF" }}>التوصيل إلى</span>
-              <button className="flex items-center gap-1 self-start">
+              <Link href="/address" className="flex items-center gap-1 self-start">
                 <span className="text-sm font-semibold text-[var(--color-secondary)] text-right max-w-[220px] truncate">
                   {defaultAddress?.full_address || "اختر عنوانك"}
                 </span>
@@ -62,7 +103,7 @@ export default function HomePage() {
                   stroke="var(--color-secondary)" strokeWidth="2.5" className="flex-shrink-0">
                   <path d="M6 9l6 6 6-6" />
                 </svg>
-              </button>
+              </Link>
             </div>
 
             {/* Welcome + image row — bottom */}
@@ -92,97 +133,57 @@ export default function HomePage() {
         {/* ── Service Cards ── */}
         <section className="px-4 pt-4">
 
-          {/* Row 1: 2 large cards — text right, image left (RTL) */}
-          <div className="flex gap-3 mb-3">
+          {/* Row 1: 2 large cards */}
+          <div className="grid grid-cols-2 gap-3 mb-3">
             {[
-              { name: "طعام",          seed: "burger",  emoji: "🍔" },
-              { name: "طلبات خالصة",   seed: "package", emoji: "📦" },
-            ].map(({ name, seed, emoji }) => (
+              { name: "طعام",        image: "/Restaurants.png"  },
+              { name: "طلبات خاصة", image: "/Special_order.png" },
+            ].map(({ name, image }) => (
               <button
                 key={name}
-                className="flex-1 rounded-3xl cursor-pointer transition-all active:scale-[0.97] overflow-hidden"
-                style={{ background: "#F1F1F1", boxShadow: "0 1px 3px rgba(0,0,0,0.05)" }}
+                onClick={() => name === "طعام" ? router.push("/restaurants") : undefined}
+                className="relative rounded-2xl transition-all active:scale-[0.97] overflow-hidden flex items-center justify-between px-4 group"
+                style={{ background: "#F1F1F1", height: "130px" }}
               >
-                <div className="flex items-center justify-between px-4 py-4 h-24 gap-2">
-                  {/* Text — right (start in RTL) */}
-                  <span className="text-sm font-bold text-[var(--color-secondary)] text-right leading-snug flex-1">
-                    {name}
-                  </span>
-                  {/* Image — left (end in RTL) */}
-                  <div className="w-16 h-16 flex-shrink-0 flex items-center justify-center">
-                    {/* eslint-disable-next-line @next/next/no-img-element */}
-                    <img
-                      src={`https://picsum.photos/seed/${seed}/80/80`}
-                      alt={name}
-                      className="w-16 h-16 object-contain rounded-2xl"
-                    />
+                <p className="font-black text-[#1A1A1A] text-right" style={{ fontSize: "clamp(16px, 4vw, 24px)" }}>
+                  {name}
+                </p>
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img src={image} alt={name} className="w-24 h-24 object-contain flex-shrink-0" />
+                {name !== "طعام" && (
+                  <div className="absolute inset-0 bg-black/0 group-hover:bg-black/50 group-active:bg-black/50 transition-all duration-200 flex items-center justify-center">
+                    <span className="text-white font-black text-lg opacity-0 group-hover:opacity-100 group-active:opacity-100 transition-all duration-200">قريباً</span>
                   </div>
-                </div>
+                )}
               </button>
             ))}
           </div>
 
-          {/* Row 2: 3 small equal cards */}
-          <div className="flex gap-3">
+          {/* Row 2: 3 small cards */}
+          <div className="grid grid-cols-3 gap-3">
             {[
-              { name: "البقالة",  seed: "vegetables" },
-              { name: "الصحة",   seed: "medicine"   },
-              { name: "الخدمات", seed: "tools"       },
-            ].map(({ name, seed }) => (
+              { name: "البقالة",  image: "/Grocery.png"  },
+              { name: "الصحة",   image: "/Health.png"   },
+              { name: "الخدمات", image: "/Services.png" },
+            ].map(({ name, image }) => (
               <button
                 key={name}
-                className="flex-1 rounded-3xl cursor-pointer transition-all active:scale-[0.97] overflow-hidden"
-                style={{ background: "#F1F1F1", boxShadow: "0 1px 3px rgba(0,0,0,0.05)" }}
+                className="relative rounded-2xl transition-all active:scale-[0.97] overflow-hidden group"
+                style={{ background: "#F1F1F1", aspectRatio: "4/3" }}
               >
-                <div className="flex flex-col items-center justify-center px-2 py-3 h-20 gap-1.5">
-                  {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img
-                    src={`https://picsum.photos/seed/${seed}/60/60`}
-                    alt={name}
-                    className="w-10 h-10 object-contain rounded-xl"
-                  />
-                  <span className="text-[11px] font-bold text-[var(--color-secondary)] text-center leading-tight">
-                    {name}
-                  </span>
+                <p className="absolute top-3 right-3 text-sm font-black text-[#1A1A1A] z-10 leading-tight text-right">
+                  {name}
+                </p>
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img src={image} alt={name} className="absolute bottom-0 left-0 w-2/3 h-2/3 object-contain" />
+                <div className="absolute inset-0 bg-black/0 group-hover:bg-black/50 group-active:bg-black/50 transition-all duration-200 flex items-center justify-center">
+                  <span className="text-white font-black text-lg opacity-0 group-hover:opacity-100 group-active:opacity-100 transition-all duration-200">قريباً</span>
                 </div>
               </button>
             ))}
           </div>
         </section>
 
-        {/* ── Categories ── */}
-        <section className="px-4 pt-5">
-          <div className="grid grid-cols-4 gap-3">
-            {categories.map((cat) =>
-              cat.name === "مطاعم" ? (
-                <Link
-                  key={cat.name}
-                  href="/restaurants"
-                  className="flex flex-col items-center gap-1.5"
-                >
-                  <div className="w-full aspect-square rounded-2xl bg-white border border-[var(--color-border)] flex items-center justify-center text-2xl shadow-sm">
-                    {cat.emoji}
-                  </div>
-                  <span className="text-xs font-medium text-[var(--color-secondary)] text-center leading-tight">
-                    {cat.name}
-                  </span>
-                </Link>
-              ) : (
-                <button
-                  key={cat.name}
-                  className="flex flex-col items-center gap-1.5"
-                >
-                  <div className="w-full aspect-square rounded-2xl bg-white border border-[var(--color-border)] flex items-center justify-center text-2xl shadow-sm">
-                    {cat.emoji}
-                  </div>
-                  <span className="text-xs font-medium text-[var(--color-secondary)] text-center leading-tight">
-                    {cat.name}
-                  </span>
-                </button>
-              )
-            )}
-          </div>
-        </section>
 
         {/* ── اختيارات لا تفوتك ── */}
         <section className="pt-6">

@@ -271,12 +271,12 @@ export default function CheckoutPage() {
                   <p className="text-xs text-[var(--color-muted)] leading-relaxed">{address!.full_address}</p>
                 </div>
               </div>
-              <button
-                onClick={() => setShowAddressPicker(true)}
+              <Link
+                href="/address"
                 className="text-sm font-bold text-[var(--color-primary)] flex-shrink-0"
               >
                 تغيير
-              </button>
+              </Link>
             </div>
           </SectionCard>
 

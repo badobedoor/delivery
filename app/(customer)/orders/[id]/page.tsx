@@ -68,10 +68,15 @@ export default function OrderDetailPage() {
   const [order,      setOrder]      = useState<Order | null>(null);
   const [loading,    setLoading]    = useState(true);
   const [notFound,   setNotFound]   = useState(false);
-  const [rated,      setRated]      = useState(false);
-  const [reordering, setReordering] = useState(false);
-  const [favSaving,  setFavSaving]  = useState(false);
-  const [favSaved,   setFavSaved]   = useState(false);
+  const [rated,            setRated]            = useState(false);
+  const [reordering,       setReordering]       = useState(false);
+  const [favSaving,        setFavSaving]        = useState(false);
+  const [favSaved,         setFavSaved]         = useState(false);
+  const [showRatingModal,  setShowRatingModal]  = useState(false);
+  const [ratings,          setRatings]          = useState({ food_quality: 0, value_for_money: 0, packaging: 0 });
+  const [comment,          setComment]          = useState("");
+  const [ratingError,      setRatingError]      = useState("");
+  const [submittingRating, setSubmittingRating] = useState(false);
 
   useEffect(() => {
     async function load() {
@@ -90,7 +95,30 @@ export default function OrderDetailPage() {
         .single();
 
       if (error || !data) { setNotFound(true); setLoading(false); return; }
-      setOrder(data as unknown as Order);
+      const orderData = data as unknown as Order;
+      setOrder(orderData);
+
+      const { data: { user } } = await supabase.auth.getUser();
+
+      /* تحقق لو الأوردر اتقيّم قبل كده */
+      const { data: ratingData } = await supabase
+        .from("restaurant_ratings")
+        .select("id")
+        .eq("order_id", id)
+        .maybeSingle();
+      setRated(!!ratingData);
+
+      /* تحقق لو المطعم محفوظ في المفضلة */
+      if (user && orderData.restaurant_id) {
+        const { data: favData } = await supabase
+          .from("favorite_orders")
+          .select("id")
+          .eq("user_id", user.id)
+          .eq("restaurant_id", orderData.restaurant_id)
+          .maybeSingle();
+        setFavSaved(!!favData);
+      }
+
       setLoading(false);
     }
     load();
@@ -134,6 +162,8 @@ export default function OrderDetailPage() {
 
   async function handleSaveFav() {
     if (!order) return;
+    const confirmed = window.confirm("هتضيف الطلب ده للمفضلة؟");
+    if (!confirmed) return;
     setFavSaving(true);
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) { router.push("/auth/login"); setFavSaving(false); return; }
@@ -160,9 +190,53 @@ export default function OrderDetailPage() {
     setTimeout(() => setFavSaved(false), 3000);
   }
 
-  function handleRate() {
+  async function submitRating() {
+    if (!order) return;
+    if (!ratings.food_quality || !ratings.value_for_money || !ratings.packaging) {
+      setRatingError("من فضلك قيّم كل المحاور");
+      return;
+    }
+    setRatingError("");
+    setSubmittingRating(true);
+
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) { setSubmittingRating(false); return; }
+
+    await supabase.from("restaurant_ratings").insert({
+      restaurant_id:   order.restaurant_id,
+      user_id:         user.id,
+      order_id:        order.id,
+      food_quality:    ratings.food_quality,
+      value_for_money: ratings.value_for_money,
+      packaging:       ratings.packaging,
+      comment:         comment.trim() || null,
+    });
+
+    /* حدّث متوسط المطعم */
+    const { data: allRatings } = await supabase
+      .from("restaurant_ratings")
+      .select("food_quality, value_for_money, packaging")
+      .eq("restaurant_id", order.restaurant_id);
+
+    if (allRatings?.length) {
+      const avg = (
+        allRatings.reduce(
+          (s: number, r: { food_quality: number; value_for_money: number; packaging: number }) =>
+            s + (r.food_quality + r.value_for_money + r.packaging) / 3,
+          0
+        ) / allRatings.length
+      ).toFixed(1);
+      await supabase
+        .from("restaurants")
+        .update({ rating_avg: avg, rating_count: allRatings.length })
+        .eq("id", order.restaurant_id);
+    }
+
     setRated(true);
-    alert("التقييم قريباً 🌟");
+    setShowRatingModal(false);
+    setRatings({ food_quality: 0, value_for_money: 0, packaging: 0 });
+    setComment("");
+    setSubmittingRating(false);
   }
 
   /* ── Loading ── */
@@ -351,7 +425,13 @@ export default function OrderDetailPage() {
                 <div className="flex gap-2">
                   <button
                     disabled={rated}
-                    onClick={handleRate}
+                    onClick={() => {
+                      if (rated) return;
+                      setRatings({ food_quality: 0, value_for_money: 0, packaging: 0 });
+                      setComment("");
+                      setRatingError("");
+                      setShowRatingModal(true);
+                    }}
                     className="flex-1 border-2 text-sm font-bold py-3 rounded-2xl transition-all disabled:opacity-60"
                     style={{
                       borderColor: rated ? "var(--color-border)" : "var(--color-primary)",
@@ -391,6 +471,74 @@ export default function OrderDetailPage() {
         </div>
 
       </div>
+
+      {/* ── Rating Modal ── */}
+      {showRatingModal && order && (
+        <div
+          className="fixed inset-0 z-50 flex items-end justify-center"
+          style={{ background: "rgba(0,0,0,0.5)" }}
+          onClick={(e) => { if (e.target === e.currentTarget) setShowRatingModal(false); }}
+        >
+          <div className="w-full bg-white rounded-t-3xl p-5 flex flex-col gap-4">
+
+            {/* Header */}
+            <div className="flex items-center justify-between">
+              <h3 className="text-base font-black text-[#1A1A1A]">
+                قيّم تجربتك مع {order.restaurants?.name ?? "المطعم"}
+              </h3>
+              <button
+                onClick={() => setShowRatingModal(false)}
+                className="w-8 h-8 rounded-full bg-[#F5F5F5] flex items-center justify-center text-[#6B7280]"
+              >
+                ✕
+              </button>
+            </div>
+
+            {/* النجوم */}
+            {([
+              { label: "جودة الطعام",        key: "food_quality"    },
+              { label: "القيمة مقابل السعر", key: "value_for_money" },
+              { label: "تغليف الطلب",        key: "packaging"       },
+            ] as const).map(({ label, key }) => (
+              <div key={key} className="flex items-center justify-between">
+                <p className="text-sm font-bold text-[#1A1A1A]">{label}</p>
+                <div className="flex gap-1">
+                  {[1, 2, 3, 4, 5].map((star) => (
+                    <button key={star} onClick={() => setRatings((r) => ({ ...r, [key]: star }))}>
+                      <span style={{ color: ratings[key] >= star ? "#FBBF24" : "#D1D5DB", fontSize: 28 }}>★</span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            ))}
+
+            {/* تعليق */}
+            <textarea
+              placeholder="أضف تعليقك (اختياري)"
+              value={comment}
+              onChange={(e) => setComment(e.target.value)}
+              rows={3}
+              className="w-full rounded-xl p-3 text-sm resize-none outline-none"
+              style={{ border: "1px solid #E5E7EB", background: "#F9FAFB" }}
+            />
+
+            {ratingError && (
+              <p className="text-xs text-red-500 text-center">{ratingError}</p>
+            )}
+
+            <button
+              onClick={submitRating}
+              disabled={submittingRating}
+              className="w-full py-3 rounded-2xl text-sm font-black text-white active:scale-[0.98] transition-transform disabled:opacity-60"
+              style={{ background: "#FF6000" }}
+            >
+              {submittingRating ? "جاري الإرسال..." : "إرسال التقييم ⭐"}
+            </button>
+
+          </div>
+        </div>
+      )}
+
     </div>
   );
 }

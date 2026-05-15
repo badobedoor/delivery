@@ -5,7 +5,7 @@ import Link from "next/link";
 import { useState, useEffect } from "react";
 import { getCart, updateQty as updateCartQty, CartItem } from "@/lib/cart";
 import { supabase } from "@/lib/supabase";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 
 function itemUnitPrice(item: CartItem): number {
   const sizePrice   = item.size?.price ?? 0;
@@ -14,15 +14,15 @@ function itemUnitPrice(item: CartItem): number {
 }
 
 export default function CartPage() {
-  const router = useRouter();
+  const router        = useRouter();
+  const searchParams  = useSearchParams();
+  const fromFavorites = searchParams.get("from") === "favorites";
   const [cart,         setCart]         = useState(getCart);
   const [orderNote,    setOrderNote]    = useState(() =>
     typeof window !== "undefined" ? (localStorage.getItem("hala_order_note") ?? "") : ""
   );
-  const [savingFav,            setSavingFav]            = useState(false);
-  const [favSaved,             setFavSaved]             = useState(false);
-  const [showSaveFavModal,     setShowSaveFavModal]     = useState(false);
-  const [favoriteName,         setFavoriteName]         = useState("");
+  const [savingFav, setSavingFav] = useState(false);
+  const [favSaved,  setFavSaved]  = useState(false);
 
   useEffect(() => { setCart(getCart()); }, []);
 
@@ -36,27 +36,41 @@ export default function CartPage() {
   }
 
   async function handleSaveFavorite() {
+    if (favSaved) return;
+    const confirmed = window.confirm("هتضيف الطلب ده للمفضلة؟");
+    if (!confirmed) return;
+
     const cartNow = getCart();
     if (!cartNow) return;
     setSavingFav(true);
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) { router.push("/auth/login"); setSavingFav(false); return; }
-    const subtotalNow = cartNow.items.reduce((s, i) => {
-      const ex = (i.extras ?? []).reduce((a, e) => a + e.price, 0);
-      return s + (i.price + (i.size?.price ?? 0) + ex) * i.qty;
-    }, 0);
-    await supabase.from("favorite_orders").insert({
-      user_id:         user.id,
-      restaurant_id:   cartNow.restaurantId,
-      restaurant_name: cartNow.restaurantName,
-      name:            favoriteName.trim() || cartNow.restaurantName,
-      items:           cartNow.items,
-      total:           subtotalNow,
-    });
+
+    /* تحقق لو المطعم ده موجود في المفضلة بالفعل */
+    const { data: existing } = await supabase
+      .from("favorite_orders")
+      .select("id")
+      .eq("user_id", user.id)
+      .eq("restaurant_id", cartNow.restaurantId)
+      .maybeSingle();
+
+    if (!existing) {
+      const subtotalNow = cartNow.items.reduce((s, i) => {
+        const ex = (i.extras ?? []).reduce((a, e) => a + e.price, 0);
+        return s + (i.price + (i.size?.price ?? 0) + ex) * i.qty;
+      }, 0);
+      await supabase.from("favorite_orders").insert({
+        user_id:         user.id,
+        restaurant_id:   cartNow.restaurantId,
+        restaurant_name: cartNow.restaurantName,
+        name:            cartNow.restaurantName,
+        items:           cartNow.items,
+        total:           subtotalNow,
+      });
+    }
+
     setSavingFav(false);
     setFavSaved(true);
-    setShowSaveFavModal(false);
-    setFavoriteName("");
     setTimeout(() => setFavSaved(false), 3000);
   }
 
@@ -186,9 +200,9 @@ export default function CartPage() {
         {/* ── Bottom Bar ── */}
         <div className="fixed bottom-0 left-0 right-0 z-20 bg-white border-t border-gray-100 shadow-lg px-4 py-3">
 
-          {/* بانر المفضلة */}
-          <div
-            onClick={() => !favSaved && setShowSaveFavModal(true)}
+          {/* بانر المفضلة — مخفي لو جاي من المفضلة */}
+          {!fromFavorites && <div
+            onClick={handleSaveFavorite}
             className={`flex items-center gap-3 bg-[#FFF5F0] border border-[#FFD5C0] rounded-2xl px-4 py-3 mb-3 cursor-pointer active:scale-[0.98] transition-transform ${favSaved ? "opacity-60 pointer-events-none" : ""}`}
           >
             <span className="text-2xl">{favSaved ? "💛" : "🤍"}</span>
@@ -206,7 +220,7 @@ export default function CartPage() {
                 <path d="M15 18l-6-6 6-6" />
               </svg>
             )}
-          </div>
+          </div>}
 
           {/* سطر الإجمالي */}
           <div className="flex items-center justify-between mb-3">
@@ -236,48 +250,6 @@ export default function CartPage() {
 
       </div>
 
-      {/* ── Modal: احفظ في المفضلة ── */}
-      {showSaveFavModal && (
-        <div
-          className="fixed inset-0 bg-black/50 z-50 flex items-end"
-          onClick={() => setShowSaveFavModal(false)}
-        >
-          <div
-            className="bg-white w-full rounded-t-3xl p-5"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <p className="text-base font-black text-[#1A1A1A] text-right mb-1">
-              احفظ في المفضلة 🤍
-            </p>
-            <p className="text-xs text-[#6B7280] text-right mb-4">
-              اديله اسم عشان تلاقيه بسهولة — زي "وجبتي المعتادة" أو "طلب الشغل"
-            </p>
-            <input
-              value={favoriteName}
-              onChange={(e) => setFavoriteName(e.target.value)}
-              placeholder="اسم الطلب المفضل..."
-              className="w-full border border-gray-200 rounded-xl px-4 py-3 text-sm text-right outline-none mb-3 focus:border-[#FF6000]"
-              dir="rtl"
-              autoFocus
-            />
-            <div className="flex gap-3">
-              <button
-                onClick={handleSaveFavorite}
-                disabled={savingFav}
-                className="flex-1 bg-[#FF6000] text-white font-bold py-3 rounded-xl active:scale-[0.98] transition-transform disabled:opacity-60"
-              >
-                {savingFav ? "جاري الحفظ..." : "احفظ"}
-              </button>
-              <button
-                onClick={() => { setShowSaveFavModal(false); setFavoriteName(""); }}
-                className="flex-1 border border-gray-200 text-[#6B7280] py-3 rounded-xl"
-              >
-                إلغاء
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
 
     </div>
   );

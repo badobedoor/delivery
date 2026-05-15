@@ -3,6 +3,8 @@
 import Image from "next/image";
 import Link from "next/link";
 import { useState, useEffect, useCallback } from "react";
+import { useRouter } from "next/navigation";
+
 import { supabase } from "@/lib/supabase";
 import CartBar from "@/components/customer/CartBar";
 import BottomNav from "@/components/customer/BottomNav";
@@ -14,6 +16,7 @@ type Restaurant = {
   description: string | null;
   image_url: string | null;
   cover_image_url: string | null;
+  is_active: boolean;
 };
 
 type Advertisement = {
@@ -44,9 +47,10 @@ const FALLBACK_IMG =
   "https://images.unsplash.com/photo-1552566626-52f8b828add9?w=100&h=100&fit=crop";
 
 export default function RestaurantsPage() {
-  const address = "المعادي، القاهرة";
+  const router = useRouter();
 
   /* ── Page data ── */
+  const [currentAddress, setCurrentAddress] = useState<{ full_address: string; label: string } | null>(null);
   const [restaurants,   setRestaurants]   = useState<Restaurant[]>([]);
   const [advertisement, setAdvertisement] = useState<Advertisement | null>(null);
   const [featuredItems, setFeaturedItems] = useState<FeaturedItem[]>([]);
@@ -62,11 +66,22 @@ export default function RestaurantsPage() {
 
   useEffect(() => {
     async function fetchAll() {
+      /* جيب العنوان الافتراضي */
+      const { data: { user } } = await supabase.auth.getUser();
+      if (user) {
+        const { data: addr } = await supabase
+          .from("addresses")
+          .select("full_address, label")
+          .eq("user_id", user.id)
+          .eq("is_default", true)
+          .maybeSingle();
+        setCurrentAddress(addr ?? null);
+      }
+
       const [restaurantsRes, adsRes, featuredRes] = await Promise.all([
         supabase
           .from("restaurants")
-          .select("id, name, description, image_url, cover_image_url")
-          .eq("is_active", true)
+          .select("id, name, description, image_url, cover_image_url, is_active")
           .order("name"),
         supabase
           .from("advertisements")
@@ -137,12 +152,29 @@ export default function RestaurantsPage() {
             <span className="text-xl font-black flex-shrink-0" style={{ color: "var(--color-primary)" }}>
               حالا
             </span>
-            <button className="flex items-center gap-1 min-w-0">
-              <span className="text-sm font-semibold text-[var(--color-secondary)] truncate max-w-[200px]">
-                {address || "اختر عنوانك"}
-              </span>
+            <button
+              onClick={() => router.push("/address")}
+              className="flex items-center gap-1 min-w-0"
+            >
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none"
-                stroke="var(--color-secondary)" strokeWidth="2.5" className="flex-shrink-0">
+                stroke="var(--color-primary)" strokeWidth="2" strokeLinecap="round" className="flex-shrink-0">
+                <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z" />
+                <circle cx="12" cy="10" r="3" />
+              </svg>
+              {currentAddress ? (
+                <div className="text-right min-w-0">
+                  <p className="text-[10px] text-[var(--color-muted)]">التوصيل إلى</p>
+                  <p className="text-xs font-black text-[var(--color-secondary)] truncate max-w-[180px]">
+                    {currentAddress.label}
+                  </p>
+                </div>
+              ) : (
+                <p className="text-xs font-bold text-[var(--color-primary)]">
+                  أضف عنوانك الآن ←
+                </p>
+              )}
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none"
+                stroke="var(--color-muted)" strokeWidth="2" strokeLinecap="round" className="flex-shrink-0">
                 <path d="M6 9l6 6 6-6" />
               </svg>
             </button>
@@ -337,24 +369,37 @@ export default function RestaurantsPage() {
                 <div className="flex flex-col">
                   {restaurants.map((r, index) => (
                     <div key={r.id}>
-                      <Link href={`/restaurant/${r.id}`} className="flex items-center gap-3 py-3">
+                      <div
+                        onClick={() => r.is_active ? router.push(`/restaurant/${r.id}`) : undefined}
+                        className={`relative flex items-center gap-3 py-3 ${r.is_active ? "cursor-pointer" : "cursor-not-allowed"}`}
+                      >
                         <div className="relative w-[72px] h-[72px] flex-shrink-0 rounded-xl overflow-hidden">
                           <Image src={r.image_url ?? FALLBACK_IMG} alt={r.name} fill className="object-cover" />
+                          {!r.is_active && (
+                            <div className="absolute inset-0 flex items-center justify-center rounded-xl"
+                              style={{ background: "rgba(0,0,0,0.6)" }}>
+                              <span className="text-white font-black text-xs">مغلق</span>
+                            </div>
+                          )}
                         </div>
                         <div className="flex-1 min-w-0">
-                          <p className="text-base font-bold text-[var(--color-secondary)] truncate">{r.name}</p>
+                          <p className={`text-base font-bold truncate ${r.is_active ? "text-[var(--color-secondary)]" : "text-[#9CA3AF]"}`}>{r.name}</p>
                           {r.description && (
                             <p className="text-sm text-[var(--color-muted)] truncate mt-0.5">{r.description}</p>
                           )}
-                          <div className="flex items-center gap-1 mt-1.5">
-                            <svg width="13" height="13" viewBox="0 0 24 24" fill="#F59E0B">
-                              <path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z" />
-                            </svg>
-                            <span className="text-sm font-semibold text-[var(--color-secondary)]">4.5</span>
-                            <span className="text-xs text-[#9CA3AF]">• 230 تقييم</span>
-                          </div>
+                          {r.is_active ? (
+                            <div className="flex items-center gap-1 mt-1.5">
+                              <svg width="13" height="13" viewBox="0 0 24 24" fill="#F59E0B">
+                                <path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z" />
+                              </svg>
+                              <span className="text-sm font-semibold text-[var(--color-secondary)]">4.5</span>
+                              <span className="text-xs text-[#9CA3AF]">• 230 تقييم</span>
+                            </div>
+                          ) : (
+                            <p className="text-xs text-[#EF4444] mt-1">مغلق حالياً</p>
+                          )}
                         </div>
-                      </Link>
+                      </div>
                       {index < restaurants.length - 1 && <div className="h-px bg-[#D1D5DB]" />}
                     </div>
                   ))}
