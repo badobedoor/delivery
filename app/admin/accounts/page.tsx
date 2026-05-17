@@ -1257,24 +1257,8 @@ export default function AdminAccountsPage() {
   useEffect(() => {
     loadData().finally(() => setLoading(false));
 
-    const dChan = supabase
-      .channel("accts-delivery-tx")
-      .on("postgres_changes",
-        { event: "INSERT", schema: "public", table: "delivery_accounts" },
-        () => loadData())
-      .subscribe();
-
-    const aChan = supabase
-      .channel("accts-advance-req")
-      .on("postgres_changes",
-        { event: "*", schema: "public", table: "advance_requests" },
-        () => loadData())
-      .subscribe();
-
-    return () => {
-      supabase.removeChannel(dChan);
-      supabase.removeChannel(aChan);
-    };
+    // REALTIME DISABLED
+    return () => {};
   }, [loadData]);
 
   /* ── Open manage modal ── */

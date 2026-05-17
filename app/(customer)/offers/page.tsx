@@ -2,49 +2,69 @@
 
 import Link from "next/link";
 import { useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase";
+import BottomNav from "@/components/customer/BottomNav";
 
-type Offer = {
-  id:             string;
-  code:           string;
-  ad_title:       string | null;
-  ad_description: string | null;
-  expires_at:     string | null;
+type OfferItem = {
+  id:              string;
+  name:            string;
+  description:     string | null;
+  price:           number;
+  image_url:       string | null;
+  offer_price:     number | null;
+  offer_image_url: string | null;
+  offer_starts_at: string | null;
+  offer_ends_at:   string | null;
+  restaurant_id:   string | null;
+  categories:      { name: string } | null;
+  restaurants:     { name: string } | null;
 };
 
-function formatExpiry(iso: string | null): string {
+function fmtDate(iso: string | null) {
   if (!iso) return "";
   return new Date(iso).toLocaleDateString("ar-EG", {
-    day: "numeric", month: "long", year: "numeric",
+    day: "numeric", month: "long",
+  }) + " - " + new Date(iso).toLocaleTimeString("ar-EG", {
+    hour: "2-digit", minute: "2-digit",
   });
 }
 
 export default function OffersPage() {
-  const [offers,  setOffers]  = useState<Offer[]>([]);
+  const router  = useRouter();
+  const [offers,  setOffers]  = useState<OfferItem[]>([]);
   const [loading, setLoading] = useState(true);
-  const [copied,  setCopied]  = useState<string | null>(null);
 
   useEffect(() => {
     async function load() {
-      const { data } = await supabase
-        .from("coupons")
-        .select("id, code, type, value, applies_to, min_order, expires_at, is_active, usage_limit_total, usage_limit_per_user, visibility, ad_title, ad_description")
-        .eq("visibility", "public")
+      const { data, error } = await supabase
+        .from("menu_items")
+        .select(`
+          id,
+          name,
+          description,
+          price,
+          image_url,
+          offer_price,
+          offer_image_url,
+          offer_starts_at,
+          offer_ends_at,
+          restaurant_id,
+          categories!inner(name),
+          restaurants!inner(name)
+        `)
+        .eq("categories.name", "العروض")
         .eq("is_active", true)
-        .gt("expires_at", new Date().toISOString())
-        .order("created_at", { ascending: false });
+        .not("offer_price", "is", null);
 
-      setOffers((data ?? []) as Offer[]);
+      console.log("Offers data:", data);
+      console.log("Offers error:", error);
+
+      setOffers((data ?? []) as unknown as OfferItem[]);
       setLoading(false);
     }
     load();
   }, []);
-
-  function copyCode(id: string, code: string) {
-    navigator.clipboard.writeText(code).catch(() => {});
-    setCopied(id);
-    setTimeout(() => setCopied(null), 2000);
-  }
 
   return (
     <div className="min-h-screen bg-[var(--color-surface)]">
@@ -53,79 +73,103 @@ export default function OffersPage() {
         {/* ── Header ── */}
         <header className="bg-white px-4 pt-10 pb-4 sticky top-0 z-10 shadow-sm">
           <div className="flex items-center justify-between">
-            <Link href="/account"
+            <button
+              onClick={() => router.back()}
               className="w-9 h-9 rounded-full bg-[var(--color-surface)] flex items-center justify-center">
               <svg width="20" height="20" viewBox="0 0 24 24" fill="none"
                 stroke="var(--color-secondary)" strokeWidth="2.2" strokeLinecap="round">
                 <path d="M9 18l6-6-6-6" />
               </svg>
-            </Link>
+            </button>
             <h1 className="text-base font-black text-[var(--color-secondary)]">العروض</h1>
             <div className="w-9" />
           </div>
         </header>
 
-        <main className="px-4 pt-4 pb-10">
+        <main className="px-4 pt-4 pb-24">
 
           {loading ? (
             <div className="flex justify-center pt-24">
               <div className="w-6 h-6 border-2 border-[var(--color-primary)] border-t-transparent rounded-full animate-spin" />
             </div>
           ) : offers.length === 0 ? (
-            /* ── حالة فارغة ── */
             <div className="flex flex-col items-center justify-center pt-24 gap-3 text-center">
               <span className="text-6xl">🎁</span>
-              <p className="text-base font-bold text-[var(--color-secondary)]">لا يوجد عروض حالياً</p>
+              <p className="text-base font-bold text-[var(--color-secondary)]">لا يوجد عروض متاحة حالياً</p>
               <p className="text-sm text-[var(--color-muted)]">تابعنا للحصول على أحدث العروض</p>
             </div>
           ) : (
-            /* ── قائمة العروض ── */
             <div className="flex flex-col gap-4">
-              {offers.map((offer) => (
-                <div
-                  key={offer.id}
-                  className="rounded-2xl overflow-hidden shadow-md"
-                  style={{ background: "linear-gradient(135deg, #F97316 0%, #C2410C 100%)" }}
-                >
-                  <div className="px-5 pt-5 pb-4">
-                    {/* العنوان */}
-                    <p className="text-lg font-black text-white">
-                      {offer.ad_title ?? offer.code}
-                    </p>
+              {offers.map((offer) => {
+                const img = offer.offer_image_url || offer.image_url;
+                const discount = offer.offer_price && offer.price
+                  ? Math.round((1 - offer.offer_price / offer.price) * 100)
+                  : 0;
 
-                    {/* الوصف */}
-                    {offer.ad_description && (
-                      <p className="text-sm text-white/80 mt-1 leading-relaxed">{offer.ad_description}</p>
-                    )}
+                return (
+                  <div key={offer.id}
+                    onClick={() => offer.restaurant_id && router.push(`/restaurant/${offer.restaurant_id}?category=العروض`)}
+                    className={`bg-white rounded-2xl overflow-hidden shadow-sm border border-[var(--color-border)] ${offer.restaurant_id ? "cursor-pointer active:scale-[0.99] transition-transform" : ""}`}>
 
-                    {/* الكود */}
-                    <div className="mt-4 flex items-center gap-3">
-                      <div className="flex-1 border-2 border-dashed border-white/60 rounded-xl px-3 py-2">
-                        <p className="text-base font-black text-white tracking-widest text-center">
-                          {offer.code}
-                        </p>
-                      </div>
-                      <button
-                        onClick={() => copyCode(offer.id, offer.code)}
-                        className="bg-white text-[var(--color-primary)] text-sm font-bold px-4 py-2.5 rounded-xl flex-shrink-0 active:scale-[0.97] transition-transform"
-                      >
-                        {copied === offer.id ? "✓ تم النسخ" : "انسخ الكود"}
-                      </button>
+                    {/* الصورة */}
+                    <div className="relative w-full h-48 bg-[var(--color-surface)]">
+                      {img ? (
+                        /* eslint-disable-next-line @next/next/no-img-element */
+                        <img src={img} alt={offer.name} className="w-full h-full object-cover" />
+                      ) : (
+                        <div className="w-full h-full flex items-center justify-center">
+                          <span className="text-5xl">🍽️</span>
+                        </div>
+                      )}
+                      {/* Badge نسبة الخصم */}
+                      {discount > 0 && (
+                        <div className="absolute top-3 right-3 bg-red-500 text-white text-xs font-black px-2.5 py-1 rounded-full shadow">
+                          -{discount}%
+                        </div>
+                      )}
                     </div>
 
-                    {/* تاريخ الانتهاء */}
-                    {offer.expires_at && (
-                      <p className="text-xs text-white/70 mt-3">
-                        ينتهي في {formatExpiry(offer.expires_at)}
-                      </p>
-                    )}
+                    {/* المحتوى */}
+                    <div className="p-4">
+                      <p className="text-base font-bold text-[var(--color-secondary)]">{offer.name}</p>
+                      {offer.restaurants?.name && (
+                        <p className="text-xs text-[var(--color-muted)] mt-0.5">{offer.restaurants.name}</p>
+                      )}
+                      {offer.description && (
+                        <p className="text-xs text-[var(--color-muted)] mt-1 line-clamp-2">{offer.description}</p>
+                      )}
+
+                      {/* الأسعار */}
+                      <div className="flex items-center gap-3 mt-3">
+                        <span className="text-xl font-black text-[#FF6000]">{offer.offer_price} ج.م</span>
+                        <span className="text-sm text-gray-400 line-through">{offer.price} ج.م</span>
+                      </div>
+
+                      {/* التواريخ */}
+                      {(offer.offer_starts_at || offer.offer_ends_at) && (
+                        <div className="mt-3 flex flex-col gap-0.5 pt-3 border-t border-[var(--color-border)]">
+                          {offer.offer_starts_at && (
+                            <p className="text-xs text-[var(--color-muted)]">
+                              📅 من: {fmtDate(offer.offer_starts_at)}
+                            </p>
+                          )}
+                          {offer.offer_ends_at && (
+                            <p className="text-xs text-[var(--color-muted)]">
+                               ⠀⠀إلى: {fmtDate(offer.offer_ends_at)}
+                            </p>
+                          )}
+                        </div>
+                      )}
+                    </div>
                   </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
           )}
 
         </main>
+
+        <BottomNav />
       </div>
     </div>
   );

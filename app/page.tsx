@@ -1,7 +1,7 @@
 "use client";
 import Image from "next/image";
 import Link from "next/link";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
 import BottomNav from "@/components/customer/BottomNav";
 import ClosedScreen from "@/components/customer/ClosedScreen";
@@ -42,6 +42,16 @@ export default function HomePage() {
   const [isOpen,    setIsOpen]    = useState<boolean | null>(null);
   const [workStart, setWorkStart] = useState("");
   const [workEnd,   setWorkEnd]   = useState("");
+  const [ads,       setAds]       = useState<{ id: string; image_url: string; link: string | null }[]>([]);
+  const [adIndex,   setAdIndex]   = useState(0);
+  const adTimer = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  /* Auto-slide الإعلانات */
+  useEffect(() => {
+    if (ads.length <= 1) return;
+    const timer = setInterval(() => setAdIndex((p) => (p + 1) % ads.length), 4000);
+    return () => clearInterval(timer);
+  }, [ads.length]);
 
   useEffect(() => {
     async function load() {
@@ -58,6 +68,18 @@ export default function HomePage() {
       } else {
         setIsOpen(true); /* لو مفيش إعدادات — افتح */
       }
+
+      /* جيب الإعلانات */
+      const now = new Date().toISOString();
+      const { data: adsData } = await supabase
+        .from("advertisements")
+        .select("id, image_url, link")
+        .eq("is_active", true)
+        .eq("page", "الرئيسية")
+        .lte("starts_at", now)
+        .gte("ends_at", now)
+        .order("order_index", { ascending: true });
+      setAds(adsData ?? []);
 
       /* جيب العنوان الافتراضي */
       const { data: { user } } = await supabase.auth.getUser();
@@ -129,6 +151,40 @@ export default function HomePage() {
             </div>
           </div>
         </section>
+
+        {/* ── Banner إعلاني ── */}
+        {ads.length > 0 && (
+          <section className="px-4 pt-4">
+            <div className="relative w-full overflow-hidden rounded-2xl"
+              style={{ height: 140 }}>
+              {ads.map((ad, i) => (
+                ad.link ? (
+                  <Link key={ad.id} href={ad.link}
+                    className={`absolute inset-0 transition-opacity duration-500 ${i === adIndex ? "opacity-100" : "opacity-0 pointer-events-none"}`}>
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img src={ad.image_url} alt="إعلان" className="w-full h-full object-cover" />
+                  </Link>
+                ) : (
+                  <div key={ad.id}
+                    className={`absolute inset-0 transition-opacity duration-500 ${i === adIndex ? "opacity-100" : "opacity-0"}`}>
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img src={ad.image_url} alt="إعلان" className="w-full h-full object-cover" />
+                  </div>
+                )
+              ))}
+              {/* Dots */}
+              {ads.length > 1 && (
+                <div className="absolute bottom-2 left-1/2 -translate-x-1/2 flex gap-1.5">
+                  {ads.map((_, i) => (
+                    <button key={i} onClick={() => setAdIndex(i)}
+                      className="w-1.5 h-1.5 rounded-full transition-all"
+                      style={{ background: i === adIndex ? "#FF6000" : "rgba(255,255,255,0.5)" }} />
+                  ))}
+                </div>
+              )}
+            </div>
+          </section>
+        )}
 
         {/* ── Service Cards ── */}
         <section className="px-4 pt-4">

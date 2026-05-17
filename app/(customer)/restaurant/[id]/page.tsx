@@ -3,7 +3,7 @@
 import Image from "next/image";
 import Link from "next/link";
 import { useState, useEffect, useRef } from "react";
-import { useParams } from "next/navigation";
+import { useParams, useSearchParams } from "next/navigation";
 import { supabase } from "@/lib/supabase";
 import { addToCart, clearCart, getCart, updateQty, CartItem } from "@/lib/cart";
 import ConfirmModal from "@/components/customer/ConfirmModal";
@@ -13,7 +13,7 @@ import CartBar from "@/components/customer/CartBar";
 /* ── DB types ── */
 type ItemExtra  = { id: number; name: string; price: number };
 type ExtraGroup = { id: number; name: string; type: string; required: boolean; max_select: number; item_extras: ItemExtra[] };
-type MenuItem   = { id: number; name: string; description: string | null; price: number; category_id: number; image_url: string | null; extra_groups: ExtraGroup[] };
+type MenuItem   = { id: number; name: string; description: string | null; price: number; category_id: number; image_url: string | null; extra_groups: ExtraGroup[]; offer_price?: number | null; offer_starts_at?: string | null; offer_ends_at?: string | null; offer_image_url?: string | null };
 type Category   = { id: number; name: string; restaurant_id: string; menu_items: MenuItem[] };
 type Restaurant = { id: string; name: string; description: string | null; cover_image_url: string | null; image_url: string | null; rating_avg?: number | null; rating_count?: number | null };
 
@@ -135,8 +135,10 @@ function QuantityCounter({ itemId, name, price, description, imageUrl, restauran
 }
 
 export default function RestaurantPage() {
-  const params     = useParams();
-  const id         = params.id as string;
+  const params        = useParams();
+  const id            = params.id as string;
+  const searchParams  = useSearchParams();
+  const categoryParam = searchParams.get("category");
 
   const [restaurant,  setRestaurant]  = useState<Restaurant | null>(null);
   const [categories,  setCategories]  = useState<Category[]>([]);
@@ -154,7 +156,7 @@ export default function RestaurantPage() {
       const [restResult, catsResult] = await Promise.all([
         supabase.from("restaurants").select("id, name, description, cover_image_url, image_url, rating_avg, rating_count").eq("id", id).single(),
         supabase.from("categories")
-          .select("id, name, restaurant_id, menu_items(id, name, description, price, category_id, image_url, extra_groups(id, name, type, required, max_select, item_extras(id, name, price)))")
+          .select("id, name, restaurant_id, menu_items(id, name, description, price, category_id, image_url, offer_price, offer_starts_at, offer_ends_at, offer_image_url, extra_groups(id, name, type, required, max_select, item_extras(id, name, price)))")
           .eq("restaurant_id", id)
           .order("id"),
       ]);
@@ -170,7 +172,12 @@ export default function RestaurantPage() {
       if (!catsResult.error && catsResult.data) {
         const cats = catsResult.data as Category[];
         setCategories(cats);
-        if (cats.length > 0) setActiveTab(cats[0].name);
+        if (cats.length > 0) {
+          const target = categoryParam
+            ? cats.find((c) => c.name === categoryParam)
+            : null;
+          setActiveTab(target ? target.name : cats[0].name);
+        }
       }
 
       setLoading(false);
@@ -183,6 +190,12 @@ export default function RestaurantPage() {
     ?? "https://images.unsplash.com/photo-1552566626-52f8b828add9?w=800&h=300&fit=crop";
 
   const activeMeals = categories.find((c) => c.name === activeTab)?.menu_items ?? [];
+
+  /* Debug — تأكد إن بيانات العروض واصلة */
+  if (activeMeals.length > 0) {
+    console.log("Active meals:", activeMeals.length, "tab:", activeTab);
+    console.log("First item offer data:", activeMeals[0]?.offer_price, activeMeals[0]?.offer_starts_at, activeMeals[0]?.offer_ends_at);
+  }
 
   /* ── Loading ── */
   if (loading) {
@@ -295,12 +308,21 @@ export default function RestaurantPage() {
               {activeMeals.map((meal) => {
                 const hasExtras = meal.extra_groups.length > 0;
                 const FALLBACK  = "https://images.unsplash.com/photo-1546069901-ba9599a7e63c?w=200&h=200&fit=crop";
+                const isOffer = !!(meal.offer_price && meal.offer_starts_at && meal.offer_ends_at);
+                const offerImg = (isOffer && meal.offer_image_url) ? meal.offer_image_url : (meal.image_url ?? FALLBACK);
+                const discount  = isOffer && meal.offer_price
+                  ? Math.round((1 - meal.offer_price / meal.price) * 100) : 0;
 
                 const cardInner = (
                   <>
                     {/* القسم 1 — الصورة (يمين في RTL) */}
                     <div className={`relative flex-shrink-0 ${hasExtras ? "w-20 h-20" : "w-28 h-28"} ml-3 rounded-xl overflow-hidden`}>
-                      <Image src={meal.image_url ?? FALLBACK} alt={meal.name} fill className="object-cover" />
+                      <Image src={offerImg} alt={meal.name} fill className="object-cover" />
+                      {isOffer && discount > 0 && (
+                        <div className="absolute top-1 right-1 bg-red-500 text-white text-[9px] font-black px-1.5 py-0.5 rounded-full leading-none">
+                          -{discount}%
+                        </div>
+                      )}
                     </div>
 
                     {/* القسم 2 — الاسم والوصف والزرار (وسط) */}
@@ -310,13 +332,24 @@ export default function RestaurantPage() {
                         {meal.description && (
                           <p className="text-sm text-[#6B7280] line-clamp-2 mt-0.5">{meal.description}</p>
                         )}
+                        {isOffer && meal.offer_starts_at && meal.offer_ends_at && (
+                          <div className="mt-1 pt-1 border-t border-[#F3F4F6]">
+                            <div className="flex items-start gap-1">
+                              <span className="text-[10px]">📅</span>
+                              <div className="text-[10px] text-[#9CA3AF]">
+                                <div>من: {new Date(meal.offer_starts_at).toLocaleDateString("ar-EG", { day: "numeric", month: "long" })} - {new Date(meal.offer_starts_at).toLocaleTimeString("ar-EG", { hour: "2-digit", minute: "2-digit" })}</div>
+                                <div>إلى: {new Date(meal.offer_ends_at).toLocaleDateString("ar-EG", { day: "numeric", month: "long" })} - {new Date(meal.offer_ends_at).toLocaleTimeString("ar-EG", { hour: "2-digit", minute: "2-digit" })}</div>
+                              </div>
+                            </div>
+                          </div>
+                        )}
                       </div>
                       {!hasExtras && (
                         <div className="mt-3">
                         <QuantityCounter
                           itemId={String(meal.id)}
                           name={meal.name}
-                          price={meal.price}
+                          price={isOffer && meal.offer_price ? meal.offer_price : meal.price}
                           description={meal.description}
                           imageUrl={meal.image_url}
                           restaurantId={id}
@@ -328,7 +361,14 @@ export default function RestaurantPage() {
 
                     {/* القسم 3 — السعر (يسار في RTL)، عرض ثابت */}
                     <div className="flex-shrink-0 w-16 text-left">
-                      <p className="text-xl font-black text-[#FF6000]">{meal.price} ج</p>
+                      {isOffer && meal.offer_price ? (
+                        <div className="flex flex-col items-start gap-0.5">
+                          <p className="text-xl font-black text-[#FF6000]">{meal.offer_price} ج</p>
+                          <p className="text-xs text-gray-400 line-through">{meal.price} ج</p>
+                        </div>
+                      ) : (
+                        <p className="text-xl font-black text-[#FF6000]">{meal.price} ج</p>
+                      )}
                     </div>
                   </>
                 );

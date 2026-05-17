@@ -2,7 +2,7 @@
 
 import Image from "next/image";
 import Link from "next/link";
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { useRouter } from "next/navigation";
 
 import { supabase } from "@/lib/supabase";
@@ -17,6 +17,7 @@ type Restaurant = {
   image_url: string | null;
   cover_image_url: string | null;
   is_active: boolean;
+  status: string | null;
 };
 
 type Advertisement = {
@@ -52,10 +53,12 @@ export default function RestaurantsPage() {
   /* ── Page data ── */
   const [currentAddress, setCurrentAddress] = useState<{ full_address: string; label: string } | null>(null);
   const [restaurants,   setRestaurants]   = useState<Restaurant[]>([]);
-  const [advertisement, setAdvertisement] = useState<Advertisement | null>(null);
+  const [ads,           setAds]           = useState<{ id: string; image_url: string | null; link: string | null }[]>([]);
+  const [adIndex,       setAdIndex]       = useState(0);
   const [featuredItems, setFeaturedItems] = useState<FeaturedItem[]>([]);
   const [loading,       setLoading]       = useState(true);
   const [error,         setError]         = useState<string | null>(null);
+  const adTimer = useRef<ReturnType<typeof setInterval> | null>(null);
 
   /* ── Search state ── */
   const [query,             setQuery]             = useState("");
@@ -78,19 +81,22 @@ export default function RestaurantsPage() {
         setCurrentAddress(addr ?? null);
       }
 
+      const now = new Date().toISOString();
       const [restaurantsRes, adsRes, featuredRes] = await Promise.all([
         supabase
           .from("restaurants")
-          .select("id, name, description, image_url, cover_image_url, is_active")
+          .select("id, name, description, image_url, cover_image_url, is_active, status")
+          .eq("is_active", true)
+          .in("status", ["نشط", "مشغول", "مغلق"])
           .order("name"),
         supabase
           .from("advertisements")
           .select("id, image_url, link")
           .eq("is_active", true)
-          .eq("page", "home")
-          .order("order_index")
-          .limit(1)
-          .maybeSingle(),
+          .eq("page", "المطاعم")
+          .lte("starts_at", now)
+          .gte("ends_at", now)
+          .order("order_index", { ascending: true }),
         supabase
           .from("featured_items")
           .select("id, name, restaurant_name, rating, image_url, price")
@@ -101,13 +107,20 @@ export default function RestaurantsPage() {
       if (restaurantsRes.error) setError("تعذّر تحميل المطاعم");
       else setRestaurants(restaurantsRes.data ?? []);
 
-      setAdvertisement(adsRes.data ?? null);
+      setAds(adsRes.data ?? []);
       setFeaturedItems(featuredRes.data ?? []);
       setLoading(false);
     }
 
     fetchAll();
   }, []);
+
+  /* Auto-slide الإعلانات */
+  useEffect(() => {
+    if (ads.length <= 1) return;
+    const timer = setInterval(() => setAdIndex((p) => (p + 1) % ads.length), 4000);
+    return () => clearInterval(timer);
+  }, [ads.length]);
 
   const handleSearch = useCallback(async (q: string) => {
     setQuery(q);
@@ -305,19 +318,34 @@ export default function RestaurantsPage() {
           {!isSearching && (
             <>
               {/* ── بنر إعلاني ── */}
-              {advertisement?.image_url && (
+              {ads.length > 0 && (
                 <section className="pt-4">
-                  {advertisement.link ? (
-                    <Link href={advertisement.link} className="block">
-                      <div className="relative w-full h-36 rounded-2xl overflow-hidden">
-                        <Image src={advertisement.image_url} alt="إعلان" fill className="object-cover" priority />
+                  <div className="relative w-full overflow-hidden rounded-2xl" style={{ height: 140 }}>
+                    {ads.map((ad, i) => (
+                      ad.link ? (
+                        <Link key={ad.id} href={ad.link}
+                          className={`absolute inset-0 transition-opacity duration-500 ${i === adIndex ? "opacity-100" : "opacity-0 pointer-events-none"}`}>
+                          {/* eslint-disable-next-line @next/next/no-img-element */}
+                          <img src={ad.image_url ?? ""} alt="إعلان" className="w-full h-full object-cover" />
+                        </Link>
+                      ) : (
+                        <div key={ad.id}
+                          className={`absolute inset-0 transition-opacity duration-500 ${i === adIndex ? "opacity-100" : "opacity-0"}`}>
+                          {/* eslint-disable-next-line @next/next/no-img-element */}
+                          <img src={ad.image_url ?? ""} alt="إعلان" className="w-full h-full object-cover" />
+                        </div>
+                      )
+                    ))}
+                    {ads.length > 1 && (
+                      <div className="absolute bottom-2 left-1/2 -translate-x-1/2 flex gap-1.5">
+                        {ads.map((_, i) => (
+                          <button key={i} onClick={() => setAdIndex(i)}
+                            className="w-1.5 h-1.5 rounded-full transition-all"
+                            style={{ background: i === adIndex ? "#FF6000" : "rgba(255,255,255,0.5)" }} />
+                        ))}
                       </div>
-                    </Link>
-                  ) : (
-                    <div className="relative w-full h-36 rounded-2xl overflow-hidden">
-                      <Image src={advertisement.image_url} alt="إعلان" fill className="object-cover" priority />
-                    </div>
-                  )}
+                    )}
+                  </div>
                 </section>
               )}
 
@@ -370,15 +398,17 @@ export default function RestaurantsPage() {
                   {restaurants.map((r, index) => (
                     <div key={r.id}>
                       <div
-                        onClick={() => r.is_active ? router.push(`/restaurant/${r.id}`) : undefined}
-                        className={`relative flex items-center gap-3 py-3 ${r.is_active ? "cursor-pointer" : "cursor-not-allowed"}`}
+                        onClick={() => r.status === "نشط" ? router.push(`/restaurant/${r.id}`) : undefined}
+                        className={`relative flex items-center gap-3 py-3 ${r.status === "نشط" ? "cursor-pointer" : "cursor-not-allowed"}`}
                       >
                         <div className="relative w-[72px] h-[72px] flex-shrink-0 rounded-xl overflow-hidden">
                           <Image src={r.image_url ?? FALLBACK_IMG} alt={r.name} fill className="object-cover" />
-                          {!r.is_active && (
+                          {(r.status === "مغلق" || r.status === "مشغول") && (
                             <div className="absolute inset-0 flex items-center justify-center rounded-xl"
                               style={{ background: "rgba(0,0,0,0.6)" }}>
-                              <span className="text-white font-black text-xs">مغلق</span>
+                              <span className="text-white font-black text-xs">
+                                {r.status === "مشغول" ? "مشغول" : "مغلق"}
+                              </span>
                             </div>
                           )}
                         </div>
@@ -396,7 +426,9 @@ export default function RestaurantsPage() {
                               <span className="text-xs text-[#9CA3AF]">• 230 تقييم</span>
                             </div>
                           ) : (
-                            <p className="text-xs text-[#EF4444] mt-1">مغلق حالياً</p>
+                            <p className="text-xs text-[#EF4444] mt-1">
+                              {r.status === "مشغول" ? "مشغول حالياً" : "مغلق حالياً"}
+                            </p>
                           )}
                         </div>
                       </div>

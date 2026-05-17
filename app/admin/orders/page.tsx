@@ -25,6 +25,7 @@ type DBNewOrder = {
   total: number;
   subtotal: number | null;
   notes: string | null;
+  order_type: string | null;
   user_order_number: number | null;
   created_at: string;
   restaurant_id: string | null;
@@ -45,6 +46,7 @@ type DBOrder = {
   id: string;
   total: number;
   status: string;
+  order_type: string | null;
   created_at: string;
   user_order_number: number | null;
   restaurant_id?: string | null;
@@ -171,6 +173,7 @@ export default function AdminOrdersPage() {
         total,
         subtotal,
         notes,
+        order_type,
         user_order_number,
         created_at,
         restaurant_id,
@@ -219,7 +222,7 @@ export default function AdminOrdersPage() {
     let allOrdersQuery = supabase
       .from("orders")
       .select(`
-        id, total, status, created_at, user_order_number, user_id, delivery_id,
+        id, total, status, order_type, created_at, user_order_number, user_id, delivery_id,
         restaurants!restaurant_id (name),
         addresses!address_id (areas(name)),
         users (name, phone),
@@ -229,18 +232,18 @@ export default function AdminOrdersPage() {
       .order("created_at", { ascending: false });
 
     if (shiftData?.id) {
-      allOrdersQuery = allOrdersQuery.eq("shift_id", shiftData.id);
+      /* الطلبات العادية للوردية + طلبات الدليفري (مفيش shift_id) */
+      allOrdersQuery = allOrdersQuery.or(`shift_id.eq.${shiftData.id},order_type.eq.delivery_request`);
     } else {
-      /* No active shift — show nothing in the live table */
-      setAllOrdersList([]);
-      setNewOrdersList(finalOrders);
-      return;
+      /* لو مفيش وردية — اعرض طلبات الدليفري فقط */
+      allOrdersQuery = allOrdersQuery.eq("order_type", "delivery_request");
     }
 
     const { data: allOrdersData, error: e2 } = await allOrdersQuery;
 
     console.log("All Orders Error:", e2);
     console.log("All Orders:", allOrdersData);
+    console.log("Delivery requests:", allOrdersData?.filter((o: any) => o.order_type === "delivery_request"));
 
     setNewOrdersList(finalOrders);
     setAllOrdersList((allOrdersData as unknown as DBOrder[]) ?? []);
@@ -390,6 +393,7 @@ export default function AdminOrdersPage() {
       id:                order.id,
       total:             order.total,
       status:            "pending",
+      order_type:        order.order_type ?? null,
       created_at:        order.created_at,
       user_order_number: order.user_order_number,
       restaurant_id:     order.restaurant_id,
@@ -410,6 +414,7 @@ export default function AdminOrdersPage() {
         id: order.id,
         total: order.total,
         status: "cancelled",
+        order_type: order.order_type ?? null,
         created_at: order.created_at,
         user_order_number: order.user_order_number,
         restaurant_id: order.restaurant_id,
@@ -645,6 +650,12 @@ export default function AdminOrdersPage() {
                   <div className="flex items-start justify-between gap-2 flex-wrap">
                     <div className="flex flex-col gap-0.5">
                       <div className="flex items-center gap-2 flex-wrap">
+                        {order.order_type === "delivery_request" && (
+                          <span className="text-[10px] font-bold px-2 py-0.5 rounded-full"
+                            style={{ background: "#7C3AED22", color: "#7C3AED" }}>
+                            🚚 دليفري
+                          </span>
+                        )}
                         <span className="text-sm font-black" style={{ color: C.teal }}>
                           #{order.user_order_number ?? "—"}
                         </span>
@@ -820,7 +831,15 @@ export default function AdminOrdersPage() {
                       style={{ borderBottom: i < filtered.length - 1 ? `1px solid ${C.border}` : "none" }}
                       onClick={() => openModal(order.id, order.user_order_number, order.total, order.status, { readOnly: true, customerName: order.users?.name ?? null, customerPhone: order.users?.phone ?? null })}>
                       <td className="px-3 py-2.5 font-bold text-xs whitespace-nowrap" style={{ color: C.teal }}>
-                        #{order.user_order_number ?? "—"}
+                        <div className="flex items-center gap-1.5 flex-wrap">
+                          #{order.user_order_number ?? "—"}
+                          {order.order_type === "delivery_request" && (
+                            <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-full"
+                              style={{ background: "#7C3AED22", color: "#7C3AED" }}>
+                              🚚 دليفري
+                            </span>
+                          )}
+                        </div>
                       </td>
                       <td className="px-3 py-2.5 text-xs whitespace-nowrap font-semibold" style={{ color: C.text }}>
                         {order.users?.name ?? "—"}

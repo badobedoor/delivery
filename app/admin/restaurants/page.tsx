@@ -340,7 +340,7 @@ export default function AdminRestaurantsPage() {
   const [saving,       setSaving]       = useState(false);
   const [saveError,    setSaveError]    = useState<string | null>(null);
   const [search,       setSearch]       = useState("");
-  const [statusFilter, setStatusFilter] = useState<"الكل" | "نشط" | "غير نشط">("الكل");
+  const [statusFilter, setStatusFilter] = useState<"الكل" | "قيد الإنشاء" | "نشط" | "مشغول" | "مغلق">("الكل");
 
   /* ── Modal state ── */
   const [showModal,   setShowModal]   = useState(false);
@@ -358,7 +358,7 @@ export default function AdminRestaurantsPage() {
   const [coverError,   setCoverError]   = useState<string | null>(null);
 
   /* ── Crop state ── */
-  type CropTarget = { src: string; aspect: number; field: "image" | "cover" | "item"; compress: CompressOptions };
+  type CropTarget = { src: string; aspect: number; field: "image" | "cover" | "item" | "offer-image"; compress: CompressOptions };
   const [cropState, setCropState] = useState<CropTarget | null>(null);
 
   /* ── Menu view state ── */
@@ -388,8 +388,16 @@ export default function AdminRestaurantsPage() {
   const [collapsedGroups,  setCollapsedGroups]  = useState<Set<number>>(new Set());
   const [groupNameErrors,  setGroupNameErrors]  = useState<Set<number>>(new Set());
   const [toastMsg,         setToastMsg]         = useState<string | null>(null);
-  const [restStatus,       setRestStatus]       = useState("active");
-  const [restAddress,      setRestAddress]      = useState("");
+  const [restAddress, setRestAddress] = useState("");
+
+  /* ── Offer fields (يظهروا بس لو القسم = "العروض" والوضع = "offer") ── */
+  const [itemMode,          setItemMode]          = useState<"item" | "offer">("item");
+  const [offerPrice,        setOfferPrice]        = useState("");
+  const [offerImageFile,    setOfferImageFile]    = useState<File | null>(null);
+  const [offerImagePreview, setOfferImagePreview] = useState<string | null>(null);
+  const [offerImageError,   setOfferImageError]   = useState<string | null>(null);
+  const [offerStartsAt,     setOfferStartsAt]     = useState("");
+  const [offerEndsAt,       setOfferEndsAt]       = useState("");
 
 
   /* ── Fetch from Supabase ── */
@@ -398,7 +406,8 @@ export default function AdminRestaurantsPage() {
     const { data, error } = await supabase
       .from("restaurants")
       .select("id, name, description, phone, opens_at, closes_at, is_active, image_url, cover_image_url, status, address")
-      .order("created_at", { ascending: false });
+      .eq("is_active", true)
+      .order("name", { ascending: true });
     if (error) console.error("Fetch restaurants error:", error.message, error);
     if (data)  setRows(data);
     setLoading(false);
@@ -411,10 +420,7 @@ export default function AdminRestaurantsPage() {
   const filtered = rows.filter((r) => {
     const q = search.trim();
     const matchSearch = !q || r.name.includes(q) || (r.phone ?? "").includes(q);
-    const matchStatus =
-      statusFilter === "الكل"     ? true :
-      statusFilter === "نشط"     ? r.is_active :
-                                    !r.is_active;
+    const matchStatus = statusFilter === "الكل" ? true : (r.status ?? "نشط") === statusFilter;
     return matchSearch && matchStatus;
   });
 
@@ -435,7 +441,6 @@ export default function AdminRestaurantsPage() {
       opens_at:    r.opens_at    ?? "07:00",
       closes_at:   r.closes_at   ?? "03:00",
     });
-    setRestStatus(r.status  ?? "active");
     setRestAddress(r.address ?? "");
     imageFileRef.current = null;  setImagePreview(r.image_url       ?? null);
     coverFileRef.current = null;  setCoverPreview(r.cover_image_url ?? null);
@@ -508,6 +513,9 @@ export default function AdminRestaurantsPage() {
     } else if (cropState.field === "cover") {
       coverFileRef.current = file;
       setCoverPreview(preview);
+    } else if (cropState.field === "offer-image") {
+      setOfferImageFile(file);
+      setOfferImagePreview(preview);
     } else {
       setItemImageFile(file);
       setItemImagePreview(preview);
@@ -549,9 +557,7 @@ export default function AdminRestaurantsPage() {
       closes_at:       restForm.closes_at           || null,
       image_url,
       cover_image_url,
-      is_active: true,
-      status:    restStatus,
-      address:   restAddress.trim() || null,
+      address: restAddress.trim() || null,
     };
 
     console.log("Insert payload:", payload);
@@ -571,7 +577,8 @@ export default function AdminRestaurantsPage() {
       const { data, error } = await supabase
         .from("restaurants")
         .insert([payload])
-        .select();
+        .select()
+        .single();
       if (error) {
         console.error("INSERT ERROR:", error.message, error);
         setSaveError("فشل في حفظ المطعم");
@@ -579,6 +586,15 @@ export default function AdminRestaurantsPage() {
         return;
       }
       console.log("Inserted:", data);
+
+      /* إنشاء قسم "العروض" تلقائياً مع كل مطعم جديد */
+      if (data?.id) {
+        await supabase.from("categories").insert({
+          restaurant_id: data.id,
+          name:          "العروض",
+          is_active:     true,
+        });
+      }
     }
 
     setSaving(false);
@@ -586,14 +602,19 @@ export default function AdminRestaurantsPage() {
     fetchRestaurants();
   }
 
-  /* ── Toggle active ── */
-  async function toggleActive(id: string, current: boolean) {
-    const { error } = await supabase
-      .from("restaurants")
-      .update({ is_active: !current })
-      .eq("id", id);
-    if (error) { console.error("Toggle active error:", error.message, error); return; }
-    setRows((p) => p.map((r) => r.id === id ? { ...r, is_active: !current } : r));
+  /* ── Status change ── */
+  async function handleStatusChange(id: string, newStatus: string) {
+    const { error } = await supabase.from("restaurants").update({ status: newStatus }).eq("id", id);
+    if (error) { console.error("Status update error:", error.message, error); return; }
+    setRows((p) => p.map((r) => r.id === id ? { ...r, status: newStatus } : r));
+  }
+
+  /* ── Soft delete ── */
+  async function softDelete(id: string) {
+    if (!window.confirm("هل تريد حذف هذا المطعم؟")) return;
+    const { error } = await supabase.from("restaurants").update({ is_active: false }).eq("id", id);
+    if (error) { console.error("Soft delete error:", error.message, error); return; }
+    setRows((p) => p.filter((r) => r.id !== id));
   }
 
   /* ── Menu view ── */
@@ -697,6 +718,12 @@ export default function AdminRestaurantsPage() {
   }
 
   /* ── Item modal helpers ── */
+  function resetOfferFields() {
+    setItemMode("item");
+    setOfferPrice(""); setOfferStartsAt(""); setOfferEndsAt("");
+    setOfferImageFile(null); setOfferImagePreview(null); setOfferImageError(null);
+  }
+
   function openAddItem(catId: number) {
     setEditItem(null);
     setItemForm({ ...emptyItemForm, category_id: catId });
@@ -705,6 +732,7 @@ export default function AdminRestaurantsPage() {
     setItemError(null);
     setItemImageFile(null); setItemImagePreview(null); setItemImageError(null);
     setIsUploadingImage(false);
+    resetOfferFields();
     setShowItemModal(true);
   }
   function closeItemModal() {
@@ -714,6 +742,7 @@ export default function AdminRestaurantsPage() {
     setItemError(null);
     setItemImageFile(null); setItemImagePreview(null); setItemImageError(null);
     setIsUploadingImage(false);
+    resetOfferFields();
   }
   function toggleGroupCollapse(key: number) {
     setCollapsedGroups((prev) => {
@@ -960,12 +989,32 @@ export default function AdminRestaurantsPage() {
       image_url = uploaded;
     }
 
+    const isOfferCat = restCats.find((c) => c.id === itemForm.category_id)?.name === "العروض";
+    const isOffer    = isOfferCat && itemMode === "offer";
+
+    /* رفع صورة العرض لو موجودة */
+    let offer_image_url: string | null = null;
+    if (isOffer) {
+      if (offerImageFile) {
+        const uploaded = await uploadImage(offerImageFile, "offer", "menu-items");
+        offer_image_url = uploaded ?? image_url;
+      } else {
+        offer_image_url = image_url;
+      }
+    }
+
     const itemPayload = {
       name:        itemForm.name.trim(),
       description: itemForm.description.trim() || null,
       price:       priceNum,
       category_id: itemForm.category_id,
       image_url,
+      ...(isOffer && {
+        offer_price:     offerPrice ? Number(offerPrice) : null,
+        offer_image_url,
+        offer_starts_at: offerStartsAt || null,
+        offer_ends_at:   offerEndsAt   || null,
+      }),
     };
 
     console.log("[saveItem] groups to save:", extraGroups.length, extraGroups.map(g => ({ name: g.name, type: g.type, extras: g.extras.length })));
@@ -1262,8 +1311,10 @@ export default function AdminRestaurantsPage() {
               style={{ background: C.card, border: `1px solid ${C.border}`, color: C.text, colorScheme: "dark" }}
             >
               <option value="الكل">الكل</option>
+              <option value="قيد الإنشاء">قيد الإنشاء</option>
               <option value="نشط">نشط</option>
-              <option value="غير نشط">غير نشط</option>
+              <option value="مشغول">مشغول</option>
+              <option value="مغلق">مغلق</option>
             </select>
 
             {/* Add button */}
@@ -1349,16 +1400,22 @@ export default function AdminRestaurantsPage() {
 
                         {/* الحالة */}
                         <td className="px-4 py-3">
-                          <button
-                            onClick={() => toggleActive(r.id, r.is_active)}
-                            className="px-2.5 py-1 rounded-full text-[10px] font-bold whitespace-nowrap transition-all"
+                          <select
+                            value={r.status ?? "نشط"}
+                            onChange={(e) => handleStatusChange(r.id, e.target.value)}
+                            className="rounded-lg px-2 py-1 text-[10px] font-bold outline-none cursor-pointer"
                             style={{
-                              background: r.is_active ? `${C.green}22` : `${C.red}22`,
-                              color:      r.is_active ? C.green : C.red,
+                              background: C.bg,
+                              border: `1px solid ${C.border}`,
+                              color: C.text,
+                              colorScheme: "dark",
                             }}
                           >
-                            {r.is_active ? "نشط" : "غير نشط"}
-                          </button>
+                            <option value="قيد الإنشاء">قيد الإنشاء</option>
+                            <option value="نشط">نشط</option>
+                            <option value="مشغول">مشغول</option>
+                            <option value="مغلق">مغلق</option>
+                          </select>
                         </td>
 
                         {/* إجراءات */}
@@ -1377,6 +1434,13 @@ export default function AdminRestaurantsPage() {
                               style={{ background: `${C.orange}22`, color: C.orange }}
                             >
                               المنيو
+                            </button>
+                            <button
+                              onClick={() => softDelete(r.id)}
+                              className="px-3 py-1.5 rounded-lg text-xs font-bold transition-opacity hover:opacity-80"
+                              style={{ background: `${C.red}22`, color: C.red }}
+                            >
+                              حذف
                             </button>
                           </div>
                         </td>
@@ -1477,19 +1541,6 @@ export default function AdminRestaurantsPage() {
                     style={{ ...inputSty, colorScheme: "dark", borderColor: touched.closes_at && errors.closes_at ? C.red : C.border }}
                   />
                 </Field>
-              </div>
-
-              {/* حالة المطعم */}
-              <div className="flex flex-col gap-1.5">
-                <label className="text-xs font-semibold" style={{ color: C.muted }}>حالة المطعم</label>
-                <select value={restStatus} onChange={(e) => setRestStatus(e.target.value)}
-                  className="w-full rounded-xl px-3 py-2.5 text-sm outline-none"
-                  style={{ background: C.bg, border: `1px solid ${C.border}`, color: C.text, colorScheme: "dark" }}>
-                  <option value="active">متاح</option>
-                  <option value="busy">مشغول</option>
-                  <option value="closed">مغلق</option>
-                  <option value="maintenance">صيانة</option>
-                </select>
               </div>
 
               {/* عنوان المطعم */}
@@ -1711,15 +1762,40 @@ export default function AdminRestaurantsPage() {
                   placeholder="85"
                   className={inputCls} style={{ ...inputSty, colorScheme: "dark" }} />
               </Field>
-              <Field label="القسم" required>
-                <select value={itemForm.category_id}
-                  onChange={(e) => setItemForm({ ...itemForm, category_id: Number(e.target.value) })}
-                  className="w-full rounded-xl px-3 py-2.5 text-sm outline-none"
-                  style={{ ...inputSty, colorScheme: "dark" }}>
-                  <option value={0} disabled>اختر القسم</option>
-                  {restCats.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
-                </select>
-              </Field>
+              {/* القسم — يظهر كنص ثابت (محدد تلقائياً) */}
+              <div className="flex flex-col gap-1.5">
+                <label className="text-xs font-semibold" style={{ color: C.muted }}>القسم</label>
+                <div className="rounded-xl px-3 py-2.5 text-sm font-semibold" style={inputSty}>
+                  {restCats.find((c) => c.id === itemForm.category_id)?.name ?? "—"}
+                </div>
+              </div>
+
+              {/* تبديل وجبة/عرض — يظهر بس في قسم "العروض" */}
+              {restCats.find((c) => c.id === itemForm.category_id)?.name === "العروض" && (
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-semibold" style={{ color: C.muted }}>نوع العنصر</span>
+                  <div className="flex gap-2">
+                    {(["item", "offer"] as const).map((mode) => (
+                      <button key={mode} type="button"
+                        onClick={() => setItemMode(mode)}
+                        className="px-3 py-1.5 rounded-full text-xs font-bold transition-all"
+                        style={{
+                          background: itemMode === mode
+                            ? (mode === "offer" ? `${C.orange}33` : `${C.teal}33`)
+                            : "transparent",
+                          color:  itemMode === mode
+                            ? (mode === "offer" ? C.orange : C.teal)
+                            : C.muted,
+                          border: `1px solid ${itemMode === mode
+                            ? (mode === "offer" ? `${C.orange}66` : `${C.teal}66`)
+                            : "transparent"}`,
+                        }}>
+                        {mode === "offer" ? "عرض" : "وجبة"}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
               <ImageUploadField
                 label="صورة الوجبة"
                 preview={itemImagePreview}
@@ -1731,6 +1807,44 @@ export default function AdminRestaurantsPage() {
                 aspect={1}
                 helperText="PNG أو JPG - بحد أقصى 3MB - مربع 1:1"
               />
+
+              {/* ── حقول العرض — تظهر بس لو الوضع = "offer" ── */}
+              {restCats.find((c) => c.id === itemForm.category_id)?.name === "العروض" && itemMode === "offer" && (
+                <>
+                  <div className="flex flex-col gap-1.5">
+                    <label className="text-xs font-semibold" style={{ color: C.muted }}>
+                      سعر العرض (ج.م) <span style={{ color: C.red }}>*</span>
+                    </label>
+                    <input type="number" min="0" step="0.5" value={offerPrice}
+                      onChange={(e) => setOfferPrice(e.target.value)}
+                      placeholder="السعر بعد الخصم"
+                      className={inputCls} style={{ ...inputSty, colorScheme: "dark" }} />
+                  </div>
+                  <ImageUploadField
+                    label="صورة العرض (اختياري — لو فارغة تاخد صورة الوجبة)"
+                    preview={offerImagePreview}
+                    onPickFile={(src) => setCropState({ src, aspect: 16 / 9, field: "offer-image", compress: COMPRESS.cover })}
+                    maxSize={5 * 1024 * 1024}
+                    maxSizeMsg="حجم الصورة أكبر من 5MB"
+                    sizeError={offerImageError}
+                    onSizeError={setOfferImageError}
+                    aspect={16 / 9}
+                    helperText="JPG أو PNG - بحد أقصى 5MB - بالعرض (16:9)"
+                  />
+                  <div className="flex flex-col gap-1.5">
+                    <label className="text-xs font-semibold" style={{ color: C.muted }}>بداية العرض</label>
+                    <input type="datetime-local" value={offerStartsAt}
+                      onChange={(e) => setOfferStartsAt(e.target.value)}
+                      className={inputCls} style={{ ...inputSty, colorScheme: "dark" }} />
+                  </div>
+                  <div className="flex flex-col gap-1.5">
+                    <label className="text-xs font-semibold" style={{ color: C.muted }}>نهاية العرض</label>
+                    <input type="datetime-local" value={offerEndsAt}
+                      onChange={(e) => setOfferEndsAt(e.target.value)}
+                      className={inputCls} style={{ ...inputSty, colorScheme: "dark" }} />
+                  </div>
+                </>
+              )}
               {/* ── Extra groups ── */}
               <div className="flex flex-col gap-3">
 

@@ -22,6 +22,7 @@ const C = {
 const allNavLinks = [
   { emoji: "📊", label: "الرئيسية",   href: "/admin/dashboard"       },
   { emoji: "📦", label: "الطلبات",    href: "/admin/orders"          },
+  { emoji: "🚚", label: "طلبات دليفري", href: "/admin/delivery-requests" },
   { emoji: "🗂️", label: "الأرشيف",    href: "/admin/archive"         },
   { emoji: "🍔", label: "المطاعم",    href: "/admin/restaurants"     },
   { emoji: "🗺️", label: "الأحياء",    href: "/admin/areas"           },
@@ -38,7 +39,8 @@ const allNavLinks = [
 
 const pageTitle: Record<string, string> = {
   "/admin/dashboard":      "الرئيسية",
-  "/admin/orders":         "الطلبات",
+  "/admin/orders":               "الطلبات",
+  "/admin/delivery-requests":    "طلبات الدليفري",
   "/admin/archive":        "الأرشيف",
   "/admin/restaurants":    "المطاعم",
   "/admin/areas":          "الأحياء",
