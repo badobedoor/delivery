@@ -66,7 +66,7 @@ export async function POST(request: Request) {
   /* ── 4. Query — delivery_staff has no role column ── */
   console.log(`[login] before query table="${table}" phone="${phone.trim()}"`);
 
-  type UserRow = { id: unknown; name: string; role?: string; password: string; is_active: boolean };
+  type UserRow = { id: unknown; name: string; role?: string; phone?: string | null; password: string; is_active: boolean };
 
   let user:        UserRow | null = null;
   let dbErrorMsg:  string  | null = null;
@@ -74,7 +74,7 @@ export async function POST(request: Request) {
   if (type === "staff") {
     const result = await db()
       .from("staff")
-      .select("id, name, role, password, is_active")
+      .select("id, name, role, phone, password, is_active")
       .eq("phone", phone.trim())
       .eq("is_active", true)
       .maybeSingle();
@@ -168,10 +168,11 @@ export async function POST(request: Request) {
   const response = NextResponse.json({
     success: true,
     user: {
-      id:   payload.id,
-      name: payload.name,
-      role: payload.role,
-      type: payload.type,
+      id:    payload.id,
+      name:  payload.name,
+      role:  payload.role,
+      type:  payload.type,
+      phone: type === "staff" ? (user.phone ?? null) : null,
     },
   });
 

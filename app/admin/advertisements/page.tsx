@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useRef, useCallback } from "react";
+import { useRouter } from "next/navigation";
 import Cropper from "react-easy-crop";
 import type { Area } from "react-easy-crop";
 import imageCompression from "browser-image-compression";
@@ -449,6 +450,9 @@ function AdModal({
 /* ─────────────────────── Page ──────────────────────── */
 
 export default function AdminAdvertisementsPage() {
+  const router = useRouter();
+  const [authorized, setAuthorized] = useState(false);
+
   const [rows,      setRows]      = useState<Ad[]>([]);
   const [loading,   setLoading]   = useState(true);
   const [saving,    setSaving]    = useState(false);
@@ -465,6 +469,20 @@ export default function AdminAdvertisementsPage() {
   const [imageError,   setImageError]   = useState<string | null>(null);
   const [cropSrc,      setCropSrc]      = useState<string | null>(null);
 
+  /* ── Auth check — super_admin only ── */
+  useEffect(() => {
+    fetch("/api/auth/me", { credentials: "include" })
+      .then((r) => r.json())
+      .then((data) => {
+        if (data.user?.role !== "super_admin") {
+          router.replace("/admin/dashboard");
+        } else {
+          setAuthorized(true);
+        }
+      })
+      .catch(() => router.replace("/admin/dashboard"));
+  }, []);
+
   /* ── Fetch ── */
   async function fetchAds() {
     setLoading(true);
@@ -477,7 +495,7 @@ export default function AdminAdvertisementsPage() {
     setLoading(false);
   }
 
-  useEffect(() => { fetchAds(); }, []);
+  useEffect(() => { if (authorized) fetchAds(); }, [authorized]);
 
   /* ── Modal helpers ── */
   function openAdd() {
@@ -621,6 +639,13 @@ export default function AdminAdvertisementsPage() {
     else setRows((p) => p.filter((r) => r.id !== deleteId));
     setDeleteId(null);
   }
+
+  /* ── Guard — wait for auth check ── */
+  if (!authorized) return (
+    <div className="flex items-center justify-center" style={{ minHeight: "300px" }}>
+      <p className="text-sm animate-pulse" style={{ color: C.muted }}>جاري التحقق...</p>
+    </div>
+  );
 
   /* ── Render ── */
   return (

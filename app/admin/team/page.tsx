@@ -296,9 +296,11 @@ type DriverRow = {
 function AdminsTab({
   managers,
   onRefresh,
+  isSuperAdmin,
 }: {
   managers: StaffRow[];
   onRefresh: () => void;
+  isSuperAdmin: boolean;
 }) {
   const [modal,        setModal]        = useState(false);
   const [form,         setForm]         = useState(emptyForm);
@@ -306,8 +308,14 @@ function AdminsTab({
   const [submitting,   setSubmitting]   = useState(false);
   const [errors,       setErrors]       = useState<FieldErrors>({});
   const [generalError, setGeneralError] = useState("");
+  const [noPermToast,  setNoPermToast]  = useState(false);
 
   function openModal() {
+    if (!isSuperAdmin) {
+      setNoPermToast(true);
+      setTimeout(() => setNoPermToast(false), 3500);
+      return;
+    }
     setForm(emptyForm);
     setErrors({});
     setGeneralError("");
@@ -372,12 +380,24 @@ function AdminsTab({
 
   return (
     <>
+      {/* No-permission toast */}
+      {noPermToast && (
+        <div className="fixed top-4 left-1/2 -translate-x-1/2 z-50 px-5 py-3 rounded-2xl text-sm font-semibold shadow-xl max-w-xs text-center"
+          style={{ background: C.card, border: `1px solid ${C.red}55`, color: C.red }}>
+          🔒 أنت لا تمتلك صلاحية لإضافة مديرين. فقط المسؤول الأساسي يمكنه القيام بذلك.
+        </div>
+      )}
+
       <div className="flex flex-col gap-4">
         <div className="flex justify-start">
           <button onClick={openModal}
-            className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-bold hover:opacity-90 transition-opacity"
-            style={{ background: C.orange, color: "#fff" }}>
-            <span className="text-base leading-none">+</span> إضافة مدير
+            className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-bold transition-opacity"
+            style={{
+              background: C.orange,
+              color:      "#fff",
+              opacity:    isSuperAdmin ? 1 : 0.55,
+            }}>
+            <span className="text-base leading-none">{isSuperAdmin ? "+" : "🔒"}</span> إضافة مدير
           </button>
         </div>
 
@@ -908,10 +928,28 @@ const TABS = ["المدراء", "الموظفين", "الدلفري"] as const;
 type Tab = typeof TABS[number];
 
 export default function AdminTeamPage() {
-  const [tab,      setTab]      = useState<Tab>("المدراء");
-  const [managers, setManagers] = useState<StaffRow[]>([]);
-  const [staff,    setStaff]    = useState<StaffRow[]>([]);
-  const [drivers,  setDrivers]  = useState<DriverRow[]>([]);
+  const [tab,         setTab]         = useState<Tab>("المدراء");
+  const [managers,    setManagers]    = useState<StaffRow[]>([]);
+  const [staff,       setStaff]       = useState<StaffRow[]>([]);
+  const [drivers,     setDrivers]     = useState<DriverRow[]>([]);
+  const [currentRole, setCurrentRole] = useState<string>("");
+
+  useEffect(() => {
+    /* Read localStorage immediately so button unlocks without waiting for API */
+    try {
+      const stored = localStorage.getItem("staff_user");
+      if (stored) {
+        const u = JSON.parse(stored) as { role?: string };
+        if (u.role) setCurrentRole(u.role);
+      }
+    } catch {}
+
+    /* Confirm role from secure cookie (source of truth) */
+    fetch("/api/auth/me", { credentials: "include" })
+      .then((r) => r.json())
+      .then((data) => { if (data.authenticated) setCurrentRole(data.user?.role ?? ""); })
+      .catch(() => {});
+  }, []);
 
   async function fetchStaff() {
     const { data } = await supabasePublic.from("staff").select("*").order("created_at", { ascending: false });
@@ -953,7 +991,7 @@ export default function AdminTeamPage() {
         ))}
       </div>
 
-      {tab === "المدراء"  && <AdminsTab managers={managers} onRefresh={fetchStaff} />}
+      {tab === "المدراء"  && <AdminsTab managers={managers} onRefresh={fetchStaff} isSuperAdmin={currentRole === "super_admin"} />}
       {tab === "الموظفين" && <StaffTab  staff={staff}       onRefresh={fetchStaff} />}
       {tab === "الدلفري"  && <DriversTab drivers={drivers}  onRefresh={fetchDrivers} />}
     </div>

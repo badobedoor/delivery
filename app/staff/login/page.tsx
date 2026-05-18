@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 
 const C = {
   bg:     "#0F172A",
@@ -35,11 +35,25 @@ function EyeOffIcon() {
 }
 
 export default function StaffLoginPage() {
+  const [checking, setChecking] = useState(true);
   const [phone,    setPhone]    = useState("");
   const [password, setPassword] = useState("");
   const [showPass, setShowPass] = useState(false);
   const [error,    setError]    = useState("");
   const [loading,  setLoading]  = useState(false);
+
+  useEffect(() => {
+    fetch("/api/auth/me", { credentials: "include" })
+      .then((r) => r.json())
+      .then((data) => {
+        if (data.authenticated && data.user?.role === "staff") {
+          window.location.href = "/admin/orders";
+        } else {
+          setChecking(false);
+        }
+      })
+      .catch(() => setChecking(false));
+  }, []);
 
   async function handleLogin() {
     if (!phone.trim())    { setError("أدخل رقم الهاتف"); return; }
@@ -83,6 +97,15 @@ export default function StaffLoginPage() {
       setLoading(false);
     }
   }
+
+  if (checking) return (
+    <div className="min-h-screen flex items-center justify-center" style={{ background: C.bg }}>
+      <div className="flex flex-col items-center gap-3">
+        <span className="text-3xl" style={{ color: C.teal }}>⚡</span>
+        <p className="text-sm font-semibold animate-pulse" style={{ color: C.muted }}>جاري التحقق...</p>
+      </div>
+    </div>
+  );
 
   return (
     <div

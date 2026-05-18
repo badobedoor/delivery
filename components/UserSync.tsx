@@ -1,7 +1,8 @@
 "use client";
 
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { supabase } from "@/lib/supabase";
+import BlockedScreen from "@/components/customer/BlockedScreen";
 
 /**
  * Invisible component mounted in the root layout.
@@ -10,6 +11,8 @@ import { supabase } from "@/lib/supabase";
  *   2. Checks is_blocked — signs out and redirects blocked users immediately.
  */
 export default function UserSync() {
+  const [isBlocked, setIsBlocked] = useState(false);
+
   useEffect(() => {
     console.log("[UserSync] mounted");
 
@@ -60,9 +63,8 @@ export default function UserSync() {
       console.log("[UserSync] is_blocked:", existingUser.is_blocked);
 
       if (existingUser.is_blocked) {
-        alert("تم حظر هذا الحساب. يرجى التواصل مع الدعم.");
-        await supabase.auth.signOut();
-        window.location.href = "/login";
+        setIsBlocked(true);
+        return;
       }
     }
 
@@ -86,5 +88,6 @@ export default function UserSync() {
     return () => subscription.unsubscribe();
   }, []);
 
+  if (isBlocked) return <BlockedScreen />;
   return null;
 }

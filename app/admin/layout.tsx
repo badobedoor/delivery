@@ -256,7 +256,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
   /* ── Logout: clear auth cookie via API ── */
   async function handleLogout() {
     await fetch("/api/auth/logout", { method: "POST", credentials: "include" });
-    window.location.href = "/admin/login";
+    window.location.href = user?.role === "staff" ? "/staff/login" : "/admin/login";
   }
 
   /* ── Wait until auth check completes ── */
@@ -265,15 +265,20 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
   /* ── No session: show loading screen while redirect fires ── */
   if (!user) return <AuthLoadingScreen />;
 
-  /* ── Nav links: staff role sees restricted list, admin sees all ── */
+  /* Pages only super_admin can see */
+  const SUPER_ADMIN_ONLY = ["/admin/advertisements"];
+
+  /* ── Nav links: staff → restricted, admin → no super_admin_only, super_admin → all ── */
   const navLinks = user.role === "staff"
     ? allNavLinks.filter((l) => STAFF_ALLOWED.includes(l.href))
+    : user.role === "admin"
+    ? allNavLinks.filter((l) => !SUPER_ADMIN_ONLY.includes(l.href))
     : allNavLinks;
 
   const title        = pageTitle[pathname] ?? "لوحة التحكم";
   const displayName  = user.name ?? "مدير";
-  const displayRole  = (user.role === "admin" || user.role === "super_admin")
-    ? "مدير النظام"
+  const displayRole  = user.role === "super_admin" ? "سوبر أدمن"
+    : user.role === "admin"                        ? "مدير"
     : "موظف";
   const avatarLetter = displayName[0] ?? "م";
   const sidebarW     = collapsed ? 64 : 260;
