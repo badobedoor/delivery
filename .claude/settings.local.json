@@ -14,7 +14,11 @@
       "PowerShell(node -e \"const https = require\\('https'\\); const req = https.get\\('https://lraphhsuzsiudyvnszgh.supabase.co/rest/v1/', \\(r\\) => { console.log\\('status:', r.statusCode\\) }\\); req.on\\('error', \\(e\\) => { console.log\\('error:', e.message\\) }\\)\")",
       "Bash(Get-ChildItem -Path \"D:\\\\coding Project\\\\delivery\" -File)",
       "Bash(Select-Object Name)",
-      "Bash(node_modules/.bin/tsc --noEmit --skipLibCheck)"
+      "Bash(node_modules/.bin/tsc --noEmit --skipLibCheck)",
+      "Bash(Get-Process -Name \"node\" -ErrorAction SilentlyContinue)",
+      "Bash(Select-Object Id, ProcessName, CPU)",
+      "PowerShell(npm run *)",
+      "PowerShell(taskkill *)"
     ]
   }
 }

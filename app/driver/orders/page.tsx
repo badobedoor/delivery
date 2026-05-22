@@ -295,16 +295,12 @@ function PaymentModal({
 
   return (
     <div className="fixed inset-0 z-50 flex items-end justify-center p-4"
-      style={{ background: "rgba(0,0,0,0.8)" }}
-      onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}>
+      style={{ background: "rgba(0,0,0,0.8)" }}>
       <div className="w-full max-w-sm rounded-2xl flex flex-col"
         style={{ background: C.card, border: `1px solid ${C.border}` }}>
 
-        <div className="flex items-center justify-between px-5 py-4 border-b" style={{ borderColor: C.border }}>
+        <div className="flex items-center px-5 py-4 border-b" style={{ borderColor: C.border }}>
           <h2 className="text-base font-black" style={{ color: C.text }}>تحصيل المبلغ</h2>
-          <button onClick={onClose}
-            className="w-8 h-8 rounded-full flex items-center justify-center hover:opacity-70"
-            style={{ background: C.bg, color: C.muted }}>✕</button>
         </div>
 
         <div className="px-5 py-4 flex flex-col gap-4">
@@ -356,10 +352,27 @@ function PaymentModal({
                   <span className="text-xs flex-shrink-0" style={{ color: C.muted }}>ج.م</span>
                 </div>
               ))}
-              <p className="text-[11px] text-center mt-1" style={{ color: C.muted }}>
-                المجموع: {fmtAmt((parseFloat(cash) || 0) + (parseFloat(vodafone) || 0))}
-                {" / المطلوب: "}{fmtAmt(order.total)}
-              </p>
+              {(() => {
+                const entered = (parseFloat(cash) || 0) + (parseFloat(vodafone) || 0);
+                const diff    = entered - order.total;
+                const statusColor = diff < 0 ? C.blue : diff === 0 ? C.green : C.red;
+                const statusText  = diff < 0
+                  ? `متبقي: ${fmtAmt(Math.abs(diff))}`
+                  : diff === 0
+                  ? "✓ مكتمل"
+                  : `زيادة: ${fmtAmt(diff)}`;
+                return (
+                  <>
+                    <p className="text-[11px] text-center mt-1" style={{ color: C.muted }}>
+                      المجموع: {fmtAmt(entered)}
+                      {" / المطلوب: "}{fmtAmt(order.total)}
+                    </p>
+                    <p className="text-[11px] text-center font-bold" style={{ color: statusColor }}>
+                      {statusText}
+                    </p>
+                  </>
+                );
+              })()}
             </div>
           )}
 
