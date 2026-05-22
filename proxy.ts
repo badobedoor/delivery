@@ -1,5 +1,6 @@
-import { NextResponse }   from "next/server";
-import type { NextRequest } from "next/server";
+import { createServerClient } from "@supabase/ssr";
+import { NextResponse }        from "next/server";
+import type { NextRequest }    from "next/server";
 
 /* ── Login pages — always public ── */
 const ALWAYS_PUBLIC = [
@@ -10,6 +11,33 @@ const ALWAYS_PUBLIC = [
 
 /* ── Protected prefixes ── */
 const PROTECTED = ["/admin", "/driver"];
+
+/* ── Customer routes that require Supabase session ── */
+const CUSTOMER_PATHS = [
+  "/about",
+  "/account",
+  "/address",
+  "/cart",
+  "/checkout",
+  "/coupons",
+  "/favorites",
+  "/help",
+  "/notifications",
+  "/offers",
+  "/orders",
+  "/privacy",
+  "/profile",
+  "/restaurant",
+  "/restaurants",
+  "/search",
+  "/terms",
+];
+
+function isCustomerPath(pathname: string): boolean {
+  return CUSTOMER_PATHS.some(
+    (p) => pathname === p || pathname.startsWith(p + "/"),
+  );
+}
 
 /* ─────────────────────────────────────────────
    Edge-compatible JWT verifier
@@ -89,6 +117,39 @@ function getLoginUrl(request: NextRequest, pathname: string): NextResponse {
 export async function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl;
 
+  /* ── Customer route protection (Supabase session) ── */
+  if (pathname === "/login" || isCustomerPath(pathname)) {
+    const response = NextResponse.next({ request: { headers: request.headers } });
+
+    const supabase = createServerClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL!,
+      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+      {
+        cookies: {
+          getAll: () => request.cookies.getAll(),
+          setAll: (cookiesToSet) => {
+            cookiesToSet.forEach(({ name, value, options }) => {
+              response.cookies.set(name, value, options);
+            });
+          },
+        },
+      },
+    );
+
+    const { data: { session } } = await supabase.auth.getSession();
+    const isLoggedIn = !!session;
+
+    if (isLoggedIn && pathname === "/login") {
+      return NextResponse.redirect(new URL("/", request.url));
+    }
+
+    if (!isLoggedIn && isCustomerPath(pathname)) {
+      return NextResponse.redirect(new URL("/login", request.url));
+    }
+
+    return response;
+  }
+
   /* ── Already-logged-in redirect for login pages ── */
   if (ALWAYS_PUBLIC.some((p) => pathname.startsWith(p))) {
     const token = request.cookies.get("auth_token")?.value;
@@ -146,5 +207,19 @@ export async function proxy(request: NextRequest) {
 }
 
 export const config = {
-  matcher: ["/admin/:path*", "/driver/:path*"],
+  matcher: [
+    "/admin/:path*",
+    "/driver/:path*",
+    "/login",
+    "/about/:path*", "/account/:path*", "/address/:path*",
+    "/cart/:path*", "/checkout/:path*", "/coupons/:path*",
+    "/favorites/:path*", "/help/:path*", "/notifications/:path*",
+    "/offers/:path*", "/orders/:path*", "/privacy/:path*",
+    "/profile/:path*", "/restaurant/:path*", "/restaurants/:path*",
+    "/search/:path*", "/terms/:path*",
+    "/about", "/account", "/address", "/cart", "/checkout",
+    "/coupons", "/favorites", "/help", "/notifications", "/offers",
+    "/orders", "/privacy", "/profile", "/restaurant", "/restaurants",
+    "/search", "/terms",
+  ],
 };

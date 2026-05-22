@@ -221,7 +221,7 @@ export default function CheckoutPage() {
         <span className="text-6xl">📍</span>
         <p className="text-base font-bold text-[var(--color-secondary)]">أضف عنوان توصيل أولاً</p>
         <p className="text-sm text-[var(--color-muted)]">لم يتم تحديد عنوان افتراضي للتوصيل</p>
-        <Link href="/address/new" className="mt-2 bg-[var(--color-primary)] text-white text-sm font-bold px-8 py-3 rounded-2xl">
+        <Link href="/address/new?from=checkout" className="mt-2 bg-[var(--color-primary)] text-white text-sm font-bold px-8 py-3 rounded-2xl">
           أضف عنوان
         </Link>
       </div>
@@ -440,7 +440,7 @@ export default function CheckoutPage() {
             </div>
 
             <Link
-              href="/address/new"
+              href="/address/new?from=checkout"
               className="flex items-center justify-center gap-2 w-full border-2 border-[var(--color-primary)] text-[var(--color-primary)] text-sm font-bold py-3 rounded-2xl"
             >
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--color-primary)" strokeWidth="2.5">

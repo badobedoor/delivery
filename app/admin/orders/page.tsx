@@ -99,7 +99,8 @@ export default function AdminOrdersPage() {
   const [search,        setSearch]        = useState("");
   const [confirmingId,  setConfirmingId]  = useState<string | null>(null);
   const [confirmError,  setConfirmError]  = useState<string | null>(null);
-  const [noShiftModal,  setNoShiftModal]  = useState<{ message: string } | null>(null);
+  const [noShiftModal,     setNoShiftModal]     = useState<{ message: string } | null>(null);
+  const [shiftTimeModal,   setShiftTimeModal]   = useState<{ message: string } | null>(null);
   const [activeShiftLabel, setActiveShiftLabel] = useState<string | null>(null);
   const router = useRouter();
   const [selectedOrderModal, setSelectedOrderModal] = useState<{
@@ -342,7 +343,7 @@ export default function AdminOrdersPage() {
 
     // 3. التحقق من أن الوقت الحالي ضمن نطاق الوردية
     if (!isShiftActiveNow(shift)) {
-      setConfirmError("⚠️ هذه الوردية خارج وقت التشغيل، يرجى إنهاءها وفتح وردية مناسبة للوقت الحالي");
+      setShiftTimeModal({ message: "هذه الوردية خارج وقت التشغيل، يرجى إنهاءها وفتح وردية مناسبة للوقت الحالي" });
       setConfirmingId(null);
       return;
     }
@@ -1114,6 +1115,58 @@ export default function AdminOrdersPage() {
                 </div>
               </>
             )}
+          </div>
+        </div>
+      )}
+
+      {/* ── Shift-Time Modal ── */}
+      {shiftTimeModal && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center p-4"
+          style={{ background: "rgba(0,0,0,0.75)" }}
+          onClick={(e) => { if (e.target === e.currentTarget) setShiftTimeModal(null); }}
+        >
+          <div
+            className="w-full max-w-sm rounded-2xl flex flex-col overflow-hidden"
+            style={{ background: C.card, border: `1px solid ${C.border}` }}
+          >
+            {/* Header */}
+            <div className="flex items-center justify-between px-5 py-4 border-b" style={{ borderColor: C.border }}>
+              <div className="flex items-center gap-2">
+                <span className="text-xl">⚠️</span>
+                <h2 className="text-base font-black" style={{ color: C.yellow }}>تحذير</h2>
+              </div>
+              <button
+                onClick={() => setShiftTimeModal(null)}
+                className="w-8 h-8 rounded-full flex items-center justify-center hover:opacity-70"
+                style={{ background: C.bg, color: C.muted }}
+              >✕</button>
+            </div>
+
+            {/* Body */}
+            <div className="px-5 py-5">
+              <p className="text-sm leading-relaxed text-center" style={{ color: C.muted }}>
+                {shiftTimeModal.message}
+              </p>
+            </div>
+
+            {/* Footer */}
+            <div className="flex gap-3 px-5 py-4 border-t" style={{ borderColor: C.border }}>
+              <button
+                onClick={() => { setShiftTimeModal(null); router.push("/admin/drivers"); }}
+                className="flex-1 py-2.5 rounded-xl text-sm font-bold hover:opacity-90 transition-opacity"
+                style={{ background: C.teal, color: "#fff" }}
+              >
+                إدارة الورديات
+              </button>
+              <button
+                onClick={() => setShiftTimeModal(null)}
+                className="flex-1 py-2.5 rounded-xl text-sm font-bold hover:opacity-80 transition-opacity"
+                style={{ background: C.bg, color: C.muted, border: `1px solid ${C.border}` }}
+              >
+                رجوع
+              </button>
+            </div>
           </div>
         </div>
       )}

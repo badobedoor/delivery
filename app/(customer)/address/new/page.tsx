@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useState } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { supabase } from "@/lib/supabase";
 
 type Area = { id: string; name: string };
@@ -24,7 +24,8 @@ const fields: FormField[] = [
 ];
 
 export default function NewAddressPage() {
-  const router = useRouter();
+  const router      = useRouter();
+  const searchParams = useSearchParams();
 
   const [areas, setAreas]   = useState<Area[]>([]);
   const [area, setArea]     = useState("");
@@ -40,7 +41,7 @@ export default function NewAddressPage() {
   useEffect(() => {
     async function load() {
       const [{ data: areasData }, { data: { user } }] = await Promise.all([
-        supabase.from("areas").select("id, name"),
+        supabase.from("areas").select("id, name").order("name", { ascending: true }),
         supabase.auth.getUser(),
       ]);
       setAreas(areasData ?? []);
@@ -108,7 +109,8 @@ export default function NewAddressPage() {
       setError("حدث خطأ أثناء الحفظ، حاول مرة أخرى");
       return;
     }
-    router.push("/address");
+    const dest = searchParams.get("from") === "checkout" ? "/checkout" : "/address";
+    router.replace(dest);
   }
 
   return (
