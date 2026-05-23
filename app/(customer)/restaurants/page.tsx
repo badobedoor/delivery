@@ -6,6 +6,7 @@ import { useState, useEffect, useCallback, useRef } from "react";
 import { useRouter } from "next/navigation";
 
 import { supabase } from "@/lib/supabase";
+import { isRestaurantOpen } from "@/lib/utils";
 import CartBar from "@/components/customer/CartBar";
 import BottomNav from "@/components/customer/BottomNav";
 
@@ -18,6 +19,8 @@ type Restaurant = {
   cover_image_url: string | null;
   is_active: boolean;
   status: string | null;
+  opens_at: string | null;
+  closes_at: string | null;
 };
 
 type Advertisement = {
@@ -85,9 +88,9 @@ export default function RestaurantsPage() {
       const [restaurantsRes, adsRes, featuredRes] = await Promise.all([
         supabase
           .from("restaurants")
-          .select("id, name, description, image_url, cover_image_url, is_active, status")
+          .select("id, name, description, image_url, cover_image_url, is_active, status, opens_at, closes_at")
           .eq("is_active", true)
-          .in("status", ["نشط", "مشغول", "مغلق"])
+          .in("status", ["نشط", "مشغول"])
           .order("name"),
         supabase
           .from("advertisements")
@@ -395,46 +398,48 @@ export default function RestaurantsPage() {
                 )}
 
                 <div className="flex flex-col">
-                  {restaurants.map((r, index) => (
-                    <div key={r.id}>
-                      <div
-                        onClick={() => r.status === "نشط" ? router.push(`/restaurant/${r.id}`) : undefined}
-                        className={`relative flex items-center gap-3 py-3 ${r.status === "نشط" ? "cursor-pointer" : "cursor-not-allowed"}`}
-                      >
-                        <div className="relative w-[72px] h-[72px] flex-shrink-0 rounded-xl overflow-hidden">
-                          <Image src={r.image_url ?? FALLBACK_IMG} alt={r.name} fill className="object-cover" />
-                          {(r.status === "مغلق" || r.status === "مشغول") && (
-                            <div className="absolute inset-0 flex items-center justify-center rounded-xl"
-                              style={{ background: "rgba(0,0,0,0.6)" }}>
-                              <span className="text-white font-black text-xs">
-                                {r.status === "مشغول" ? "مشغول" : "مغلق"}
-                              </span>
-                            </div>
-                          )}
+                  {restaurants.map((r, index) => {
+                    const isBusy = r.status === "مشغول";
+                    const isOpen = !isBusy && isRestaurantOpen(r);
+                    const overlayLabel = isBusy ? "مشغول" : "مغلق";
+                    const statusText   = isBusy ? "مشغول حالياً" : "مغلق حالياً";
+                    return (
+                      <div key={r.id}>
+                        <div
+                          onClick={() => isOpen ? router.push(`/restaurant/${r.id}`) : undefined}
+                          className={`relative flex items-center gap-3 py-3 ${isOpen ? "cursor-pointer" : "cursor-not-allowed"}`}
+                        >
+                          <div className="relative w-[72px] h-[72px] flex-shrink-0 rounded-xl overflow-hidden">
+                            <Image src={r.image_url ?? FALLBACK_IMG} alt={r.name} fill className="object-cover" />
+                            {!isOpen && (
+                              <div className="absolute inset-0 flex items-center justify-center rounded-xl"
+                                style={{ background: "rgba(0,0,0,0.6)" }}>
+                                <span className="text-white font-black text-xs">{overlayLabel}</span>
+                              </div>
+                            )}
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <p className={`text-base font-bold truncate ${isOpen ? "text-[var(--color-secondary)]" : "text-[#9CA3AF]"}`}>{r.name}</p>
+                            {r.description && (
+                              <p className="text-sm text-[var(--color-muted)] truncate mt-0.5">{r.description}</p>
+                            )}
+                            {isOpen ? (
+                              <div className="flex items-center gap-1 mt-1.5">
+                                <svg width="13" height="13" viewBox="0 0 24 24" fill="#F59E0B">
+                                  <path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z" />
+                                </svg>
+                                <span className="text-sm font-semibold text-[var(--color-secondary)]">4.5</span>
+                                <span className="text-xs text-[#9CA3AF]">• 230 تقييم</span>
+                              </div>
+                            ) : (
+                              <p className="text-xs text-[#EF4444] mt-1">{statusText}</p>
+                            )}
+                          </div>
                         </div>
-                        <div className="flex-1 min-w-0">
-                          <p className={`text-base font-bold truncate ${r.is_active ? "text-[var(--color-secondary)]" : "text-[#9CA3AF]"}`}>{r.name}</p>
-                          {r.description && (
-                            <p className="text-sm text-[var(--color-muted)] truncate mt-0.5">{r.description}</p>
-                          )}
-                          {r.is_active ? (
-                            <div className="flex items-center gap-1 mt-1.5">
-                              <svg width="13" height="13" viewBox="0 0 24 24" fill="#F59E0B">
-                                <path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z" />
-                              </svg>
-                              <span className="text-sm font-semibold text-[var(--color-secondary)]">4.5</span>
-                              <span className="text-xs text-[#9CA3AF]">• 230 تقييم</span>
-                            </div>
-                          ) : (
-                            <p className="text-xs text-[#EF4444] mt-1">
-                              {r.status === "مشغول" ? "مشغول حالياً" : "مغلق حالياً"}
-                            </p>
-                          )}
-                        </div>
+                        {index < restaurants.length - 1 && <div className="h-px bg-[#D1D5DB]" />}
                       </div>
-                      {index < restaurants.length - 1 && <div className="h-px bg-[#D1D5DB]" />}
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
               </section>
             </>

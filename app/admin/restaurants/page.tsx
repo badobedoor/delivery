@@ -340,7 +340,7 @@ export default function AdminRestaurantsPage() {
   const [saving,       setSaving]       = useState(false);
   const [saveError,    setSaveError]    = useState<string | null>(null);
   const [search,       setSearch]       = useState("");
-  const [statusFilter, setStatusFilter] = useState<"الكل" | "قيد الإنشاء" | "نشط" | "مشغول" | "مغلق">("الكل");
+  const [statusFilter, setStatusFilter] = useState<"الكل" | "قيد الإنشاء" | "نشط" | "مشغول">("الكل");
 
   /* ── Modal state ── */
   const [showModal,   setShowModal]   = useState(false);
@@ -1314,7 +1314,6 @@ export default function AdminRestaurantsPage() {
               <option value="قيد الإنشاء">قيد الإنشاء</option>
               <option value="نشط">نشط</option>
               <option value="مشغول">مشغول</option>
-              <option value="مغلق">مغلق</option>
             </select>
 
             {/* Add button */}
@@ -1414,7 +1413,6 @@ export default function AdminRestaurantsPage() {
                             <option value="قيد الإنشاء">قيد الإنشاء</option>
                             <option value="نشط">نشط</option>
                             <option value="مشغول">مشغول</option>
-                            <option value="مغلق">مغلق</option>
                           </select>
                         </td>
 

@@ -37,6 +37,7 @@ export default function CheckoutPage() {
   const [loading,           setLoading]           = useState(true);
   const [noAddress,         setNoAddress]         = useState(false);
   const [submitting,        setSubmitting]        = useState(false);
+  const [showLimitModal,    setShowLimitModal]    = useState(false);
   const [orderNote]         = useState(() =>
     typeof window !== "undefined" ? (localStorage.getItem("hala_order_note") ?? "") : ""
   );
@@ -138,43 +139,62 @@ export default function CheckoutPage() {
     if (!cart || !address || !userId) return;
     setSubmitting(true);
 
-    const subtotal = cart.items.reduce((sum, item) => sum + itemUnitPrice(item) * item.qty, 0);
-    const total    = Math.max(0, subtotal + deliveryFee - couponDiscount);
-
-    const { data: order, error: orderError } = await supabase
+    /* ── 1. Frontend guard — فحص سريع قبل الـ API call ── */
+    const { count: activeCount } = await supabase
       .from("orders")
-      .insert({
-        user_id:       userId,
-        address_id:    address.id,
-        restaurant_id: cart.restaurantId,
-        status:        "new",
-        subtotal,
-        delivery_fee:    deliveryFee,
-        discount_amount: couponDiscount || null,
-        total,
-        notes:           orderNote.trim() || null,
-      })
-      .select()
-      .single();
+      .select("id", { count: "exact", head: true })
+      .eq("user_id", userId)
+      .in("status", ["new", "pending"]);
 
-    if (orderError || !order) {
-      console.log("Order Error:", orderError);
+    if ((activeCount ?? 0) >= 3) {
+      setShowLimitModal(true);
       setSubmitting(false);
       return;
     }
 
-    const orderItems = cart.items.map((item) => ({
-      order_id:       order.id,
-      menu_item_id:   item.id,
-      quantity:       item.qty,
-      price_at_order: itemUnitPrice(item),
-      extras:         item.extras ?? null,
-      notes:          item.notes  ?? null,
-    }));
+    /* ── 2. أرسل الطلب للـ API (يعمل check server-side ويحفظ الأوردر) ── */
+    const subtotal = cart.items.reduce((sum, item) => sum + itemUnitPrice(item) * item.qty, 0);
+    const total    = Math.max(0, subtotal + deliveryFee - couponDiscount);
 
-    await supabase.from("order_items").insert(orderItems);
+    const res = await fetch("/api/orders", {
+      method:  "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        order: {
+          address_id:      address.id,
+          restaurant_id:   cart.restaurantId,
+          status:          "new",
+          subtotal,
+          delivery_fee:    deliveryFee,
+          discount_amount: couponDiscount || null,
+          total,
+          notes:           orderNote.trim() || null,
+        },
+        items: cart.items.map((item) => ({
+          menu_item_id:   item.id,
+          quantity:       item.qty,
+          price_at_order: itemUnitPrice(item),
+          extras:         item.extras ?? null,
+          notes:          item.notes  ?? null,
+        })),
+      }),
+    });
 
-    /* ── تسجيل استخدام الكوبون ── */
+    if (res.status === 429) {
+      setShowLimitModal(true);
+      setSubmitting(false);
+      return;
+    }
+
+    if (!res.ok) {
+      console.log("Order API error:", res.status);
+      setSubmitting(false);
+      return;
+    }
+
+    const { orderId } = await res.json();
+
+    /* ── 3. تسجيل استخدام الكوبون ── */
     if (appliedCoupon) {
       const { data: existingUsage } = await supabase
         .from("coupon_usages")
@@ -202,7 +222,7 @@ export default function CheckoutPage() {
 
     clearCart();
     localStorage.removeItem("hala_order_note");
-    router.push(`/orders/${order.id}`);
+    router.push(`/orders/${orderId}`);
   }
 
   /* ── Loading ── */
@@ -393,6 +413,37 @@ export default function CheckoutPage() {
         </div>
 
       </div>
+
+      {/* ── Limit Modal ── */}
+      {showLimitModal && (
+        <div className="fixed inset-0 bg-black/50 z-[100] flex items-center justify-center">
+          <div className="bg-white rounded-2xl max-w-[320px] w-full mx-4 p-6">
+            <div className="flex flex-col items-center gap-3 text-center">
+              <div className="w-14 h-14 rounded-full flex items-center justify-center"
+                style={{ background: "#FEF2F2" }}>
+                <svg width="28" height="28" viewBox="0 0 24 24" fill="none"
+                  stroke="#EF4444" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z" />
+                  <line x1="12" y1="9" x2="12" y2="13" />
+                  <line x1="12" y1="17" x2="12.01" y2="17" />
+                </svg>
+              </div>
+              <p className="text-base font-black text-[var(--color-secondary)]">
+                لديك 3 طلبات قيد التنفيذ
+              </p>
+              <p className="text-sm text-[var(--color-muted)]">
+                يرجى انتظار استلام طلباتك الحالية أولاً
+              </p>
+            </div>
+            <button
+              onClick={() => setShowLimitModal(false)}
+              className="mt-5 w-full bg-[var(--color-primary)] text-white text-sm font-bold py-2.5 rounded-xl active:scale-[0.98] transition-transform"
+            >
+              حسناً
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* ── Address Picker Sheet ── */}
       {showAddressPicker && (

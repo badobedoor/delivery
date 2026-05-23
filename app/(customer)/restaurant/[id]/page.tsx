@@ -3,8 +3,9 @@
 import Image from "next/image";
 import Link from "next/link";
 import { useState, useEffect, useRef } from "react";
-import { useParams, useSearchParams } from "next/navigation";
+import { useParams, useSearchParams, useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase";
+import { isRestaurantOpen } from "@/lib/utils";
 import { addToCart, clearCart, getCart, updateQty, CartItem } from "@/lib/cart";
 import ConfirmModal from "@/components/customer/ConfirmModal";
 import MealBottomSheet from "@/components/customer/MealBottomSheet";
@@ -15,7 +16,7 @@ type ItemExtra  = { id: number; name: string; price: number };
 type ExtraGroup = { id: number; name: string; type: string; required: boolean; max_select: number; item_extras: ItemExtra[] };
 type MenuItem   = { id: number; name: string; description: string | null; price: number; category_id: number; image_url: string | null; extra_groups: ExtraGroup[]; offer_price?: number | null; offer_starts_at?: string | null; offer_ends_at?: string | null; offer_image_url?: string | null };
 type Category   = { id: number; name: string; restaurant_id: string; menu_items: MenuItem[] };
-type Restaurant = { id: string; name: string; description: string | null; cover_image_url: string | null; image_url: string | null; rating_avg?: number | null; rating_count?: number | null };
+type Restaurant = { id: string; name: string; description: string | null; cover_image_url: string | null; image_url: string | null; rating_avg?: number | null; rating_count?: number | null; is_active: boolean; opens_at: string | null; closes_at: string | null; status: string | null };
 
 /* ── MealBottomSheet meal shape ── */
 type SheetMeal = { id: number; name: string; basePrice: number; img: string; extras?: { id: number; name: string; price: number }[]; sizes?: { id: number; name: string }[] };
@@ -139,6 +140,7 @@ export default function RestaurantPage() {
   const id            = params.id as string;
   const searchParams  = useSearchParams();
   const categoryParam = searchParams.get("category");
+  const router        = useRouter();
 
   const [restaurant,  setRestaurant]  = useState<Restaurant | null>(null);
   const [categories,  setCategories]  = useState<Category[]>([]);
@@ -154,7 +156,7 @@ export default function RestaurantPage() {
       setError(null);
 
       const [restResult, catsResult] = await Promise.all([
-        supabase.from("restaurants").select("id, name, description, cover_image_url, image_url, rating_avg, rating_count").eq("id", id).single(),
+        supabase.from("restaurants").select("id, name, description, cover_image_url, image_url, rating_avg, rating_count, is_active, opens_at, closes_at, status").eq("id", id).single(),
         supabase.from("categories")
           .select("id, name, restaurant_id, menu_items(id, name, description, price, category_id, image_url, offer_price, offer_starts_at, offer_ends_at, offer_image_url, extra_groups(id, name, type, required, max_select, item_extras(id, name, price)))")
           .eq("restaurant_id", id)
@@ -167,7 +169,15 @@ export default function RestaurantPage() {
         return;
       }
 
-      setRestaurant(restResult.data);
+      const rest = restResult.data;
+
+      /* redirect لأي حالة غير "نشط + جوا التوقيت" */
+      if (rest.status !== "نشط" || !isRestaurantOpen(rest)) {
+        router.replace("/restaurants");
+        return;
+      }
+
+      setRestaurant(rest);
 
       if (!catsResult.error && catsResult.data) {
         const cats = catsResult.data as Category[];
