@@ -6,6 +6,7 @@ import { useState, useEffect } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase";
 import { addToCart, clearCart } from "@/lib/cart";
+import InfoModal from "@/components/customer/InfoModal";
 
 
 /* ── Types ── */
@@ -72,6 +73,7 @@ export default function OrderDetailPage() {
   const [reordering,       setReordering]       = useState(false);
   const [favSaving,        setFavSaving]        = useState(false);
   const [favSaved,         setFavSaved]         = useState(false);
+  const [favModal,         setFavModal]         = useState<"success" | "duplicate" | null>(null);
   const [showRatingModal,  setShowRatingModal]  = useState(false);
   const [ratings,          setRatings]          = useState({ food_quality: 0, value_for_money: 0, packaging: 0 });
   const [comment,          setComment]          = useState("");
@@ -108,15 +110,19 @@ export default function OrderDetailPage() {
         .maybeSingle();
       setRated(!!ratingData);
 
-      /* تحقق لو المطعم محفوظ في المفضلة */
+      /* تحقق لو نفس الوجبات محفوظة في المفضلة */
       if (user && orderData.restaurant_id) {
-        const { data: favData } = await supabase
+        const { data: existingFavs } = await supabase
           .from("favorite_orders")
-          .select("id")
+          .select("id, items")
           .eq("user_id", user.id)
-          .eq("restaurant_id", orderData.restaurant_id)
-          .maybeSingle();
-        setFavSaved(!!favData);
+          .eq("restaurant_id", orderData.restaurant_id);
+        const orderItemIds = orderData.order_items.map((i: OrderItem) => i.menu_item_id).sort().join(",");
+        const alreadySaved = (existingFavs ?? []).some((fav) => {
+          const favItemIds = (fav.items as { id: string }[]).map((i) => i.id).sort().join(",");
+          return favItemIds === orderItemIds;
+        });
+        setFavSaved(alreadySaved);
       }
 
       setLoading(false);
@@ -161,12 +167,29 @@ export default function OrderDetailPage() {
   }
 
   async function handleSaveFav() {
-    if (!order) return;
-    const confirmed = window.confirm("هتضيف الطلب ده للمفضلة؟");
-    if (!confirmed) return;
+    if (!order || favSaving) return;
     setFavSaving(true);
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) { router.push("/auth/login"); setFavSaving(false); return; }
+
+    /* تحقق لو نفس الوجبات محفوظة بالفعل */
+    const { data: existingFavs } = await supabase
+      .from("favorite_orders")
+      .select("id, items")
+      .eq("user_id", user.id)
+      .eq("restaurant_id", order.restaurant_id);
+
+    const orderItemIds = order.order_items.map((i) => i.menu_item_id).sort().join(",");
+    const isDuplicate = (existingFavs ?? []).some((fav) => {
+      const favItemIds = (fav.items as { id: string }[]).map((i) => i.id).sort().join(",");
+      return favItemIds === orderItemIds;
+    });
+
+    if (isDuplicate) {
+      setFavSaving(false);
+      setFavModal("duplicate");
+      return;
+    }
 
     await supabase.from("favorite_orders").insert({
       user_id:         user.id,
@@ -187,7 +210,7 @@ export default function OrderDetailPage() {
 
     setFavSaving(false);
     setFavSaved(true);
-    setTimeout(() => setFavSaved(false), 3000);
+    setFavModal("success");
   }
 
   async function submitRating() {
@@ -471,6 +494,13 @@ export default function OrderDetailPage() {
         </div>
 
       </div>
+
+      <InfoModal
+        isOpen={favModal !== null}
+        icon={favModal === "success" ? "✅" : "⚠️"}
+        message={favModal === "success" ? "تم الحفظ في المفضلة" : "هذا الطلب محفوظ بالفعل في مفضلتك"}
+        onClose={() => setFavModal(null)}
+      />
 
       {/* ── Rating Modal ── */}
       {showRatingModal && order && (

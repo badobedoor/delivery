@@ -44,7 +44,8 @@ type MenuItem = {
   price: number;
   image_url: string | null;
   restaurant_id: string;
-  restaurants: { name: string } | null;
+  restaurants: { name: string; is_active: boolean; status: string | null; opens_at: string | null; closes_at: string | null } | null;
+  categories: { name: string } | null;
 };
 
 const FALLBACK_IMG =
@@ -91,7 +92,7 @@ export default function RestaurantsPage() {
           .select("id, name, description, image_url, cover_image_url, is_active, status, opens_at, closes_at")
           .eq("is_active", true)
           .in("status", ["نشط", "مشغول"])
-          .order("name"),
+          .order("sort_order", { ascending: true }),
         supabase
           .from("advertisements")
           .select("id, image_url, link")
@@ -138,20 +139,31 @@ export default function RestaurantsPage() {
     const [itemsRes, restaurantsRes] = await Promise.all([
       supabase
         .from("menu_items")
-        .select("id, name, price, image_url, restaurant_id, restaurants(name)")
+        .select("id, name, price, image_url, restaurant_id, restaurants(name, is_active, status, opens_at, closes_at), categories(name)")
         .ilike("name", `%${q}%`)
         .eq("is_active", true)
-        .limit(20),
+        .limit(40),
       supabase
         .from("restaurants")
-        .select("id, name, description, image_url, cover_image_url")
+        .select("id, name, description, image_url, cover_image_url, is_active, status, opens_at, closes_at")
         .or(`name.ilike.%${q}%,description.ilike.%${q}%`)
         .eq("is_active", true)
-        .limit(20),
+        .eq("status", "نشط")
+        .limit(40),
     ]);
 
-    setItemResults((itemsRes.data ?? []) as unknown as MenuItem[]);
-    setRestaurantResults((restaurantsRes.data ?? []) as Restaurant[]);
+    const openRestaurants = ((restaurantsRes.data ?? []) as Restaurant[])
+      .filter((r) => isRestaurantOpen(r));
+
+    const openItems = ((itemsRes.data ?? []) as unknown as MenuItem[])
+      .filter((item) => {
+        const r = item.restaurants;
+        if (!r || !r.is_active || r.status !== "نشط") return false;
+        return isRestaurantOpen({ is_active: r.is_active, opens_at: r.opens_at, closes_at: r.closes_at });
+      });
+
+    setItemResults(openItems);
+    setRestaurantResults(openRestaurants);
     setSearching(false);
   }, []);
 
@@ -179,10 +191,14 @@ export default function RestaurantsPage() {
               </svg>
               {currentAddress ? (
                 <div className="text-right min-w-0">
-                  <p className="text-[10px] text-[var(--color-muted)]">التوصيل إلى</p>
                   <p className="text-xs font-black text-[var(--color-secondary)] truncate max-w-[180px]">
                     {currentAddress.label}
                   </p>
+                  {currentAddress.full_address && (
+                    <p className="text-[10px] text-[var(--color-muted)] truncate max-w-[180px] mt-0.5">
+                      {currentAddress.full_address}
+                    </p>
+                  )}
                 </div>
               ) : (
                 <p className="text-xs font-bold text-[var(--color-primary)]">
@@ -267,25 +283,35 @@ export default function RestaurantsPage() {
                 <div className="flex flex-col gap-3">
                   {itemResults.length === 0 ? (
                     <p className="text-sm text-[#9CA3AF] text-center py-8">لا توجد وجبات مطابقة</p>
-                  ) : itemResults.map((item) => (
-                    <div key={item.id} className="flex items-center gap-3 p-3 bg-white rounded-2xl border border-[#F3F4F6]">
-                      <div className="relative w-16 h-16 flex-shrink-0 rounded-xl overflow-hidden">
-                        {/* eslint-disable-next-line @next/next/no-img-element */}
-                        <img
-                          src={item.image_url ?? FALLBACK_IMG}
-                          alt={item.name}
-                          className="w-full h-full object-cover"
-                        />
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <p className="font-bold text-[#1A1A1A] truncate">{item.name}</p>
-                        <p className="text-xs text-[#6B7280] mt-0.5">
-                          {(item.restaurants as { name: string } | null)?.name ?? ""}
-                        </p>
-                        <p className="text-sm font-black text-[#FF6000] mt-1">{item.price} ج.م</p>
-                      </div>
-                    </div>
-                  ))}
+                  ) : itemResults.map((item) => {
+                    const categoryName = item.categories?.name;
+                    const dest = categoryName
+                      ? `/restaurant/${item.restaurant_id}?category=${encodeURIComponent(categoryName)}`
+                      : `/restaurant/${item.restaurant_id}`;
+                    return (
+                      <button
+                        key={item.id}
+                        onClick={() => router.push(dest)}
+                        className="flex items-center gap-3 p-3 bg-white rounded-2xl border border-[#F3F4F6] w-full text-right active:scale-[0.98] transition-transform"
+                      >
+                        <div className="relative w-16 h-16 flex-shrink-0 rounded-xl overflow-hidden">
+                          {/* eslint-disable-next-line @next/next/no-img-element */}
+                          <img
+                            src={item.image_url ?? FALLBACK_IMG}
+                            alt={item.name}
+                            className="w-full h-full object-cover"
+                          />
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <p className="font-bold text-[#1A1A1A] truncate">{item.name}</p>
+                          <p className="text-xs text-[#6B7280] mt-0.5">
+                            {(item.restaurants as { name: string } | null)?.name ?? ""}
+                          </p>
+                          <p className="text-sm font-black text-[#FF6000] mt-1">{item.price} ج.م</p>
+                        </div>
+                      </button>
+                    );
+                  })}
                 </div>
               )}
 

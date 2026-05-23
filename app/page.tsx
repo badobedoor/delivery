@@ -38,7 +38,7 @@ function isOpenNow(start: string, end: string): boolean {
 
 export default function HomePage() {
   const router = useRouter();
-  const [defaultAddress, setDefaultAddress] = useState<{ full_address: string } | null>(null);
+  const [defaultAddress, setDefaultAddress] = useState<{ full_address: string; label: string } | null>(null);
   const [isOpen,    setIsOpen]    = useState<boolean | null>(null);
   const [workStart, setWorkStart] = useState("");
   const [workEnd,   setWorkEnd]   = useState("");
@@ -86,7 +86,7 @@ export default function HomePage() {
       if (!user) return;
       const { data } = await supabase
         .from("addresses")
-        .select("full_address")
+        .select("full_address, label")
         .eq("user_id", user.id)
         .eq("is_default", true)
         .single();
@@ -118,9 +118,22 @@ export default function HomePage() {
             <div className="flex flex-col gap-0.5">
               <span className="text-xs" style={{ color: "#9CA3AF" }}>التوصيل إلى</span>
               <Link href="/address" className="flex items-center gap-1 self-start">
-                <span className="text-sm font-semibold text-[var(--color-secondary)] text-right max-w-[220px] truncate">
-                  {defaultAddress?.full_address || "اختر عنوانك"}
-                </span>
+                {defaultAddress ? (
+                  <div className="text-right min-w-0">
+                    <p className="text-sm font-bold text-[var(--color-secondary)] truncate max-w-[220px]">
+                      {defaultAddress.label}
+                    </p>
+                    {defaultAddress.full_address && (
+                      <p className="text-xs text-[var(--color-muted)] truncate max-w-[220px] mt-0.5">
+                        {defaultAddress.full_address}
+                      </p>
+                    )}
+                  </div>
+                ) : (
+                  <span className="text-sm font-semibold text-[var(--color-secondary)]">
+                    اختر عنوانك
+                  </span>
+                )}
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none"
                   stroke="var(--color-secondary)" strokeWidth="2.5" className="flex-shrink-0">
                   <path d="M6 9l6 6 6-6" />

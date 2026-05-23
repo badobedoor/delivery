@@ -14,17 +14,23 @@ import CartBar from "@/components/customer/CartBar";
 /* ── DB types ── */
 type ItemExtra  = { id: number; name: string; price: number };
 type ExtraGroup = { id: number; name: string; type: string; required: boolean; max_select: number; item_extras: ItemExtra[] };
-type MenuItem   = { id: number; name: string; description: string | null; price: number; category_id: number; image_url: string | null; extra_groups: ExtraGroup[]; offer_price?: number | null; offer_starts_at?: string | null; offer_ends_at?: string | null; offer_image_url?: string | null };
-type Category   = { id: number; name: string; restaurant_id: string; menu_items: MenuItem[] };
+type MenuItem   = { id: number; name: string; description: string | null; price: number; category_id: number; image_url: string | null; extra_groups: ExtraGroup[]; offer_price?: number | null; offer_starts_at?: string | null; offer_ends_at?: string | null; offer_image_url?: string | null; sort_order?: number; is_active?: boolean };
+type Category   = { id: number; name: string; restaurant_id: string; sort_order?: number; menu_items: MenuItem[] };
 type Restaurant = { id: string; name: string; description: string | null; cover_image_url: string | null; image_url: string | null; rating_avg?: number | null; rating_count?: number | null; is_active: boolean; opens_at: string | null; closes_at: string | null; status: string | null };
 
 /* ── MealBottomSheet meal shape ── */
-type SheetMeal = { id: number; name: string; basePrice: number; img: string; extras?: { id: number; name: string; price: number }[]; sizes?: { id: number; name: string }[] };
+type ExtraGroupSheet = { id: number; name: string; maxSelect: number; extras: { id: number; name: string; price: number }[] };
+type SheetMeal = { id: number; name: string; basePrice: number; img: string; extras?: { id: number; name: string; price: number }[]; extraGroups?: ExtraGroupSheet[]; sizes?: { id: number; name: string; price?: number }[] };
 
 function toSheetMeal(item: MenuItem): SheetMeal {
-  const extras = item.extra_groups
-    .filter((g) => g.type !== "variant")
-    .flatMap((g) => g.item_extras.map((e) => ({ id: e.id, name: e.name, price: e.price })));
+  const nonVariantGroups = item.extra_groups.filter((g) => g.type !== "variant");
+  const extras = nonVariantGroups.flatMap((g) => g.item_extras.map((e) => ({ id: e.id, name: e.name, price: e.price })));
+  const extraGroups = nonVariantGroups.map((g) => ({
+    id: g.id,
+    name: g.name,
+    maxSelect: g.max_select,
+    extras: g.item_extras.map((e) => ({ id: e.id, name: e.name, price: e.price })),
+  }));
   const variantGroup = item.extra_groups.find((g) => g.type === "variant");
   const sizes = variantGroup?.item_extras.map((e) => ({ id: e.id, name: e.name, price: e.price }));
   return {
@@ -33,6 +39,7 @@ function toSheetMeal(item: MenuItem): SheetMeal {
     basePrice: item.price,
     img: item.image_url ?? "https://images.unsplash.com/photo-1546069901-ba9599a7e63c?w=400&h=400&fit=crop",
     extras: extras.length > 0 ? extras : undefined,
+    extraGroups: extraGroups.length > 0 ? extraGroups : undefined,
     sizes: sizes && sizes.length > 0 ? sizes : undefined,
   };
 }
@@ -158,9 +165,9 @@ export default function RestaurantPage() {
       const [restResult, catsResult] = await Promise.all([
         supabase.from("restaurants").select("id, name, description, cover_image_url, image_url, rating_avg, rating_count, is_active, opens_at, closes_at, status").eq("id", id).single(),
         supabase.from("categories")
-          .select("id, name, restaurant_id, menu_items(id, name, description, price, category_id, image_url, offer_price, offer_starts_at, offer_ends_at, offer_image_url, extra_groups(id, name, type, required, max_select, item_extras(id, name, price)))")
+          .select("id, name, restaurant_id, menu_items(id, name, description, price, category_id, image_url, offer_price, offer_starts_at, offer_ends_at, offer_image_url, sort_order, is_active, extra_groups(id, name, type, required, max_select, item_extras(id, name, price)))")
           .eq("restaurant_id", id)
-          .order("id"),
+          .order("sort_order", { ascending: true }),
       ]);
 
       if (restResult.error || !restResult.data) {
@@ -180,7 +187,11 @@ export default function RestaurantPage() {
       setRestaurant(rest);
 
       if (!catsResult.error && catsResult.data) {
-        const cats = catsResult.data as Category[];
+        const cats = (catsResult.data as Category[]).map((cat) => ({
+          ...cat,
+          menu_items: [...cat.menu_items]
+            .sort((a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0)),
+        })).filter((cat) => cat.menu_items.some((m) => m.is_active !== false));
         setCategories(cats);
         if (cats.length > 0) {
           const target = categoryParam
@@ -195,6 +206,13 @@ export default function RestaurantPage() {
 
     fetchData();
   }, [id]);
+
+  /* scroll التاب المطلوب إلى المنتصف عند الوصول من البحث */
+  useEffect(() => {
+    if (!categoryParam || !activeTab) return;
+    const btn = document.getElementById(`cat-tab-${activeTab}`);
+    btn?.scrollIntoView({ behavior: "smooth", block: "nearest", inline: "center" });
+  }, [activeTab, categoryParam]);
 
   const coverSrc = restaurant?.cover_image_url ?? restaurant?.image_url
     ?? "https://images.unsplash.com/photo-1552566626-52f8b828add9?w=800&h=300&fit=crop";
@@ -298,6 +316,7 @@ export default function RestaurantPage() {
                 {categories.map((cat) => (
                   <button
                     key={cat.id}
+                    id={`cat-tab-${cat.name}`}
                     onClick={() => setActiveTab(cat.name)}
                     className={`flex-shrink-0 px-4 py-1.5 rounded-full text-sm font-medium transition-colors ${
                       activeTab === cat.name
@@ -317,6 +336,7 @@ export default function RestaurantPage() {
             <div className="flex flex-col divide-y divide-[var(--color-border)]">
               {activeMeals.map((meal) => {
                 const hasExtras = meal.extra_groups.length > 0;
+                const isActive  = meal.is_active !== false;
                 const FALLBACK  = "https://images.unsplash.com/photo-1546069901-ba9599a7e63c?w=200&h=200&fit=crop";
                 const isOffer = !!(meal.offer_price && meal.offer_starts_at && meal.offer_ends_at);
                 const offerImg = (isOffer && meal.offer_image_url) ? meal.offer_image_url : (meal.image_url ?? FALLBACK);
@@ -354,7 +374,7 @@ export default function RestaurantPage() {
                           </div>
                         )}
                       </div>
-                      {!hasExtras && (
+                      {!hasExtras && isActive && (
                         <div className="mt-3">
                         <QuantityCounter
                           itemId={String(meal.id)}
@@ -383,21 +403,29 @@ export default function RestaurantPage() {
                   </>
                 );
 
+                const unavailableOverlay = !isActive && (
+                  <div className="absolute inset-0 bg-black/50 rounded-lg flex items-center justify-center">
+                    <span className="text-white text-sm font-bold bg-black/30 px-3 py-1 rounded-full">غير متوفر حالياً</span>
+                  </div>
+                );
+
                 if (hasExtras) {
                   return (
                     <div
                       key={meal.id}
-                      className="flex items-center py-3 cursor-pointer active:opacity-75 transition-opacity"
-                      onClick={() => setSheetMeal(toSheetMeal(meal))}
+                      className={`flex items-center py-3 relative ${isActive ? "cursor-pointer active:opacity-75 transition-opacity" : ""}`}
+                      onClick={isActive ? () => setSheetMeal(toSheetMeal(meal)) : undefined}
                     >
                       {cardInner}
+                      {unavailableOverlay}
                     </div>
                   );
                 }
 
                 return (
-                  <div key={meal.id} className="flex items-center py-3">
+                  <div key={meal.id} className="flex items-center py-3 relative">
                     {cardInner}
+                    {unavailableOverlay}
                   </div>
                 );
               })}

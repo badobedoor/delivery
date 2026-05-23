@@ -5,10 +5,19 @@ import Link from "next/link";
 import { useState, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase";
+import { isRestaurantOpen } from "@/lib/utils";
 
 /* ── Types ── */
-type Restaurant = { id: string; name: string; image_url: string | null; cuisine_type: string | null };
-type Meal       = { id: string; name: string; price: number; image_url: string | null; restaurant_id: string; restaurants: { name: string } | null };
+type Restaurant = {
+  id: string; name: string; image_url: string | null; cuisine_type: string | null;
+  status: string | null; is_active: boolean; opens_at: string | null; closes_at: string | null;
+};
+type Meal = {
+  id: string; name: string; price: number; image_url: string | null;
+  restaurant_id: string;
+  restaurants: { name: string; is_active: boolean; status: string | null; opens_at: string | null; closes_at: string | null } | null;
+  categories: { name: string } | null;
+};
 
 const TRENDING   = ["شاورما", "برجر", "كشري", "بيتزا", "كريب", "حلويات"];
 const FALLBACK   = "https://images.unsplash.com/photo-1546069901-ba9599a7e63c?w=200&h=200&fit=crop";
@@ -37,19 +46,29 @@ export default function SearchPage() {
       const [{ data: restData }, { data: mealData }] = await Promise.all([
         supabase
           .from("restaurants")
-          .select("id, name, image_url, cuisine_type")
+          .select("id, name, image_url, cuisine_type, status, is_active, opens_at, closes_at")
           .or(`name.ilike.%${trimmed}%,description.ilike.%${trimmed}%`)
           .eq("is_active", true)
+          .eq("status", "نشط")
           .limit(20),
         supabase
           .from("menu_items")
-          .select("id, name, price, image_url, restaurant_id, restaurants(name)")
+          .select("id, name, price, image_url, restaurant_id, restaurants(name, is_active, status, opens_at, closes_at), categories(name)")
           .ilike("name", `%${trimmed}%`)
           .eq("is_active", true)
           .limit(20),
       ]);
-      setRestaurants(restData ?? []);
-      setMeals((mealData ?? []) as unknown as Meal[]);
+
+      const openRests = (restData ?? []).filter((r) => isRestaurantOpen(r));
+
+      const openMeals = ((mealData ?? []) as unknown as Meal[]).filter((m) => {
+        const r = m.restaurants;
+        if (!r || !r.is_active || r.status !== "نشط") return false;
+        return isRestaurantOpen({ is_active: r.is_active, opens_at: r.opens_at, closes_at: r.closes_at });
+      });
+
+      setRestaurants(openRests);
+      setMeals(openMeals);
       setSearching(false);
     }, 400);
 
@@ -159,24 +178,30 @@ export default function SearchPage() {
                 <div className="flex flex-col gap-2">
                   {meals.length === 0 ? (
                     <p className="text-sm text-[var(--color-muted)] text-center py-6">لا توجد وجبات مطابقة</p>
-                  ) : meals.map((m) => (
-                    <button
-                      key={m.id}
-                      onClick={() => router.push(`/restaurant/${m.restaurant_id}`)}
-                      className="bg-white rounded-2xl p-3 flex items-center gap-3 text-right w-full"
-                    >
-                      <div className="relative w-12 h-12 flex-shrink-0 rounded-xl overflow-hidden">
-                        <Image src={m.image_url ?? FALLBACK} alt={m.name} fill className="object-cover" />
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <p className="text-sm font-bold text-[var(--color-secondary)] truncate">{m.name}</p>
-                        <p className="text-xs text-[var(--color-muted)] mt-0.5 truncate">
-                          {m.restaurants?.name ?? ""}
-                        </p>
-                      </div>
-                      <p className="text-sm font-bold text-[var(--color-primary)] flex-shrink-0">{m.price} ج.م</p>
-                    </button>
-                  ))}
+                  ) : meals.map((m) => {
+                    const categoryName = m.categories?.name;
+                    const dest = categoryName
+                      ? `/restaurant/${m.restaurant_id}?category=${encodeURIComponent(categoryName)}`
+                      : `/restaurant/${m.restaurant_id}`;
+                    return (
+                      <button
+                        key={m.id}
+                        onClick={() => router.push(dest)}
+                        className="bg-white rounded-2xl p-3 flex items-center gap-3 text-right w-full"
+                      >
+                        <div className="relative w-12 h-12 flex-shrink-0 rounded-xl overflow-hidden">
+                          <Image src={m.image_url ?? FALLBACK} alt={m.name} fill className="object-cover" />
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <p className="text-sm font-bold text-[var(--color-secondary)] truncate">{m.name}</p>
+                          <p className="text-xs text-[var(--color-muted)] mt-0.5 truncate">
+                            {m.restaurants?.name ?? ""}
+                          </p>
+                        </div>
+                        <p className="text-sm font-bold text-[var(--color-primary)] flex-shrink-0">{m.price} ج.م</p>
+                      </button>
+                    );
+                  })}
                 </div>
               )}
 

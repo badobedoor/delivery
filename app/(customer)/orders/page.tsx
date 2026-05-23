@@ -14,7 +14,7 @@ type Order = {
   user_order_number: number | null;
   restaurant_id: string | null;
   restaurants: { id: string; name: string } | null;
-  order_items: { id: string }[];
+  order_items: { id: string; menu_item_id: string }[];
 };
 
 type RatingValues = { food_quality: number; value_for_money: number; packaging: number };
@@ -41,7 +41,7 @@ function formatDate(iso: string) {
 const ORDER_SELECT = `
   id, status, total, created_at, user_order_number, restaurant_id,
   restaurants (id, name),
-  order_items (id)
+  order_items (id, menu_item_id)
 `;
 
 const RATING_AXES = [

@@ -34,9 +34,10 @@ export default function EditAddressPage() {
   const [isDefault, setIsDefault] = useState(false);
   const [userId, setUserId]     = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
-  const [saving, setSaving]   = useState(false);
-  const [deleting, setDeleting] = useState(false);
-  const [error, setError]     = useState<string | null>(null);
+  const [saving, setSaving]       = useState(false);
+  const [deleting, setDeleting]   = useState(false);
+  const [showDeleteModal, setShowDeleteModal] = useState(false);
+  const [error, setError]         = useState<string | null>(null);
 
   useEffect(() => {
     async function load() {
@@ -99,8 +100,12 @@ export default function EditAddressPage() {
     setIsDefault(true);
   }
 
-  async function handleDelete() {
-    if (!confirm("هل تريد حذف هذا العنوان؟")) return;
+  function handleDelete() {
+    setShowDeleteModal(true);
+  }
+
+  async function confirmDelete() {
+    setShowDeleteModal(false);
     setDeleting(true);
     await supabase.from("addresses").delete().eq("id", id);
     router.push("/address");
@@ -219,6 +224,38 @@ export default function EditAddressPage() {
         </div>
 
       </div>
+
+      {/* ── Delete Confirm Modal ── */}
+      {showDeleteModal && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center px-6"
+          style={{ background: "rgba(0,0,0,0.5)" }}
+          onClick={() => setShowDeleteModal(false)}
+        >
+          <div
+            className="w-full max-w-xs bg-white rounded-3xl p-6 flex flex-col items-center gap-4 shadow-xl"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <span className="text-5xl">🗑️</span>
+            <p className="text-base font-black text-[#1A1A1A] text-center">هل تريد حذف هذا العنوان؟</p>
+            <div className="flex gap-3 w-full">
+              <button
+                onClick={confirmDelete}
+                className="flex-1 bg-red-500 text-white text-sm font-bold py-3 rounded-2xl active:scale-[0.98] transition-transform"
+              >
+                حذف
+              </button>
+              <button
+                onClick={() => setShowDeleteModal(false)}
+                className="flex-1 border border-[var(--color-border)] text-[var(--color-secondary)] text-sm font-bold py-3 rounded-2xl active:scale-[0.98] transition-transform"
+              >
+                إلغاء
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
     </div>
   );
 }

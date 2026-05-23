@@ -5,7 +5,9 @@ import Link from "next/link";
 import { useState, useEffect } from "react";
 import { getCart, updateQty as updateCartQty, CartItem } from "@/lib/cart";
 import { supabase } from "@/lib/supabase";
+import { isRestaurantOpen } from "@/lib/utils";
 import { useRouter, useSearchParams } from "next/navigation";
+import InfoModal from "@/components/customer/InfoModal";
 
 function itemUnitPrice(item: CartItem): number {
   const sizePrice   = item.size?.price ?? 0;
@@ -23,8 +25,41 @@ export default function CartPage() {
   );
   const [savingFav, setSavingFav] = useState(false);
   const [favSaved,  setFavSaved]  = useState(false);
+  const [favModal,  setFavModal]  = useState<"success" | "duplicate" | null>(null);
+
+  /* ── فحص توفر المطعم والوجبات ── */
+  const [restaurantIssue, setRestaurantIssue] = useState<"closed" | "busy" | null>(null);
+  const [unavailableIds,  setUnavailableIds]  = useState<Set<string>>(new Set());
 
   useEffect(() => { setCart(getCart()); }, []);
+
+  useEffect(() => {
+    const cartNow = getCart();
+    if (!cartNow) return;
+    async function checkAvailability() {
+      const [{ data: rest }, { data: menuItems }] = await Promise.all([
+        supabase
+          .from("restaurants")
+          .select("is_active, status, opens_at, closes_at")
+          .eq("id", cartNow!.restaurantId)
+          .single(),
+        supabase
+          .from("menu_items")
+          .select("id, is_active")
+          .in("id", cartNow!.items.map((i) => i.id)),
+      ]);
+      if (rest) {
+        if (rest.status === "مشغول")                              setRestaurantIssue("busy");
+        else if (rest.status !== "نشط" || !isRestaurantOpen(rest)) setRestaurantIssue("closed");
+        else                                                       setRestaurantIssue(null);
+      }
+      const unavailable = new Set(
+        (menuItems ?? []).filter((m) => !m.is_active).map((m) => String(m.id))
+      );
+      setUnavailableIds(unavailable);
+    }
+    checkAvailability();
+  }, []);
 
   useEffect(() => {
     localStorage.setItem("hala_order_note", orderNote);
@@ -36,42 +71,48 @@ export default function CartPage() {
   }
 
   async function handleSaveFavorite() {
-    if (favSaved) return;
-    const confirmed = window.confirm("هتضيف الطلب ده للمفضلة؟");
-    if (!confirmed) return;
-
+    if (savingFav) return;
     const cartNow = getCart();
     if (!cartNow) return;
     setSavingFav(true);
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) { router.push("/auth/login"); setSavingFav(false); return; }
 
-    /* تحقق لو المطعم ده موجود في المفضلة بالفعل */
-    const { data: existing } = await supabase
+    /* تحقق لو نفس الوجبات محفوظة بالفعل (نفس المنتجات من نفس المطعم) */
+    const { data: existingFavs } = await supabase
       .from("favorite_orders")
-      .select("id")
+      .select("id, items")
       .eq("user_id", user.id)
-      .eq("restaurant_id", cartNow.restaurantId)
-      .maybeSingle();
+      .eq("restaurant_id", cartNow.restaurantId);
 
-    if (!existing) {
-      const subtotalNow = cartNow.items.reduce((s, i) => {
-        const ex = (i.extras ?? []).reduce((a, e) => a + e.price, 0);
-        return s + (i.price + (i.size?.price ?? 0) + ex) * i.qty;
-      }, 0);
-      await supabase.from("favorite_orders").insert({
-        user_id:         user.id,
-        restaurant_id:   cartNow.restaurantId,
-        restaurant_name: cartNow.restaurantName,
-        name:            cartNow.restaurantName,
-        items:           cartNow.items,
-        total:           subtotalNow,
-      });
+    const cartItemIds = cartNow.items.map((i) => i.id).sort().join(",");
+    const isDuplicate = (existingFavs ?? []).some((fav) => {
+      const favItemIds = (fav.items as { id: string }[]).map((i) => i.id).sort().join(",");
+      return favItemIds === cartItemIds;
+    });
+
+    if (isDuplicate) {
+      setSavingFav(false);
+      setFavModal("duplicate");
+      return;
     }
+
+    const subtotalNow = cartNow.items.reduce((s, i) => {
+      const ex = (i.extras ?? []).reduce((a, e) => a + e.price, 0);
+      return s + (i.price + (i.size?.price ?? 0) + ex) * i.qty;
+    }, 0);
+    await supabase.from("favorite_orders").insert({
+      user_id:         user.id,
+      restaurant_id:   cartNow.restaurantId,
+      restaurant_name: cartNow.restaurantName,
+      name:            cartNow.restaurantName,
+      items:           cartNow.items,
+      total:           subtotalNow,
+    });
 
     setSavingFav(false);
     setFavSaved(true);
-    setTimeout(() => setFavSaved(false), 3000);
+    setFavModal("success");
   }
 
   if (!cart) {
@@ -85,9 +126,10 @@ export default function CartPage() {
     );
   }
 
-  const items    = cart.items;
-  const subtotal = items.reduce((sum, item) => sum + itemUnitPrice(item) * item.qty, 0);
-  const FALLBACK = "https://images.unsplash.com/photo-1546069901-ba9599a7e63c?w=200&h=200&fit=crop";
+  const items       = cart.items;
+  const subtotal    = items.reduce((sum, item) => sum + itemUnitPrice(item) * item.qty, 0);
+  const FALLBACK    = "https://images.unsplash.com/photo-1546069901-ba9599a7e63c?w=200&h=200&fit=crop";
+  const canCheckout = restaurantIssue === null && unavailableIds.size === 0;
 
   return (
     <div className="min-h-screen bg-[var(--color-surface)]">
@@ -96,13 +138,14 @@ export default function CartPage() {
         {/* ── Header ── */}
         <header className="bg-white px-4 pt-10 pb-4 sticky top-0 z-10 shadow-sm">
           <div className="flex items-center justify-between">
-            <Link href="/restaurants"
+            <button
+              onClick={() => router.back()}
               className="w-9 h-9 rounded-full bg-[var(--color-surface)] flex items-center justify-center">
               <svg width="20" height="20" viewBox="0 0 24 24" fill="none"
                 stroke="var(--color-secondary)" strokeWidth="2.2" strokeLinecap="round">
                 <path d="M15 18l-6-6 6-6" />
               </svg>
-            </Link>
+            </button>
             <div className="text-center">
               <h1 className="text-base font-black text-[var(--color-secondary)]">سلة المشتريات</h1>
               <p className="text-xs text-[var(--color-muted)] mt-0.5">{cart.restaurantName}</p>
@@ -112,6 +155,30 @@ export default function CartPage() {
         </header>
 
         <main className="pb-[240px] px-4 flex flex-col gap-4 pt-4">
+
+          {/* ── بانر المطعم مغلق / مشغول ── */}
+          {restaurantIssue && (
+            <div className="bg-red-50 border border-red-200 rounded-2xl px-4 py-3 flex items-center gap-2.5">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#EF4444" strokeWidth="2" strokeLinecap="round" className="flex-shrink-0">
+                <circle cx="12" cy="12" r="10" /><line x1="12" y1="8" x2="12" y2="12" /><line x1="12" y1="16" x2="12.01" y2="16" />
+              </svg>
+              <p className="text-sm font-bold text-red-600">
+                {restaurantIssue === "busy" ? "المطعم مشغول حالياً، لا يمكن إتمام الطلب" : "المطعم مغلق حالياً، لا يمكن إتمام الطلب"}
+              </p>
+            </div>
+          )}
+
+          {/* ── بانر وجبات غير متوفرة ── */}
+          {unavailableIds.size > 0 && (
+            <div className="bg-red-50 border border-red-200 rounded-2xl px-4 py-3 flex items-center gap-2.5">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#EF4444" strokeWidth="2" strokeLinecap="round" className="flex-shrink-0">
+                <circle cx="12" cy="12" r="10" /><line x1="12" y1="8" x2="12" y2="12" /><line x1="12" y1="16" x2="12.01" y2="16" />
+              </svg>
+              <p className="text-sm font-bold text-red-600">
+                بعض الوجبات غير متوفرة حالياً، يرجى إزالتها لإتمام الطلب
+              </p>
+            </div>
+          )}
 
           {/* ── قائمة الوجبات ── */}
           <section className="bg-white rounded-2xl overflow-hidden border border-[var(--color-border)]">
@@ -130,6 +197,11 @@ export default function CartPage() {
                     {/* القسم 1 — الصورة (يمين في RTL) */}
                     <div className="relative flex-shrink-0 w-20 h-20 ml-3 rounded-xl overflow-hidden">
                       <Image src={item.image_url ?? FALLBACK} alt={item.name} fill className="object-cover" />
+                      {unavailableIds.has(item.id) && (
+                        <div className="absolute inset-0 bg-black/50 flex items-center justify-center">
+                          <span className="text-white text-[9px] font-black bg-red-500 px-1.5 py-0.5 rounded-full leading-none">غير متوفر</span>
+                        </div>
+                      )}
                     </div>
 
                     {/* القسم 2 — الاسم والتفاصيل والعداد */}
@@ -232,14 +304,15 @@ export default function CartPage() {
           <div className="flex gap-3">
             {/* تنفيذ الطلب — أول عنصر → يمين في RTL */}
             <button
-              onClick={() => router.push("/checkout")}
-              className="flex-1 bg-[#FF6000] text-white font-black text-base py-3.5 rounded-2xl active:scale-[0.98] transition-transform shadow-md"
+              onClick={() => canCheckout && router.push("/checkout")}
+              disabled={!canCheckout}
+              className="flex-1 bg-[#FF6000] text-white font-black text-base py-3.5 rounded-2xl active:scale-[0.98] transition-transform shadow-md disabled:opacity-50 disabled:cursor-not-allowed"
             >
               تنفيذ الطلب
             </button>
             {/* أضف المزيد — آخر عنصر → يسار في RTL */}
             <button
-              onClick={() => router.back()}
+              onClick={() => router.push(`/restaurant/${cart.restaurantId}`)}
               className="flex-1 border-2 border-[#FF6000] text-[#FF6000] font-bold text-sm py-3.5 rounded-2xl active:scale-[0.98] transition-transform"
             >
               + أضف المزيد
@@ -250,6 +323,12 @@ export default function CartPage() {
 
       </div>
 
+      <InfoModal
+        isOpen={favModal !== null}
+        icon={favModal === "success" ? "✅" : "⚠️"}
+        message={favModal === "success" ? "تم الحفظ في المفضلة" : "هذا الطلب محفوظ بالفعل في مفضلتك"}
+        onClose={() => setFavModal(null)}
+      />
 
     </div>
   );
