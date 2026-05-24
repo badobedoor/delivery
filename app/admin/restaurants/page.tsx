@@ -6,6 +6,21 @@ import Cropper from "react-easy-crop";
 import type { Area } from "react-easy-crop";
 import imageCompression from "browser-image-compression";
 import { supabase } from "@/lib/supabase";
+import {
+  DndContext,
+  closestCenter,
+  PointerSensor,
+  useSensor,
+  useSensors,
+  type DragEndEvent,
+} from "@dnd-kit/core";
+import {
+  SortableContext,
+  useSortable,
+  verticalListSortingStrategy,
+  arrayMove,
+} from "@dnd-kit/sortable";
+import { CSS } from "@dnd-kit/utilities";
 
 /* ── Palette ── */
 const C = {
@@ -34,6 +49,7 @@ type Restaurant = {
   cover_image_url:  string | null;
   status:           string | null;
   address:          string | null;
+  sort_order:       number;
 };
 type RestForm = {
   name: string; description: string; phone: string;
@@ -41,7 +57,7 @@ type RestForm = {
 };
 type FormErrors = Partial<Record<keyof RestForm, string>>;
 
-type Category = { id: number; name: string; restaurant_id: string };
+type Category = { id: number; name: string; restaurant_id: string; sort_order: number };
 type ExtraGroup = { key: number; name: string; required: boolean; max_select: number; type: string; extras: { key: number; name: string; price: number }[] };
 type MenuItem = {
   id: number;
@@ -51,6 +67,8 @@ type MenuItem = {
   category_id: number;
   restaurant_id: string;
   image_url: string | null;
+  is_active: boolean;
+  is_best_seller: boolean;
   extra_groups: { type: string; item_extras: { price: number }[] }[];
 };
 
@@ -331,6 +349,78 @@ async function uploadImage(file: File, prefix: string, folder?: string): Promise
   }
 }
 
+/* ── Sortable category card wrapper ── */
+function SortableCatCard({
+  id,
+  children,
+}: {
+  id: number;
+  children: (handleProps: React.HTMLAttributes<HTMLElement>) => React.ReactNode;
+}) {
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id });
+  return (
+    <div
+      ref={setNodeRef}
+      style={{
+        transform: CSS.Transform.toString(transform),
+        transition,
+        opacity: isDragging ? 0.5 : 1,
+      }}
+    >
+      {children({ ...attributes, ...listeners } as React.HTMLAttributes<HTMLElement>)}
+    </div>
+  );
+}
+
+/* ── Sortable restaurant row wrapper ── */
+function SortableRestRow({
+  id,
+  trStyle,
+  children,
+}: {
+  id: string;
+  trStyle?: React.CSSProperties;
+  children: (handleProps: React.HTMLAttributes<HTMLElement>) => React.ReactNode;
+}) {
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id });
+  return (
+    <tr
+      ref={setNodeRef}
+      style={{
+        transform: CSS.Transform.toString(transform),
+        transition,
+        opacity: isDragging ? 0.5 : 1,
+        ...trStyle,
+      }}
+    >
+      {children({ ...attributes, ...listeners } as React.HTMLAttributes<HTMLElement>)}
+    </tr>
+  );
+}
+
+/* ── Sortable menu item row wrapper ── */
+function SortableItemRow({
+  id,
+  children,
+}: {
+  id: number;
+  children: (handleProps: React.HTMLAttributes<HTMLElement>) => React.ReactNode;
+}) {
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id });
+  return (
+    <div
+      ref={setNodeRef}
+      style={{
+        transform: CSS.Transform.toString(transform),
+        transition,
+        opacity: isDragging ? 0.5 : 1,
+      }}
+    >
+      {children({ ...attributes, ...listeners } as React.HTMLAttributes<HTMLElement>)}
+    </div>
+  );
+}
+
 /* ════════════════════════════════════════════════════════════ */
 export default function AdminRestaurantsPage() {
 
@@ -386,6 +476,7 @@ export default function AdminRestaurantsPage() {
   const [itemImageError,  setItemImageError]  = useState<string | null>(null);
   const [extraGroups,      setExtraGroups]      = useState<ExtraGroup[]>([]);
   const [collapsedGroups,  setCollapsedGroups]  = useState<Set<number>>(new Set());
+  const [collapsedCats,    setCollapsedCats]    = useState<Set<number>>(new Set());
   const [groupNameErrors,  setGroupNameErrors]  = useState<Set<number>>(new Set());
   const [toastMsg,         setToastMsg]         = useState<string | null>(null);
   const [restAddress, setRestAddress] = useState("");
@@ -398,6 +489,7 @@ export default function AdminRestaurantsPage() {
   const [offerImageError,   setOfferImageError]   = useState<string | null>(null);
   const [offerStartsAt,     setOfferStartsAt]     = useState("");
   const [offerEndsAt,       setOfferEndsAt]       = useState("");
+  const [isBestSeller,      setIsBestSeller]      = useState(false);
 
 
   /* ── Fetch from Supabase ── */
@@ -405,9 +497,9 @@ export default function AdminRestaurantsPage() {
     setLoading(true);
     const { data, error } = await supabase
       .from("restaurants")
-      .select("id, name, description, phone, opens_at, closes_at, is_active, image_url, cover_image_url, status, address")
+      .select("id, name, description, phone, opens_at, closes_at, is_active, image_url, cover_image_url, status, address, sort_order")
       .eq("is_active", true)
-      .order("name", { ascending: true });
+      .order("sort_order", { ascending: true });
     if (error) console.error("Fetch restaurants error:", error.message, error);
     if (data)  setRows(data);
     setLoading(false);
@@ -621,9 +713,9 @@ export default function AdminRestaurantsPage() {
   async function fetchMenuItems(restaurantId: string) {
     const { data, error } = await supabase
       .from("menu_items")
-      .select("id, name, description, price, category_id, restaurant_id, image_url, extra_groups(type, item_extras(price))")
+      .select("id, name, description, price, category_id, restaurant_id, image_url, is_active, is_best_seller, extra_groups(type, item_extras(price))")
       .eq("restaurant_id", restaurantId)
-      .order("id", { ascending: true });
+      .order("sort_order", { ascending: true });
     if (error) { console.error("Fetch menu items error:", error.message, error); return; }
     if (data) {
       type RawGroup = { type: string; item_extras: { price: number }[] };
@@ -636,7 +728,9 @@ export default function AdminRestaurantsPage() {
           category_id:   item.category_id,
           restaurant_id: item.restaurant_id,
           image_url:     item.image_url ?? null,
-          extra_groups:  item.extra_groups ?? [],
+          is_active:      item.is_active      ?? true,
+          is_best_seller: (item as any).is_best_seller ?? false,
+          extra_groups:   item.extra_groups ?? [],
         })),
       );
     }
@@ -650,9 +744,9 @@ export default function AdminRestaurantsPage() {
     const [catsResult] = await Promise.all([
       supabase
         .from("categories")
-        .select("id, name, restaurant_id")
+        .select("id, name, restaurant_id, sort_order")
         .eq("restaurant_id", r.id)
-        .order("id", { ascending: true }),
+        .order("sort_order", { ascending: true }),
       fetchMenuItems(r.id),
     ]);
     if (catsResult.error) console.error("Fetch categories error:", catsResult.error.message, catsResult.error);
@@ -691,8 +785,8 @@ export default function AdminRestaurantsPage() {
     } else {
       const { data, error } = await supabase
         .from("categories")
-        .insert([{ name: catName.trim(), restaurant_id: selectedRest.id }])
-        .select("id, name, restaurant_id")
+        .insert([{ name: catName.trim(), restaurant_id: selectedRest.id, sort_order: categories.length }])
+        .select("id, name, restaurant_id, sort_order")
         .maybeSingle();
       if (error) {
         console.error("Insert category error:", error.message, error);
@@ -705,6 +799,40 @@ export default function AdminRestaurantsPage() {
 
     setCatSaving(false);
     closeCatModal();
+  }
+
+  async function saveRestOrder(newRows: Restaurant[]) {
+    await Promise.all(
+      newRows.map((r, i) =>
+        supabase.from("restaurants").update({ sort_order: i }).eq("id", r.id)
+      )
+    );
+  }
+
+  async function toggleItemActive(item: MenuItem) {
+    const newVal = !item.is_active;
+    setMenuItems((prev) => prev.map((i) => i.id === item.id ? { ...i, is_active: newVal } : i));
+    const { error } = await supabase.from("menu_items").update({ is_active: newVal }).eq("id", item.id);
+    if (error) {
+      console.error("Toggle item active error:", error.message, error);
+      setMenuItems((prev) => prev.map((i) => i.id === item.id ? { ...i, is_active: item.is_active } : i));
+    }
+  }
+
+  async function saveItemOrder(items: MenuItem[]) {
+    await Promise.all(
+      items.map((item, i) =>
+        supabase.from("menu_items").update({ sort_order: i }).eq("id", item.id)
+      )
+    );
+  }
+
+  async function saveCatOrder(newCats: Category[]) {
+    await Promise.all(
+      newCats.map((c, i) =>
+        supabase.from("categories").update({ sort_order: i }).eq("id", c.id)
+      )
+    );
   }
 
   async function deleteCat(id: number) {
@@ -732,6 +860,7 @@ export default function AdminRestaurantsPage() {
     setItemError(null);
     setItemImageFile(null); setItemImagePreview(null); setItemImageError(null);
     setIsUploadingImage(false);
+    setIsBestSeller(false);
     resetOfferFields();
     setShowItemModal(true);
   }
@@ -742,6 +871,7 @@ export default function AdminRestaurantsPage() {
     setItemError(null);
     setItemImageFile(null); setItemImagePreview(null); setItemImageError(null);
     setIsUploadingImage(false);
+    setIsBestSeller(false);
     resetOfferFields();
   }
   function toggleGroupCollapse(key: number) {
@@ -913,6 +1043,7 @@ export default function AdminRestaurantsPage() {
   /* ── Open edit item modal ── */
   async function openEditItem(item: MenuItem) {
     setEditItem(item);
+    setIsBestSeller(item.is_best_seller ?? false);
     setItemForm({
       name:        item.name,
       description: item.description ?? "",
@@ -1004,11 +1135,12 @@ export default function AdminRestaurantsPage() {
     }
 
     const itemPayload = {
-      name:        itemForm.name.trim(),
-      description: itemForm.description.trim() || null,
-      price:       priceNum,
-      category_id: itemForm.category_id,
+      name:           itemForm.name.trim(),
+      description:    itemForm.description.trim() || null,
+      price:          priceNum,
+      category_id:    itemForm.category_id,
       image_url,
+      is_best_seller: isBestSeller,
       ...(isOffer && {
         offer_price:     offerPrice ? Number(offerPrice) : null,
         offer_image_url,
@@ -1113,6 +1245,44 @@ export default function AdminRestaurantsPage() {
 
   /* ── Derived ── */
   const restCats = categories;
+  const isFiltered = search.trim() !== "" || statusFilter !== "الكل";
+
+  /* ── dnd-kit: sensors + drag end ── */
+  const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 5 } }));
+
+  function handleRestDragEnd(event: DragEndEvent) {
+    const { active, over } = event;
+    if (!over || active.id === over.id) return;
+    const oldIndex = rows.findIndex((r) => r.id === active.id);
+    const newIndex = rows.findIndex((r) => r.id === over.id);
+    if (oldIndex === -1 || newIndex === -1) return;
+    const reordered = arrayMove(rows, oldIndex, newIndex);
+    setRows(reordered);
+    saveRestOrder(reordered);
+  }
+
+  function handleItemDragEnd(event: DragEndEvent, catId: number) {
+    const { active, over } = event;
+    if (!over || active.id === over.id) return;
+    const catItems = menuItems.filter((i) => i.category_id === catId);
+    const oldIndex = catItems.findIndex((i) => i.id === active.id);
+    const newIndex = catItems.findIndex((i) => i.id === over.id);
+    if (oldIndex === -1 || newIndex === -1) return;
+    const reordered = arrayMove(catItems, oldIndex, newIndex);
+    setMenuItems((prev) => [...prev.filter((i) => i.category_id !== catId), ...reordered]);
+    saveItemOrder(reordered);
+  }
+
+  function handleCatDragEnd(event: DragEndEvent) {
+    const { active, over } = event;
+    if (!over || active.id === over.id) return;
+    const oldIndex = categories.findIndex((c) => c.id === active.id);
+    const newIndex = categories.findIndex((c) => c.id === over.id);
+    if (oldIndex === -1 || newIndex === -1) return;
+    const reordered = arrayMove(categories, oldIndex, newIndex);
+    setCategories(reordered);
+    saveCatOrder(reordered);
+  }
 
   /* ════════════════════ LOADING ════════════════════ */
   if (loading) {
@@ -1170,45 +1340,97 @@ export default function AdminRestaurantsPage() {
                 <p className="text-sm" style={{ color: C.muted }}>لا يوجد أقسام بعد — ابدأ بإضافة قسم</p>
               </div>
             ) : (
+              <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleCatDragEnd}>
+              <SortableContext items={restCats.map((c) => c.id)} strategy={verticalListSortingStrategy}>
               <div className="flex flex-col gap-4">
                 {restCats.map((cat) => {
                   const items = menuItems.filter((i) => i.category_id === cat.id);
+                  const isCatCollapsed = collapsedCats.has(cat.id);
                   return (
-                    <div key={cat.id} className="rounded-2xl overflow-hidden"
-                      style={{ background: C.card, border: `1px solid ${C.border}` }}>
+                    <SortableCatCard key={cat.id} id={cat.id}>
+                    {(handleProps) => (
+                    <div
+                      className="rounded-2xl overflow-hidden"
+                      style={{ background: C.card, border: `1px solid ${C.border}` }}
+                    >
 
-                      {/* Category header */}
-                      <div className="flex items-center gap-2 px-4 py-3"
-                        style={{ borderBottom: `1px solid ${C.border}`, background: `${C.teal}0d` }}>
-                        <span className="text-sm font-black" style={{ color: C.teal }}>▸</span>
+                      {/* Category header — كليكابل كله */}
+                      <div
+                        className="flex items-center gap-2 px-4 py-3 cursor-pointer select-none"
+                        style={{ borderBottom: `1px solid ${C.border}`, background: `${C.teal}0d` }}
+                        onClick={() => setCollapsedCats((prev) => {
+                          const next = new Set(prev);
+                          next.has(cat.id) ? next.delete(cat.id) : next.add(cat.id);
+                          return next;
+                        })}
+                      >
+                        <span
+                          {...handleProps}
+                          style={{ flexShrink: 0, cursor: "grab", touchAction: "none", display: "flex" }}
+                        >
+                          <svg width="18" height="18" viewBox="0 0 24 24" fill={C.muted}>
+                            <circle cx="9" cy="5" r="1.5"/><circle cx="15" cy="5" r="1.5"/>
+                            <circle cx="9" cy="12" r="1.5"/><circle cx="15" cy="12" r="1.5"/>
+                            <circle cx="9" cy="19" r="1.5"/><circle cx="15" cy="19" r="1.5"/>
+                          </svg>
+                        </span>
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none"
+                          stroke={C.teal} strokeWidth="2.5" strokeLinecap="round"
+                          style={{
+                            flexShrink: 0,
+                            transition: "transform 0.25s ease",
+                            transform: isCatCollapsed ? "rotate(-90deg)" : "rotate(0deg)",
+                          }}>
+                          <path d="M6 9l6 6 6-6" />
+                        </svg>
                         <span className="text-sm font-bold flex-1" style={{ color: C.text }}>{cat.name}</span>
                         <span className="text-xs mr-2" style={{ color: C.muted }}>{items.length} عنصر</span>
-                        <button onClick={() => openAddItem(cat.id)}
+                        <button onClick={(e) => { e.stopPropagation(); openAddItem(cat.id); }}
                           className="px-2.5 py-1 rounded-lg text-xs font-bold transition-opacity hover:opacity-80"
                           style={{ background: `${C.teal}22`, color: C.teal }}>
                           + وجبة
                         </button>
-                        <button onClick={() => openEditCat(cat)}
+                        <button onClick={(e) => { e.stopPropagation(); openEditCat(cat); }}
                           className="px-2.5 py-1 rounded-lg text-xs font-bold transition-opacity hover:opacity-80"
                           style={{ background: `${C.yellow}22`, color: C.yellow }}>
                           تعديل
                         </button>
-                        <button onClick={() => deleteCat(cat.id)}
+                        <button onClick={(e) => { e.stopPropagation(); deleteCat(cat.id); }}
                           className="px-2.5 py-1 rounded-lg text-xs font-bold transition-opacity hover:opacity-80"
                           style={{ background: `${C.red}22`, color: C.red }}>
                           حذف
                         </button>
                       </div>
 
-                      {/* Items */}
+                      {/* Items — مع animation */}
+                      <div style={{
+                        display: "grid",
+                        gridTemplateRows: isCatCollapsed ? "0fr" : "1fr",
+                        transition: "grid-template-rows 0.3s ease",
+                      }}>
+                        <div style={{ overflow: "hidden" }}>
                       {items.length === 0 ? (
                         <p className="px-4 py-5 text-center text-xs" style={{ color: C.muted }}>
                           لا يوجد وجبات في هذا القسم
                         </p>
                       ) : (
+                        <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={(e) => handleItemDragEnd(e, cat.id)}>
+                        <SortableContext items={items.map((i) => i.id)} strategy={verticalListSortingStrategy}>
                         <div className="divide-y" style={{ borderColor: C.border }}>
                           {items.map((item) => (
-                            <div key={item.id} className="flex items-center gap-3 px-4 py-3 flex-wrap">
+                            <SortableItemRow key={item.id} id={item.id}>
+                            {(handleProps) => (
+                            <div className="flex items-center gap-3 px-4 py-3 flex-wrap">
+                              <span
+                                {...handleProps}
+                                style={{ flexShrink: 0, cursor: "grab", touchAction: "none", display: "flex" }}
+                              >
+                                <svg width="18" height="18" viewBox="0 0 24 24" fill={C.muted}>
+                                  <circle cx="9" cy="5" r="1.5"/><circle cx="15" cy="5" r="1.5"/>
+                                  <circle cx="9" cy="12" r="1.5"/><circle cx="15" cy="12" r="1.5"/>
+                                  <circle cx="9" cy="19" r="1.5"/><circle cx="15" cy="19" r="1.5"/>
+                                </svg>
+                              </span>
                               {item.image_url ? (
                                 // eslint-disable-next-line @next/next/no-img-element
                                 <img src={item.image_url} alt={item.name}
@@ -1254,6 +1476,14 @@ export default function AdminRestaurantsPage() {
                                 })()}
                               </div>
                               <div className="flex items-center gap-2 flex-wrap">
+                                <button onClick={() => toggleItemActive(item)}
+                                  className="px-2.5 py-1 rounded-lg text-xs font-bold transition-opacity hover:opacity-80"
+                                  style={{
+                                    background: item.is_active ? `${C.green}22` : `${C.muted}22`,
+                                    color:      item.is_active ? C.green        : C.muted,
+                                  }}>
+                                  {item.is_active ? "متاح" : "غير متاح"}
+                                </button>
                                 <button onClick={() => openEditItem(item)}
                                   className="px-2.5 py-1 rounded-lg text-xs font-bold transition-opacity hover:opacity-80"
                                   style={{ background: `${C.yellow}22`, color: C.yellow }}>
@@ -1266,13 +1496,23 @@ export default function AdminRestaurantsPage() {
                                 </button>
                               </div>
                             </div>
+                            )}
+                            </SortableItemRow>
                           ))}
                         </div>
+                        </SortableContext>
+                        </DndContext>
                       )}
+                        </div>
+                      </div>
                     </div>
+                    )}
+                    </SortableCatCard>
                   );
                 })}
               </div>
+              </SortableContext>
+              </DndContext>
             )}
           </div>
 
@@ -1351,6 +1591,8 @@ export default function AdminRestaurantsPage() {
                   </tr>
                 </thead>
                 <tbody>
+                  <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleRestDragEnd}>
+                  <SortableContext items={filtered.map((r) => r.id)} strategy={verticalListSortingStrategy}>
                   {filtered.length === 0 ? (
                     <tr>
                       <td colSpan={6} className="px-4 py-12 text-center text-sm" style={{ color: C.muted }}>
@@ -1359,12 +1601,28 @@ export default function AdminRestaurantsPage() {
                     </tr>
                   ) : (
                     filtered.map((r, i) => (
-                      <tr key={r.id}
-                        style={{ borderBottom: i < filtered.length - 1 ? `1px solid ${C.border}` : "none" }}>
-
+                      <SortableRestRow
+                        key={r.id}
+                        id={r.id}
+                        trStyle={{ borderBottom: i < filtered.length - 1 ? `1px solid ${C.border}` : "none" }}
+                      >
+                      {(handleProps) => (
+                        <>
                         {/* المطعم */}
                         <td className="px-4 py-3">
                           <div className="flex items-center gap-3">
+                            {!isFiltered && (
+                              <span
+                                {...handleProps}
+                                style={{ flexShrink: 0, cursor: "grab", touchAction: "none", display: "flex" }}
+                              >
+                                <svg width="18" height="18" viewBox="0 0 24 24" fill={C.muted}>
+                                  <circle cx="9" cy="5" r="1.5"/><circle cx="15" cy="5" r="1.5"/>
+                                  <circle cx="9" cy="12" r="1.5"/><circle cx="15" cy="12" r="1.5"/>
+                                  <circle cx="9" cy="19" r="1.5"/><circle cx="15" cy="19" r="1.5"/>
+                                </svg>
+                              </span>
+                            )}
                             {r.image_url ? (
                               // eslint-disable-next-line @next/next/no-img-element
                               <img src={r.image_url} alt={r.name}
@@ -1442,9 +1700,13 @@ export default function AdminRestaurantsPage() {
                             </button>
                           </div>
                         </td>
-                      </tr>
+                        </>
+                      )}
+                      </SortableRestRow>
                     ))
                   )}
+                  </SortableContext>
+                  </DndContext>
                 </tbody>
               </table>
             </div>
@@ -1767,6 +2029,24 @@ export default function AdminRestaurantsPage() {
                   {restCats.find((c) => c.id === itemForm.category_id)?.name ?? "—"}
                 </div>
               </div>
+
+              {/* الأكثر مبيعاً */}
+              <label className="flex items-center gap-3 cursor-pointer select-none rounded-xl px-3 py-2.5"
+                style={{ background: C.bg, border: `1px solid ${isBestSeller ? C.yellow : C.border}` }}
+                onClick={() => setIsBestSeller((v) => !v)}>
+                <div
+                  className="w-4 h-4 rounded flex items-center justify-center flex-shrink-0 transition-colors"
+                  style={{
+                    background: isBestSeller ? C.yellow : "transparent",
+                    border: `2px solid ${isBestSeller ? C.yellow : C.border}`,
+                  }}
+                >
+                  {isBestSeller && <span style={{ color: "#fff", fontSize: 9, lineHeight: 1 }}>✓</span>}
+                </div>
+                <span className="text-sm font-semibold" style={{ color: isBestSeller ? C.yellow : C.text }}>
+                  الأكثر مبيعاً ⭐
+                </span>
+              </label>
 
               {/* تبديل وجبة/عرض — يظهر بس في قسم "العروض" */}
               {restCats.find((c) => c.id === itemForm.category_id)?.name === "العروض" && (

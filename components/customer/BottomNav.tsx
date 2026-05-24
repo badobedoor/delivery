@@ -5,7 +5,6 @@ import { usePathname } from "next/navigation";
 
 export default function BottomNav() {
   const pathname = usePathname();
-
   const showBottomNav =
     pathname === "/" ||
     pathname === "/restaurants" ||
@@ -21,9 +20,9 @@ export default function BottomNav() {
     pathname === "/about";
 
   const showSearch = pathname.startsWith("/restaurants") || pathname.startsWith("/restaurant");
-  const isHome     = pathname === "/";
-  const isFav      = pathname.startsWith("/favorites");
-  const isAccount  = pathname.startsWith("/account");
+  const isHome    = pathname === "/";
+  const isFav     = pathname.startsWith("/favorites");
+  const isAccount = pathname.startsWith("/account");
 
   if (!showBottomNav) return null;
 

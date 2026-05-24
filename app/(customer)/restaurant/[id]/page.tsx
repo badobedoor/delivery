@@ -14,7 +14,7 @@ import CartBar from "@/components/customer/CartBar";
 /* ── DB types ── */
 type ItemExtra  = { id: number; name: string; price: number };
 type ExtraGroup = { id: number; name: string; type: string; required: boolean; max_select: number; item_extras: ItemExtra[] };
-type MenuItem   = { id: number; name: string; description: string | null; price: number; category_id: number; image_url: string | null; extra_groups: ExtraGroup[]; offer_price?: number | null; offer_starts_at?: string | null; offer_ends_at?: string | null; offer_image_url?: string | null; sort_order?: number; is_active?: boolean };
+type MenuItem   = { id: number; name: string; description: string | null; price: number; category_id: number; image_url: string | null; extra_groups: ExtraGroup[]; offer_price?: number | null; offer_starts_at?: string | null; offer_ends_at?: string | null; offer_image_url?: string | null; sort_order?: number; is_active?: boolean; is_best_seller?: boolean };
 type Category   = { id: number; name: string; restaurant_id: string; sort_order?: number; menu_items: MenuItem[] };
 type Restaurant = { id: string; name: string; description: string | null; cover_image_url: string | null; image_url: string | null; rating_avg?: number | null; rating_count?: number | null; is_active: boolean; opens_at: string | null; closes_at: string | null; status: string | null };
 
@@ -165,7 +165,7 @@ export default function RestaurantPage() {
       const [restResult, catsResult] = await Promise.all([
         supabase.from("restaurants").select("id, name, description, cover_image_url, image_url, rating_avg, rating_count, is_active, opens_at, closes_at, status").eq("id", id).single(),
         supabase.from("categories")
-          .select("id, name, restaurant_id, menu_items(id, name, description, price, category_id, image_url, offer_price, offer_starts_at, offer_ends_at, offer_image_url, sort_order, is_active, extra_groups(id, name, type, required, max_select, item_extras(id, name, price)))")
+          .select("id, name, restaurant_id, menu_items(id, name, description, price, category_id, image_url, offer_price, offer_starts_at, offer_ends_at, offer_image_url, sort_order, is_active, is_best_seller, extra_groups(id, name, type, required, max_select, item_extras(id, name, price)))")
           .eq("restaurant_id", id)
           .order("sort_order", { ascending: true }),
       ]);
@@ -192,12 +192,21 @@ export default function RestaurantPage() {
           menu_items: [...cat.menu_items]
             .sort((a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0)),
         })).filter((cat) => cat.menu_items.some((m) => m.is_active !== false));
-        setCategories(cats);
-        if (cats.length > 0) {
+
+        // قسم وهمي "الأكثر مبيعاً" — يُجمَع من كل الأقسام
+        const bestSellers = cats.flatMap((cat) =>
+          cat.menu_items.filter((m) => m.is_best_seller === true && m.is_active !== false)
+        );
+        const displayCats: Category[] = bestSellers.length > 0
+          ? [{ id: -1, name: "الأكثر مبيعاً ⭐", restaurant_id: id, menu_items: bestSellers }, ...cats]
+          : cats;
+
+        setCategories(displayCats);
+        if (displayCats.length > 0) {
           const target = categoryParam
-            ? cats.find((c) => c.name === categoryParam)
+            ? displayCats.find((c) => c.name === categoryParam)
             : null;
-          setActiveTab(target ? target.name : cats[0].name);
+          setActiveTab(target ? target.name : displayCats[0].name);
         }
       }
 

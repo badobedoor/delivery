@@ -38,7 +38,7 @@ const menuItems = [
     ),
   },
   {
-    label: "القسائم",          /* swapped with الإشعارات */
+    label: "القسائم",
     href: "/coupons",
     icon: (
       <svg width="18" height="18" viewBox="0 0 24 24" fill="none"
@@ -48,17 +48,6 @@ const menuItems = [
         <path d="M12 22V7" />
         <path d="M12 7H7.5a2.5 2.5 0 0 1 0-5C11 2 12 7 12 7z" />
         <path d="M12 7h4.5a2.5 2.5 0 0 0 0-5C13 2 12 7 12 7z" />
-      </svg>
-    ),
-  },
-  {
-    label: "الإشعارات",        /* swapped with القسائم */
-    href: "/notifications",
-    icon: (
-      <svg width="18" height="18" viewBox="0 0 24 24" fill="none"
-        stroke="var(--color-muted)" strokeWidth="1.8" strokeLinecap="round">
-        <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9" />
-        <path d="M13.73 21a2 2 0 0 1-3.46 0" />
       </svg>
     ),
   },
@@ -99,7 +88,6 @@ export default function AccountPage() {
   const [phoneError,   setPhoneError]   = useState("");
   const [phoneSaving,  setPhoneSaving]  = useState(false);
   const [phoneSuccess, setPhoneSuccess] = useState(false);
-  const [unreadCount,  setUnreadCount]  = useState(0);
 
   /* ── Fetch user ── */
   useEffect(() => {
@@ -109,17 +97,12 @@ export default function AccountPage() {
       setName(user.user_metadata?.full_name || user.email || "مرحبا");
       setAvatarUrl(user.user_metadata?.avatar_url ?? null);
 
-      /* Fetch phone + unread notifications count */
-      const [{ data: profile }, { count }] = await Promise.all([
-        supabase.from("users").select("phone").eq("id", user.id).maybeSingle(),
-        supabase
-          .from("notifications")
-          .select("*", { count: "exact", head: true })
-          .eq("user_id", user.id)
-          .eq("is_read", false),
-      ]);
+      const { data: profile } = await supabase
+        .from("users")
+        .select("phone")
+        .eq("id", user.id)
+        .maybeSingle();
       setPhone(profile?.phone ?? user.phone ?? "");
-      setUnreadCount(count ?? 0);
     });
   }, []);
 
@@ -227,13 +210,8 @@ export default function AccountPage() {
                   {item.label}
                 </span>
                 <div className="flex items-center gap-2">
-                  <div className="w-8 h-8 rounded-full bg-[var(--color-surface)] flex items-center justify-center relative">
+                  <div className="w-8 h-8 rounded-full bg-[var(--color-surface)] flex items-center justify-center">
                     {item.icon}
-                    {item.label === "الإشعارات" && unreadCount > 0 && (
-                      <span className="absolute -top-1 -right-1 w-4 h-4 rounded-full bg-[var(--color-primary)] text-white text-[9px] font-bold flex items-center justify-center">
-                        {unreadCount > 9 ? "9+" : unreadCount}
-                      </span>
-                    )}
                   </div>
                   <svg width="14" height="14" viewBox="0 0 24 24" fill="none"
                     stroke="var(--color-muted)" strokeWidth="2" strokeLinecap="round">

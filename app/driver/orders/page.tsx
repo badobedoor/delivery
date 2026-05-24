@@ -868,7 +868,7 @@ export default function DriverOrdersPage() {
     /* Optimistic local update — no full reload needed */
     setActive((prev) => prev.map((o) =>
       o.id === orderId
-        ? { ...o, restaurantPaid: paid, restaurantDebt: paid ? 0 : o.total }
+        ? { ...o, restaurantPaid: paid, restaurantDebt: paid ? 0 : o.subtotal }
         : o,
     ));
   }, [active]);
@@ -881,21 +881,9 @@ export default function DriverOrdersPage() {
       .eq("id", id)
       .eq("status", "accepted");
 
-    /* notify customer */
-    const order = active.find((o) => o.id === id);
-    if (order?.userId) {
-      await supabase.from("notifications").insert({
-        user_id:  order.userId,
-        title:    "طلبك في الطريق 🛵",
-        body:     "المندوب استلم طلبك وفي طريقه إليك",
-        type:     "order_in_progress",
-        order_id: id,
-      });
-    }
-
     setActive((prev) => prev.map((o) => o.id === id ? { ...o, pickedUp: true } : o));
     refreshFnRef.current?.(); // update lock state (hasPickedUp → ordersLocked)
-  }, [active]);
+  }, []);
 
   /* ── Deliver → open payment modal ── */
   const deliver = useCallback(async (order: ActiveOrder) => {
@@ -904,17 +892,6 @@ export default function DriverOrdersPage() {
       .update({ status: "delivered" })
       .eq("id", order.id)
       .eq("status", "on_the_way");
-
-    /* notify customer */
-    if (order.userId) {
-      await supabase.from("notifications").insert({
-        user_id:  order.userId,
-        title:    "تم توصيل طلبك ✅",
-        body:     "استمتع بوجبتك 🍕 شكراً لاستخدامك حالا",
-        type:     "order_delivered",
-        order_id: order.id,
-      });
-    }
 
     /* Open modal before reload so the order data is still available */
     setCollectTarget(order);
@@ -966,6 +943,17 @@ export default function DriverOrdersPage() {
       document.removeEventListener("visibilitychange", onVisible);
       window.removeEventListener("focus", onVisible);
     };
+  }, []);
+
+  /* Periodic poll — new orders appear while page stays open (every 10 s) */
+  useEffect(() => {
+    const id = setInterval(() => {
+      const now = Date.now();
+      if (now - lastRefreshRef.current < 5000) return;
+      lastRefreshRef.current = now;
+      refreshFnRef.current?.();
+    }, 10_000);
+    return () => clearInterval(id);
   }, []);
 
   const canTakeNewOrders = !ordersLocked;

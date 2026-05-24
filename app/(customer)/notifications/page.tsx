@@ -1,6 +1,5 @@
 "use client";
 
-import Link from "next/link";
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase";
@@ -9,20 +8,10 @@ type Notification = {
   id:         string;
   title:      string;
   body:       string;
-  type:       string;
+  icon:       string | null;
   is_read:    boolean;
   created_at: string;
 };
-
-function getIcon(type: string): string {
-  switch (type) {
-    case "order_in_progress": return "🛵";
-    case "order_confirmed":   return "✅";
-    case "order_delivered":   return "✅";
-    case "offer":             return "🎁";
-    default:                  return "🔔";
-  }
-}
 
 function timeAgo(date: string): string {
   const diff = Date.now() - new Date(date).getTime();
@@ -52,15 +41,22 @@ export default function NotificationsPage() {
         .eq("user_id", user.id)
         .order("created_at", { ascending: false });
 
-      setNotifications((data ?? []) as Notification[]);
+      const items = (data ?? []) as Notification[];
+      setNotifications(items);
       setLoading(false);
 
-      /* mark all unread as read */
-      await supabase
-        .from("notifications")
-        .update({ is_read: true })
-        .eq("user_id", user.id)
-        .eq("is_read", false);
+      /* mark all unread as read in DB */
+      const hasUnread = items.some((n) => !n.is_read);
+      if (hasUnread) {
+        await supabase
+          .from("notifications")
+          .update({ is_read: true })
+          .eq("user_id", user.id)
+          .eq("is_read", false);
+
+        /* update local state immediately — no refetch needed */
+        setNotifications((prev) => prev.map((n) => ({ ...n, is_read: true })));
+      }
     }
     load();
   }, []);
@@ -72,19 +68,21 @@ export default function NotificationsPage() {
         {/* ── Header ── */}
         <header className="bg-white px-4 pt-10 pb-4 sticky top-0 z-10 shadow-sm">
           <div className="flex items-center justify-between">
-            <Link href="/"
-              className="w-9 h-9 rounded-full bg-[var(--color-surface)] flex items-center justify-center">
+            <button
+              onClick={() => router.back()}
+              className="w-9 h-9 rounded-full bg-[var(--color-surface)] flex items-center justify-center"
+            >
               <svg width="20" height="20" viewBox="0 0 24 24" fill="none"
                 stroke="var(--color-secondary)" strokeWidth="2.2" strokeLinecap="round">
                 <path d="M9 18l6-6-6-6" />
               </svg>
-            </Link>
+            </button>
             <h1 className="text-base font-black text-[var(--color-secondary)]">الإشعارات</h1>
             <div className="w-9" />
           </div>
         </header>
 
-        <main className="pb-10">
+        <main className="pb-24">
           {loading ? (
             <div className="flex justify-center pt-24">
               <div className="w-6 h-6 border-2 border-[var(--color-primary)] border-t-transparent rounded-full animate-spin" />
@@ -93,6 +91,7 @@ export default function NotificationsPage() {
             <div className="flex flex-col items-center justify-center pt-24 gap-3 text-center px-4">
               <span className="text-6xl">🔔</span>
               <p className="text-base font-bold text-[var(--color-secondary)]">لا توجد إشعارات</p>
+              <p className="text-sm text-[var(--color-muted)]">ستظهر إشعاراتك هنا</p>
             </div>
           ) : (
             <div className="flex flex-col divide-y divide-[var(--color-border)]">
@@ -105,7 +104,7 @@ export default function NotificationsPage() {
                 >
                   {/* أيقونة */}
                   <div className="w-10 h-10 rounded-full bg-[var(--color-surface)] border border-[var(--color-border)] flex items-center justify-center text-xl flex-shrink-0">
-                    {getIcon(n.type)}
+                    {n.icon ?? "🔔"}
                   </div>
 
                   {/* المحتوى */}
@@ -124,6 +123,7 @@ export default function NotificationsPage() {
             </div>
           )}
         </main>
+
       </div>
     </div>
   );

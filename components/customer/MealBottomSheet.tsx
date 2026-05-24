@@ -8,12 +8,14 @@ import ConfirmModal from "@/components/customer/ConfirmModal";
 /* ── Types ── */
 interface Extra  { id: number; name: string; price: number }
 interface Size   { id: number; name: string; price?: number }
+interface ExtraGroupSheet { id: number; name: string; maxSelect: number; extras: Extra[] }
 interface Meal   {
   id: number;
   name: string;
   basePrice: number;
   img: string;
   extras?: Extra[];
+  extraGroups?: ExtraGroupSheet[];
   sizes?: Size[];
 }
 
@@ -60,8 +62,16 @@ export default function MealBottomSheet({ meal, onClose, restaurantId, restauran
   }, []);
 
   const extrasTotal = selectedExtras.reduce((sum, id) => {
-    const extra = meal.extras?.find((e) => e.id === id);
-    return sum + (extra?.price ?? 0);
+    let price = 0;
+    if (meal.extraGroups) {
+      for (const g of meal.extraGroups) {
+        const e = g.extras.find((e) => e.id === id);
+        if (e) { price = e.price; break; }
+      }
+    } else {
+      price = meal.extras?.find((e) => e.id === id)?.price ?? 0;
+    }
+    return sum + price;
   }, 0);
 
   const hasSizes    = !!(meal.sizes && meal.sizes.length > 0);
@@ -74,10 +84,18 @@ export default function MealBottomSheet({ meal, onClose, restaurantId, restauran
 
   const total = (activePrice + extrasTotal) * qty;
 
-  function toggleExtra(id: number) {
-    setSelectedExtras((prev) =>
-      prev.includes(id) ? prev.filter((e) => e !== id) : [...prev, id]
-    );
+  function toggleExtra(id: number, groupId?: number) {
+    setSelectedExtras((prev) => {
+      if (prev.includes(id)) return prev.filter((e) => e !== id);
+      if (meal.extraGroups && groupId !== undefined) {
+        const group = meal.extraGroups.find((g) => g.id === groupId);
+        if (group && group.maxSelect > 0) {
+          const selectedInGroup = prev.filter((eid) => group.extras.some((e) => e.id === eid)).length;
+          if (selectedInGroup >= group.maxSelect) return prev;
+        }
+      }
+      return [...prev, id];
+    });
   }
 
   function handleAddToCart() {
@@ -93,6 +111,13 @@ export default function MealBottomSheet({ meal, onClose, restaurantId, restauran
         ? { name: sizeObj.name, price: sizeObj.price ?? 0 }
         : undefined,
       extras: selectedExtras.map((id) => {
+        if (meal.extraGroups) {
+          for (const g of meal.extraGroups) {
+            const e = g.extras.find((e) => e.id === id);
+            if (e) return { name: e.name, price: e.price };
+          }
+          return { name: "", price: 0 };
+        }
         const extra = meal.extras!.find((e) => e.id === id)!;
         return { name: extra.name, price: extra.price };
       }),
@@ -233,48 +258,90 @@ export default function MealBottomSheet({ meal, onClose, restaurantId, restauran
           )}
 
           {/* ── 4. الإضافات ── */}
-          {meal.extras && meal.extras.length > 0 && (
-            <div className="px-4 pt-4 pb-3 border-b border-[var(--color-border)]">
-              <h3 className="text-base font-bold text-[var(--color-secondary)] mb-2">
-                الإضافات:
-                <span className="text-sm text-[var(--color-muted)] font-normal"> (اختياري)</span>
-              </h3>
-              <div className="flex flex-col">
-                {meal.extras.map((extra) => {
-                  const checked = selectedExtras.includes(extra.id);
-                  return (
-                    <label
-                      key={extra.id}
-                      className="flex items-center justify-between cursor-pointer py-3 active:bg-[var(--color-surface)] rounded-lg px-1 -mx-1 transition-colors"
-                      onClick={() => toggleExtra(extra.id)}
-                    >
-                      {/* الاسم — يمين */}
-                      <span className="text-base text-[var(--color-secondary)]">{extra.name}</span>
-
-                      {/* السعر + checkbox — يسار */}
-                      <div className="flex items-center gap-2 pointer-events-none">
-                        <span className="text-sm font-semibold text-[var(--color-muted)]">+{extra.price} ج.م</span>
-                        <div
-                          className={`w-5 h-5 rounded flex items-center justify-center border-2 transition-colors ${
-                            checked
-                              ? "bg-[var(--color-primary)] border-[var(--color-primary)]"
-                              : "border-[var(--color-border)] bg-white"
-                          }`}
+          {meal.extraGroups && meal.extraGroups.length > 0
+            ? meal.extraGroups.map((group) => {
+                const selectedInGroup = selectedExtras.filter((eid) => group.extras.some((e) => e.id === eid)).length;
+                const atMax = group.maxSelect > 0 && selectedInGroup >= group.maxSelect;
+                return (
+                  <div key={group.id} className="px-4 pt-4 pb-3 border-b border-[var(--color-border)]">
+                    <h3 className="text-base font-bold text-[var(--color-secondary)] mb-1">
+                      {group.name}:
+                      <span className="text-sm text-[var(--color-muted)] font-normal">
+                        {group.maxSelect > 0 ? ` (اختر حتى ${group.maxSelect})` : " (اختياري)"}
+                      </span>
+                    </h3>
+                    {atMax && (
+                      <p className="text-xs font-semibold text-[var(--color-primary)] mb-2">الحد الأقصى {group.maxSelect} إضافات</p>
+                    )}
+                    <div className="flex flex-col">
+                      {group.extras.map((extra) => {
+                        const checked = selectedExtras.includes(extra.id);
+                        const disabled = !checked && atMax;
+                        return (
+                          <label
+                            key={extra.id}
+                            className={`flex items-center justify-between py-3 rounded-lg px-1 -mx-1 transition-colors ${
+                              disabled ? "opacity-40 cursor-not-allowed" : "cursor-pointer active:bg-[var(--color-surface)]"
+                            }`}
+                            onClick={disabled ? undefined : () => toggleExtra(extra.id, group.id)}
+                          >
+                            <span className="text-base text-[var(--color-secondary)]">{extra.name}</span>
+                            <div className="flex items-center gap-2 pointer-events-none">
+                              <span className="text-sm font-semibold text-[var(--color-muted)]">+{extra.price} ج.م</span>
+                              <div className={`w-5 h-5 rounded flex items-center justify-center border-2 transition-colors ${
+                                checked ? "bg-[var(--color-primary)] border-[var(--color-primary)]" : "border-[var(--color-border)] bg-white"
+                              }`}>
+                                {checked && (
+                                  <svg width="11" height="11" viewBox="0 0 24 24" fill="none"
+                                    stroke="white" strokeWidth="3" strokeLinecap="round">
+                                    <path d="M20 6 9 17l-5-5" />
+                                  </svg>
+                                )}
+                              </div>
+                            </div>
+                          </label>
+                        );
+                      })}
+                    </div>
+                  </div>
+                );
+              })
+            : meal.extras && meal.extras.length > 0 && (
+                <div className="px-4 pt-4 pb-3 border-b border-[var(--color-border)]">
+                  <h3 className="text-base font-bold text-[var(--color-secondary)] mb-2">
+                    الإضافات:
+                    <span className="text-sm text-[var(--color-muted)] font-normal"> (اختياري)</span>
+                  </h3>
+                  <div className="flex flex-col">
+                    {meal.extras.map((extra) => {
+                      const checked = selectedExtras.includes(extra.id);
+                      return (
+                        <label
+                          key={extra.id}
+                          className="flex items-center justify-between cursor-pointer py-3 active:bg-[var(--color-surface)] rounded-lg px-1 -mx-1 transition-colors"
+                          onClick={() => toggleExtra(extra.id)}
                         >
-                          {checked && (
-                            <svg width="11" height="11" viewBox="0 0 24 24" fill="none"
-                              stroke="white" strokeWidth="3" strokeLinecap="round">
-                              <path d="M20 6 9 17l-5-5" />
-                            </svg>
-                          )}
-                        </div>
-                      </div>
-                    </label>
-                  );
-                })}
-              </div>
-            </div>
-          )}
+                          <span className="text-base text-[var(--color-secondary)]">{extra.name}</span>
+                          <div className="flex items-center gap-2 pointer-events-none">
+                            <span className="text-sm font-semibold text-[var(--color-muted)]">+{extra.price} ج.م</span>
+                            <div className={`w-5 h-5 rounded flex items-center justify-center border-2 transition-colors ${
+                              checked ? "bg-[var(--color-primary)] border-[var(--color-primary)]" : "border-[var(--color-border)] bg-white"
+                            }`}>
+                              {checked && (
+                                <svg width="11" height="11" viewBox="0 0 24 24" fill="none"
+                                  stroke="white" strokeWidth="3" strokeLinecap="round">
+                                  <path d="M20 6 9 17l-5-5" />
+                                </svg>
+                              )}
+                            </div>
+                          </div>
+                        </label>
+                      );
+                    })}
+                  </div>
+                </div>
+              )
+          }
 
           {/* ── 5. ملاحظة ── */}
           <div className="px-4 pt-4 pb-3">

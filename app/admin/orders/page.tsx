@@ -37,6 +37,7 @@ type DBNewOrder = {
     extras:         { name: string; price: number }[] | null;
     menu_items:     { name: string } | null;
     notes?:         string | null;
+    category_name?: string | null;
   }[];
   users: { name: string | null; phone: string | null } | null;
   user_id: string | null;
@@ -198,7 +199,7 @@ export default function AdminOrdersPage() {
     if (orderIds.length > 0) {
       const { data: itemsData } = await supabase
         .from("order_items")
-        .select("order_id, quantity, price_at_order, extras, notes, menu_items (name)")
+        .select("order_id, quantity, price_at_order, extras, notes, menu_items (name, categories (name))")
         .in("order_id", orderIds);
 
       for (const row of (itemsData ?? []) as any[]) {
@@ -209,6 +210,7 @@ export default function AdminOrdersPage() {
           extras:         Array.isArray(row.extras) ? row.extras : [],
           menu_items:     row.menu_items ?? null,
           notes:          row.notes ?? null,
+          category_name:  row.menu_items?.categories?.name ?? null,
         });
       }
     }
@@ -284,7 +286,8 @@ export default function AdminOrdersPage() {
       const extrasTotal = extras.reduce((sum, e) => sum + (e.price ?? 0), 0);
       const basePrice   = item.price_at_order - extrasTotal;
 
-      let line = `- ${item.menu_items?.name ?? "—"} ×${item.quantity}\n  السعر الأساسي: ${basePrice}ج`;
+      const categoryPart = item.category_name ? ` — ${item.category_name}` : "";
+      let line = `- ${item.menu_items?.name ?? "—"} × ${item.quantity}${categoryPart}\n  السعر الأساسي: ${basePrice}ج`;
 
       if (extras.length > 0) {
         const extrasLines = extras.map((e) => `    + ${e.name} (+${e.price}ج)`).join("\n");
@@ -377,18 +380,7 @@ export default function AdminOrdersPage() {
       return;
     }
 
-    // 6. Insert notification for customer
-    if (order.user_id) {
-      await supabase.from("notifications").insert({
-        user_id:  order.user_id,
-        title:    "تم تأكيد طلبك ✅",
-        body:     `تم استلام طلبك من ${order.restaurants?.name ?? "المطعم"} وجاري التحضير`,
-        type:     "order_confirmed",
-        order_id: order.id,
-      });
-    }
-
-    // 7. Optimistic UI update
+    // 6. Optimistic UI update
     setNewOrdersList((prev) => prev.filter((o) => o.id !== id));
     setAllOrdersList((prev) => [{
       id:                order.id,

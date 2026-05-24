@@ -188,6 +188,30 @@ export default function DriverArchivePage() {
     init();
   }, [authLoading, authUser, loadData]);
 
+  /* ── Smart auto-refresh — must be before any early returns ── */
+  const refreshFnRef   = useRef<(() => void) | null>(null);
+  const lastRefreshRef = useRef(0);
+
+  useEffect(() => {
+    refreshFnRef.current = () => { if (driverId) loadData(driverId); };
+  }, [driverId, loadData]);
+
+  useEffect(() => {
+    function onVisible() {
+      if (document.visibilityState !== "visible") return;
+      const now = Date.now();
+      if (now - lastRefreshRef.current < 5000) return;
+      lastRefreshRef.current = now;
+      refreshFnRef.current?.();
+    }
+    document.addEventListener("visibilitychange", onVisible);
+    window.addEventListener("focus", onVisible);
+    return () => {
+      document.removeEventListener("visibilitychange", onVisible);
+      window.removeEventListener("focus", onVisible);
+    };
+  }, []);
+
   /* ── Loading ── */
   if (loading) {
     return (
@@ -213,30 +237,6 @@ export default function DriverArchivePage() {
       </div>
     );
   }
-
-  /* ── Smart auto-refresh ── */
-  const refreshFnRef   = useRef<(() => void) | null>(null);
-  const lastRefreshRef = useRef(0);
-
-  useEffect(() => {
-    refreshFnRef.current = () => { if (driverId) loadData(driverId); };
-  }, [driverId, loadData]);
-
-  useEffect(() => {
-    function onVisible() {
-      if (document.visibilityState !== "visible") return;
-      const now = Date.now();
-      if (now - lastRefreshRef.current < 5000) return;
-      lastRefreshRef.current = now;
-      refreshFnRef.current?.();
-    }
-    document.addEventListener("visibilitychange", onVisible);
-    window.addEventListener("focus", onVisible);
-    return () => {
-      document.removeEventListener("visibilitychange", onVisible);
-      window.removeEventListener("focus", onVisible);
-    };
-  }, []);
 
   /* ── Main render ── */
   return (

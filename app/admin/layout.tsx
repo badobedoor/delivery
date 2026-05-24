@@ -5,6 +5,21 @@ import { usePathname }   from "next/navigation";
 import { useState, useEffect, useCallback } from "react";
 import { supabase }      from "@/lib/supabase";
 import { useAutoRefresh } from "@/hooks/useAutoRefresh";
+import {
+  DndContext,
+  closestCenter,
+  PointerSensor,
+  useSensor,
+  useSensors,
+  type DragEndEvent,
+} from "@dnd-kit/core";
+import {
+  SortableContext,
+  useSortable,
+  verticalListSortingStrategy,
+  arrayMove,
+} from "@dnd-kit/sortable";
+import { CSS } from "@dnd-kit/utilities";
 
 /* Pages staff role is allowed to visit */
 const STAFF_ALLOWED = ["/admin/orders", "/admin/restaurants", "/admin/drivers"];
@@ -55,6 +70,28 @@ const pageTitle: Record<string, string> = {
   "/admin/team":           "الفريق",
 };
 
+function SortableNavItem({
+  id,
+  children,
+}: {
+  id: string;
+  children: (handleProps: React.HTMLAttributes<HTMLElement>) => React.ReactNode;
+}) {
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id });
+  return (
+    <div
+      ref={setNodeRef}
+      style={{
+        transform: CSS.Transform.toString(transform),
+        transition,
+        opacity: isDragging ? 0.5 : 1,
+      }}
+    >
+      {children({ ...attributes, ...listeners } as React.HTMLAttributes<HTMLElement>)}
+    </div>
+  );
+}
+
 function HamburgerIcon({ color }: { color: string }) {
   return (
     <svg width="18" height="18" viewBox="0 0 24 24" fill="none"
@@ -69,15 +106,27 @@ function SidebarContent({
   navLinks,
   onClose,
   onLogout,
+  onReorder,
   newOrdersCount = 0,
 }: {
   collapsed?: boolean;
   navLinks: typeof allNavLinks;
   onClose?: () => void;
   onLogout: () => void;
+  onReorder?: (newLinks: typeof allNavLinks) => void;
   newOrdersCount?: number;
 }) {
   const pathname = usePathname();
+  const sensors  = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 5 } }));
+
+  function handleDragEnd(event: DragEndEvent) {
+    const { active, over } = event;
+    if (!over || active.id === over.id) return;
+    const oldIndex = navLinks.findIndex((l) => l.href === active.id);
+    const newIndex = navLinks.findIndex((l) => l.href === over.id);
+    if (oldIndex === -1 || newIndex === -1) return;
+    onReorder?.(arrayMove(navLinks, oldIndex, newIndex));
+  }
 
   return (
     <aside
@@ -105,63 +154,84 @@ function SidebarContent({
       {/* ── Nav ── */}
       <nav className="flex-1 py-4 overflow-y-auto flex flex-col gap-1"
         style={{ padding: collapsed ? "16px 8px" : "16px 12px" }}>
+        <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
+        <SortableContext items={navLinks.map((l) => l.href)} strategy={verticalListSortingStrategy}>
         {navLinks.map((link) => {
           const active      = pathname.startsWith(link.href);
           const hasNewBadge = newOrdersCount > 0 && link.href === "/admin/orders";
           return (
-            <Link
-              key={link.href}
-              href={link.href}
-              onClick={onClose}
-              title={collapsed ? link.label : undefined}
-              className="relative flex items-center rounded-xl text-sm font-semibold transition-all whitespace-nowrap overflow-hidden"
-              style={{
-                gap:            collapsed ? 0          : "12px",
-                padding:        collapsed ? "10px 0"   : "10px 16px",
-                justifyContent: collapsed ? "center"   : "flex-start",
-                background:     active        ? C.teal
-                              : hasNewBadge   ? `${C.red}18`
-                              : "transparent",
-                color:          active        ? "#fff"
-                              : hasNewBadge   ? C.red
-                              : C.muted,
-                border:         hasNewBadge && !active
-                              ? `1px solid ${C.red}44`
-                              : "1px solid transparent",
-              }}
-            >
-              {/* Emoji — with small dot badge in collapsed mode */}
-              <div className="relative flex-shrink-0">
-                <span className="text-base">{link.emoji}</span>
-                {collapsed && hasNewBadge && (
-                  <span
-                    className="absolute -top-0.5 -right-0.5 w-2 h-2 rounded-full animate-pulse"
-                    style={{ background: C.red }}
-                  />
-                )}
-              </div>
-
-              {/* Label + blinking dot in expanded mode */}
+            <SortableNavItem key={link.href} id={link.href}>
+            {(handleProps) => (
+            <div className="flex items-center">
               {!collapsed && (
-                <div className="flex items-center justify-between flex-1 min-w-0">
-                  <span>{link.label}</span>
-                  {hasNewBadge && (
-                    <span className="relative flex h-2 w-2 mr-1 flex-shrink-0">
-                      <span
-                        className="animate-ping absolute inline-flex h-full w-full rounded-full opacity-75"
-                        style={{ background: C.red }}
-                      />
-                      <span
-                        className="relative inline-flex rounded-full h-2 w-2"
-                        style={{ background: C.red }}
-                      />
-                    </span>
+                <span
+                  {...handleProps}
+                  style={{ flexShrink: 0, cursor: "grab", touchAction: "none", display: "flex", padding: "0 4px" }}
+                >
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill={C.muted}>
+                    <circle cx="9" cy="5" r="1.5"/><circle cx="15" cy="5" r="1.5"/>
+                    <circle cx="9" cy="12" r="1.5"/><circle cx="15" cy="12" r="1.5"/>
+                    <circle cx="9" cy="19" r="1.5"/><circle cx="15" cy="19" r="1.5"/>
+                  </svg>
+                </span>
+              )}
+              <Link
+                href={link.href}
+                onClick={onClose}
+                title={collapsed ? link.label : undefined}
+                className="relative flex items-center rounded-xl text-sm font-semibold transition-all whitespace-nowrap overflow-hidden flex-1"
+                style={{
+                  gap:            collapsed ? 0          : "12px",
+                  padding:        collapsed ? "10px 0"   : "10px 16px",
+                  justifyContent: collapsed ? "center"   : "flex-start",
+                  background:     active        ? C.teal
+                                : hasNewBadge   ? `${C.red}18`
+                                : "transparent",
+                  color:          active        ? "#fff"
+                                : hasNewBadge   ? C.red
+                                : C.muted,
+                  border:         hasNewBadge && !active
+                                ? `1px solid ${C.red}44`
+                                : "1px solid transparent",
+                }}
+              >
+                {/* Emoji — with small dot badge in collapsed mode */}
+                <div className="relative flex-shrink-0">
+                  <span className="text-base">{link.emoji}</span>
+                  {collapsed && hasNewBadge && (
+                    <span
+                      className="absolute -top-0.5 -right-0.5 w-2 h-2 rounded-full animate-pulse"
+                      style={{ background: C.red }}
+                    />
                   )}
                 </div>
-              )}
-            </Link>
+
+                {/* Label + blinking dot in expanded mode */}
+                {!collapsed && (
+                  <div className="flex items-center justify-between flex-1 min-w-0">
+                    <span>{link.label}</span>
+                    {hasNewBadge && (
+                      <span className="relative flex h-2 w-2 mr-1 flex-shrink-0">
+                        <span
+                          className="animate-ping absolute inline-flex h-full w-full rounded-full opacity-75"
+                          style={{ background: C.red }}
+                        />
+                        <span
+                          className="relative inline-flex rounded-full h-2 w-2"
+                          style={{ background: C.red }}
+                        />
+                      </span>
+                    )}
+                  </div>
+                )}
+              </Link>
+            </div>
+            )}
+            </SortableNavItem>
           );
         })}
+        </SortableContext>
+        </DndContext>
       </nav>
 
       {/* ── Logout ── */}
@@ -209,6 +279,13 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
   const [collapsed,      setCollapsed]      = useState(false);
   const [mobileOpen,     setMobileOpen]     = useState(false);
   const [newOrdersCount, setNewOrdersCount] = useState(0);
+  const [savedOrder,     setSavedOrder]     = useState<string[]>(() => {
+    if (typeof window === "undefined") return [];
+    try {
+      const saved = localStorage.getItem("admin_nav_order");
+      return saved ? (JSON.parse(saved) as string[]) : [];
+    } catch { return []; }
+  });
 
   const isLoginPage = pathname === "/admin/login";
 
@@ -275,6 +352,21 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
     ? allNavLinks.filter((l) => !SUPER_ADMIN_ONLY.includes(l.href))
     : allNavLinks;
 
+  const orderedNavLinks = savedOrder.length > 0
+    ? [
+        ...savedOrder
+          .filter((href) => navLinks.some((l) => l.href === href))
+          .map((href) => navLinks.find((l) => l.href === href)!),
+        ...navLinks.filter((l) => !savedOrder.includes(l.href)),
+      ]
+    : navLinks;
+
+  function handleNavReorder(newLinks: typeof allNavLinks) {
+    const hrefs = newLinks.map((l) => l.href);
+    setSavedOrder(hrefs);
+    try { localStorage.setItem("admin_nav_order", JSON.stringify(hrefs)); } catch {}
+  }
+
   const title        = pageTitle[pathname] ?? "لوحة التحكم";
   const displayName  = user.name ?? "مدير";
   const displayRole  = user.role === "super_admin" ? "سوبر أدمن"
@@ -297,8 +389,9 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
         style={{ width: `${sidebarW}px`, borderLeft: `1px solid ${C.border}` }}>
         <SidebarContent
           collapsed={collapsed}
-          navLinks={navLinks}
+          navLinks={orderedNavLinks}
           onLogout={handleLogout}
+          onReorder={handleNavReorder}
           newOrdersCount={newOrdersCount}
         />
       </div>
@@ -346,9 +439,10 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
           <div className="absolute inset-0 bg-black/60" onClick={() => setMobileOpen(false)} />
           <div className="relative z-50 h-full" style={{ borderLeft: `1px solid ${C.border}` }}>
             <SidebarContent
-              navLinks={navLinks}
+              navLinks={orderedNavLinks}
               onClose={() => setMobileOpen(false)}
               onLogout={handleLogout}
+              onReorder={handleNavReorder}
               newOrdersCount={newOrdersCount}
             />
           </div>
