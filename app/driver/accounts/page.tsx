@@ -54,7 +54,15 @@ type AdvReq = {
   id:        number;
   amount:    number;
   note:      string;
-  status:    "pending" | "approved" | "rejected";
+  status:    "pending" | "approved" | "rejected" | "pending_close";
+  createdAt: string;
+};
+
+type AccountTx = {
+  id:        number;
+  type:      string;
+  amount:    number;
+  reason:    string | null;
   createdAt: string;
 };
 
@@ -78,18 +86,6 @@ function todayStartISO() {
 
 function isoDateStr(iso: string) { return iso.slice(0, 10); }
 
-/* How much of an order's delivery fee was paid in cash (safe, no NaN/negative) */
-function cashDeliveryShare(o: TodayOrder): number {
-  const fee = o.deliveryFee;
-  if (o.paymentMethod === "cash")     return fee;
-  if (o.paymentMethod === "vodafone") return 0;
-  if (o.paymentMethod === "mixed") {
-    if (o.cashAmount >= fee)               return fee;
-    if (o.cashAmount > o.vodafoneAmount)   return fee;
-    return 0;
-  }
-  return 0;
-}
 
 /* ── Chevron ── */
 function ChevronIcon({ open }: { open: boolean }) {
@@ -253,29 +249,22 @@ function ReadOnlyOrderCard({ order }: { order: TodayOrder }) {
 }
 
 /* ─────────────────────────────────────────────
-   ShiftSummary — driver gives ALL money to office
+   ShiftSummary
 ───────────────────────────────────────────── */
-function ShiftSummary({ orders, officeAdvance }: { orders: TodayOrder[]; officeAdvance?: number | null }) {
-  const collected = orders.filter((o) => o.status === "delivered" && o.paymentMethod !== null);
-  if (collected.length === 0) return null;
-
-  const { cashFees, vodafoneFees } = collected.reduce(
-    (acc, o) => {
-      const cashShare = cashDeliveryShare(o);
-      return { cashFees: acc.cashFees + cashShare, vodafoneFees: acc.vodafoneFees + (o.deliveryFee - cashShare) };
-    },
-    { cashFees: 0, vodafoneFees: 0 },
-  );
-  const restDebt   = collected.filter((o) => o.restaurantPaid === false).reduce((s, o) => s + o.restaurantDebt, 0);
-  const advance    = officeAdvance ?? 0;
-  const toHandOver = advance + cashFees + vodafoneFees;
+function ShiftSummary({
+  totalCash, totalVodafone, totalCustody,
+}: {
+  totalCash:    number;
+  totalVodafone: number;
+  totalCustody: number;
+}) {
+  const toHandOver = Math.round(totalCash + totalVodafone + totalCustody);
 
   const rows = [
-    { icon: "🏦", label: "العهدة",         value: advance,      color: C.purple },
-    { icon: "💰", label: "نقدي معاك",      value: cashFees,     color: C.green  },
-    { icon: "📱", label: "فودافون كاش",    value: vodafoneFees,  color: C.blue   },
-    ...(restDebt > 0 ? [{ icon: "⚠️", label: "ديون مطاعم", value: restDebt, color: C.red }] : []),
-    { icon: "🏢", label: "تسلّمه للمكتب", value: toHandOver,   color: toHandOver >= 0 ? C.teal : C.red },
+    { icon: "💰", label: "نقدي معاك",      value: totalCash,     color: C.green  },
+    { icon: "📱", label: "فودافون",         value: totalVodafone, color: C.blue   },
+    { icon: "🔐", label: "عهدة",            value: totalCustody,  color: C.purple },
+    { icon: "🏢", label: "هتسلم للمكتب",   value: toHandOver,    color: toHandOver >= 0 ? C.teal : C.red },
   ];
 
   return (
@@ -285,31 +274,29 @@ function ShiftSummary({ orders, officeAdvance }: { orders: TodayOrder[]; officeA
         <h3 className="text-sm font-black" style={{ color: C.text }}>ملخص الوردية</h3>
       </div>
       {rows.map((row, i) => {
-        const isHandOver = row.label === "تسلّمه للمكتب";
+        const isHandOver = row.label === "هتسلم للمكتب";
         return (
           <div key={row.label}
             className="flex items-center justify-between px-4"
             style={{
               borderBottom: i < rows.length - 1 ? `1px solid ${C.border}` : "none",
-              borderTop: isHandOver ? `1px solid ${C.border}` : "none",
+              borderTop:    isHandOver ? `1px solid ${C.border}` : "none",
               paddingTop:    isHandOver ? "14px" : "12px",
               paddingBottom: isHandOver ? "14px" : "12px",
-              background:    isHandOver ? `${C.teal}0d`  : "transparent",
+              background:    isHandOver ? `${C.teal}0d` : "transparent",
             }}>
-            <span
-              style={{
-                color:      C.muted,
-                fontSize:   isHandOver ? "0.9rem"  : "0.875rem",
-                fontWeight: isHandOver ? 700        : 400,
-              }}>
+            <span style={{
+              color:      C.muted,
+              fontSize:   isHandOver ? "0.9rem"  : "0.875rem",
+              fontWeight: isHandOver ? 700       : 400,
+            }}>
               {row.icon} {row.label}
             </span>
-            <span
-              style={{
-                color:      row.color,
-                fontSize:   isHandOver ? "1.15rem" : "0.875rem",
-                fontWeight: 900,
-              }}>
+            <span style={{
+              color:      row.color,
+              fontSize:   isHandOver ? "1.15rem" : "0.875rem",
+              fontWeight: 900,
+            }}>
               {fmtAmt(row.value)}
             </span>
           </div>
@@ -467,9 +454,10 @@ export default function DriverAccountsPage() {
   const [pendingAdv,    setPendingAdv]    = useState<AdvReq | null>(null);
   const [archiveOrders, setArchiveOrders] = useState<ArchiveOrder[]>([]);
   const [archiveLoaded, setArchiveLoaded] = useState(false);
+  const [walletBalance, setWalletBalance] = useState(0);
+  const [accountTxs,    setAccountTxs]    = useState<AccountTx[]>([]);
 
-  // TODO: fetch actual value from delivery_shifts (e.g. office_advance column) when available
-  const [officeAdvance] = useState<number | null>(null);
+  const [totalCustody,  setTotalCustody]  = useState(0);
 
   const [showAdv,               setShowAdv]               = useState(false);
   const [advSubmit,             setAdvSubmit]             = useState(false);
@@ -478,12 +466,16 @@ export default function DriverAccountsPage() {
   const [settlementSent,        setSettlementSent]        = useState(false);
   const [showSettlementConfirm, setShowSettlementConfirm] = useState(false);
   const [pageError,             setPageError]             = useState("");
+  const [shiftClosed,           setShiftClosed]           = useState(false);
 
   /* ── Load today's data ── */
   const loadData = useCallback(async (did: string) => {
     const [
       { data: ordersData, error: ordersErr },
       { data: advData },
+      { data: driverData },
+      { data: txData },
+      { data: custodyData },
     ] = await Promise.all([
       supabase
         .from("orders")
@@ -494,7 +486,7 @@ export default function DriverAccountsPage() {
         )
         .eq("delivery_id", did)
         .in("status", ["accepted", "on_the_way", "delivered"])
-        .gte("created_at", todayStartISO())
+        .eq("settled", false)
         .order("created_at", { ascending: true }),
       supabase
         .from("advance_requests")
@@ -503,6 +495,21 @@ export default function DriverAccountsPage() {
         .order("created_at", { ascending: false })
         .limit(1)
         .maybeSingle(),
+      supabase
+        .from("delivery_staff")
+        .select("wallet_balance")
+        .eq("id", did)
+        .single(),
+      supabase
+        .from("delivery_accounts")
+        .select("id, type, amount, reason, created_at")
+        .eq("delivery_id", did)
+        .order("created_at", { ascending: false }),
+      supabase
+        .from("custody_records")
+        .select("amount")
+        .eq("delivery_id", did)
+        .eq("status", "active"),
     ]);
 
     if (ordersErr) { setPageError("خطأ في تحميل الأوردرات"); return; }
@@ -525,7 +532,22 @@ export default function DriverAccountsPage() {
       })),
     );
 
-    if (advData && advData.status === "pending") {
+    if (driverData) setWalletBalance((driverData as any).wallet_balance ?? 0);
+
+    setAccountTxs(
+      (txData ?? []).map((t: any) => ({
+        id:        t.id,
+        type:      t.type ?? "",
+        amount:    t.amount ?? 0,
+        reason:    t.reason ?? null,
+        createdAt: t.created_at,
+      })),
+    );
+
+    if (advData && advData.status === "pending_close") {
+      setSettlementSent(true);
+      setPendingAdv(null);
+    } else if (advData && advData.status === "pending") {
       setPendingAdv({
         id:        advData.id,
         amount:    advData.amount,
@@ -536,6 +558,28 @@ export default function DriverAccountsPage() {
     } else {
       setPendingAdv(null);
     }
+
+    const custodyTotal = Math.round((custodyData ?? []).reduce((s: number, c: any) => s + (c.amount ?? 0), 0));
+    setTotalCustody(custodyTotal);
+
+
+    const { data: approvedReq } = await supabase
+      .from("advance_requests")
+      .select("id")
+      .eq("delivery_id", did)
+      .eq("status", "approved")
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    const { data: activeShift } = await supabase
+      .from("delivery_shifts")
+      .select("id")
+      .eq("delivery_id", did)
+      .eq("is_active", true)
+      .maybeSingle();
+
+    if (approvedReq && !activeShift) setShiftClosed(true);
   }, []);
 
   /* ── Load archive (lazy) ── */
@@ -590,16 +634,14 @@ export default function DriverAccountsPage() {
         .maybeSingle();
       if (shiftData) setShiftId(shiftData.shift_id);
 
-      /* Check if already submitted settlement request this shift */
-      if (shiftData?.shift_id) {
-        const { data: existing } = await supabase
-          .from("shift_settlement_requests")
-          .select("id")
-          .eq("delivery_id", did)
-          .eq("shift_id", shiftData.shift_id)
-          .maybeSingle();
-        if (existing) setSettlementSent(true);
-      }
+      /* Check if already submitted close request */
+      const { data: existingClose } = await supabase
+        .from("advance_requests")
+        .select("id")
+        .eq("delivery_id", did)
+        .eq("status", "pending_close")
+        .maybeSingle();
+      if (existingClose) setSettlementSent(true);
 
       await loadData(did);
       setLoading(false);
@@ -613,6 +655,29 @@ export default function DriverAccountsPage() {
       loadArchive(driverId);
     }
   }, [tab, archiveLoaded, driverId, loadArchive]);
+
+  /* ── Realtime: تحديث تلقائي عند موافقة الأدمن ── */
+  useEffect(() => {
+    if (!driverId) return;
+    const channel = supabase
+      .channel("advance_requests_changes")
+      .on(
+        "postgres_changes",
+        {
+          event:  "UPDATE",
+          schema: "public",
+          table:  "advance_requests",
+          filter: `delivery_id=eq.${driverId}`,
+        },
+        (payload) => {
+          if ((payload.new as any).status === "approved") {
+            setShiftClosed(true);
+          }
+        },
+      )
+      .subscribe();
+    return () => { supabase.removeChannel(channel); };
+  }, [driverId]);
 
   /* ── Advance request ── */
   async function handleAdvanceRequest(amount: number, note: string) {
@@ -634,13 +699,17 @@ export default function DriverAccountsPage() {
   }
 
   /* ── Shift settlement — step 1: validate then show confirm modal ── */
-  function openSettlementConfirm() {
+  async function openSettlementConfirm() {
     if (!driverId || !shiftId) return;
 
-    /* Block if any active (non-delivered) orders still exist */
-    const activeCount = todayOrders.filter((o) => o.status !== "delivered").length;
-    if (activeCount > 0) {
-      setPageError(`لا يمكن تقفيل الوردية — لديك ${activeCount} أوردر قيد التنفيذ. أنهِ جميع الأوردرات أولاً.`);
+    const { data: activeOrdersData } = await supabase
+      .from("orders")
+      .select("id")
+      .eq("delivery_id", driverId)
+      .in("status", ["accepted", "on_the_way"]);
+
+    if (activeOrdersData && activeOrdersData.length > 0) {
+      setPageError("وصّل الأوردرات الأول قبل تقفيل الوردية");
       return;
     }
 
@@ -660,31 +729,24 @@ export default function DriverAccountsPage() {
     if (!driverId || !shiftId) return;
 
     const { data: existing } = await supabase
-      .from("shift_settlement_requests")
+      .from("advance_requests")
       .select("id")
       .eq("delivery_id", driverId)
-      .eq("shift_id", shiftId)
+      .eq("status", "pending_close")
       .maybeSingle();
 
     if (existing) { setSettlementSent(true); setShowSettlementConfirm(false); return; }
 
-    const currentShiftId = shiftId;
     setSettlementSubmitting(true);
     try {
-      await supabase.from("shift_settlement_requests").insert({
+      await supabase.from("advance_requests").insert({
         delivery_id: driverId,
-        shift_id:    currentShiftId,
-        status:      "pending",
+        amount:      settlementAmount,
+        note:        "طلب تقفيل وردية",
+        status:      "pending_close",
       });
-      /* Mark driver inactive immediately — prevents new orders after settlement */
-      await supabase
-        .from("delivery_shifts")
-        .update({ is_active: false })
-        .eq("delivery_id", driverId)
-        .eq("shift_id", currentShiftId);
       setSettlementSent(true);
       setShowSettlementConfirm(false);
-      setShiftId(null);
     } catch { setPageError("خطأ في إرسال طلب التقفيل، حاول مرة أخرى"); }
     finally   { setSettlementSubmitting(false); }
   }
@@ -736,11 +798,13 @@ export default function DriverAccountsPage() {
   }, []);
 
   /* Derived */
-  const deliveredOrders    = todayOrders.filter((o) => o.status === "delivered");
-  const activeOrders       = todayOrders.filter((o) => o.status !== "delivered");
-  const collectedOrders    = deliveredOrders.filter((o) => o.paymentMethod !== null);
-  const totalDeliveryFees  = collectedOrders.reduce((s, o) => s + o.deliveryFee, 0);
-  const settlementAmount   = (officeAdvance ?? 0) + totalDeliveryFees;
+  const deliveredOrders = todayOrders.filter((o) => o.status === "delivered");
+  const activeOrders    = todayOrders.filter((o) => o.status === "accepted" || o.status === "on_the_way");
+  const collectedOrders = deliveredOrders.filter((o) => o.paymentMethod !== null);
+  const totalCash     = Math.round(deliveredOrders.filter((o) => o.paymentMethod === "cash" || o.paymentMethod === "mixed").reduce((s, o) => s + o.deliveryFee, 0));
+  const totalVodafone = Math.round(deliveredOrders.filter((o) => o.paymentMethod === "vodafone").reduce((s, o) => s + o.deliveryFee, 0));
+
+  const settlementAmount = Math.round(totalCash + totalVodafone + totalCustody);
 
   /* ── Loading ── */
   if (loading) {
@@ -810,6 +874,20 @@ export default function DriverAccountsPage() {
 
       <div className="flex-1 flex flex-col gap-4 p-4 pb-28">
 
+        {/* ── Shift closed ── */}
+        {shiftClosed ? (
+          <div className="flex flex-col items-center justify-center gap-3 py-16 text-center">
+            <span style={{ fontSize: 48 }}>✅</span>
+            <p className="font-bold text-lg" style={{ color: C.teal }}>
+              تم تقفيل الوردية بنجاح
+            </p>
+            <p className="text-sm" style={{ color: C.muted }}>
+              تم تحديث حساباتك، يمكنك مراجعة الأرشيف المالي
+            </p>
+          </div>
+        ) : (
+        <>
+
         {/* ── TAB: الوردية الحالية ── */}
         {tab === "current" && (
           <>
@@ -851,7 +929,11 @@ export default function DriverAccountsPage() {
 
             {/* Shift summary */}
             {(shiftId || settlementSent) && (
-              <ShiftSummary orders={todayOrders} officeAdvance={officeAdvance} />
+              <ShiftSummary
+                totalCash={totalCash}
+                totalVodafone={totalVodafone}
+                totalCustody={totalCustody}
+              />
             )}
 
             {/* Active orders — read-only */}
@@ -962,6 +1044,9 @@ export default function DriverAccountsPage() {
               </>
             )}
           </>
+        )}
+
+        </> /* end !shiftClosed */
         )}
       </div>
 

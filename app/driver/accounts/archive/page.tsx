@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback, useRef } from "react";
+import { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase";
 import { useCurrentUser } from "@/hooks/useCurrentUser";
@@ -78,18 +78,24 @@ export default function DriverArchivePage() {
   const router = useRouter();
   const { user: authUser, loading: authLoading } = useCurrentUser();
 
-  const [loading,       setLoading]       = useState(true);
-  const [driverId,      setDriverId]      = useState<string | null>(null);
-  const [driverInitial, setDriverInitial] = useState("م");
-  const [walletBalance, setWalletBalance] = useState(0);
-  const [totalReceived, setTotalReceived] = useState(0);
-  const [entries,       setEntries]       = useState<ArchiveEntry[]>([]);
+  const [loading,             setLoading]             = useState(true);
+  const [driverId,            setDriverId]            = useState<string | null>(null);
+  const [driverInitial,       setDriverInitial]       = useState("م");
+  const [walletBalance,       setWalletBalance]       = useState(0);
+  const [totalReceived,       setTotalReceived]       = useState(0);
+  const [totalCurrentEarnings, setTotalCurrentEarnings] = useState(0);
+  const [entries,             setEntries]             = useState<ArchiveEntry[]>([]);
+  const [fromDate, setFromDate] = useState("");
+  const [toDate,   setToDate]   = useState("");
+  const [page,     setPage]     = useState(0);
+  const PAGE_SIZE = 7;
 
   const loadData = useCallback(async (did: string) => {
     const [
       { data: staffData },
       { data: txData },
       { data: settlementData },
+      { data: currentEarnings },
     ] = await Promise.all([
       supabase
         .from("delivery_staff")
@@ -108,30 +114,49 @@ export default function DriverArchivePage() {
         .eq("delivery_id", did)
         .eq("status", "completed")
         .order("created_at", { ascending: false }),
+      supabase
+        .from("delivery_accounts")
+        .select("amount")
+        .eq("delivery_id", did)
+        .eq("type", "commission")
+        .eq("settled", false),
     ]);
 
     /* ── Wallet balance (current) ── */
     setWalletBalance(staffData?.wallet_balance ?? 0);
 
+    const totalCE = Math.round(
+      currentEarnings?.reduce((s: number, r: any) => s + r.amount, 0) ?? 0
+    );
+    setTotalCurrentEarnings(totalCE);
+
     /* ── Build transaction entries ── */
     const txEntries: ArchiveEntry[] = (txData ?? []).map((row: any) => {
-      const incoming = entryIsIncoming(row.type, row.from_wallet ?? "");
+      const incoming =
+        row.type === "commission" ? true  :
+        row.type === "صرف"       ? false :
+        row.type === "خصم"       ? false :
+        entryIsIncoming(row.type, row.from_wallet ?? "");
+      const label =
+        row.type === "commission"
+          ? `أرباح وردية — ${fmtDateAr(row.created_at)}`
+          : row.reason || row.type;
       return {
         id:           `tx-${row.id}`,
         createdAt:    row.created_at,
         dateLabel:    fmtDateAr(row.created_at),
-        label:        entryLabel(row.type, row.reason),
+        label,
         amount:       row.amount ?? 0,
         isIncoming:   incoming,
         isSettlement: false,
       };
     });
 
-    /* إجمالي الأرباح المستلمة = مجموع المعاملات الواردة فقط (لا تشمل العهدة) */
-    const received = txEntries
-      .filter((e) => e.isIncoming)
-      .reduce((s, e) => s + e.amount, 0);
-    setTotalReceived(received);
+    /* إجمالي الأرباح المستلمة = مجموع ما صرفه الأدمن للسائق فعلاً */
+    const received = (txData ?? [])
+      .filter((r: any) => r.type === "صرف")
+      .reduce((s: number, r: any) => s + (r.amount ?? 0), 0);
+    setTotalReceived(Math.round(received));
 
     /* ── Settlement entries: fetch delivery fees per shift (display only) ── */
     // TODO: store driver's exact earnings share per settlement in a DB column when available.
@@ -188,6 +213,8 @@ export default function DriverArchivePage() {
     init();
   }, [authLoading, authUser, loadData]);
 
+  useEffect(() => { setPage(0); }, [fromDate, toDate]);
+
   /* ── Smart auto-refresh — must be before any early returns ── */
   const refreshFnRef   = useRef<(() => void) | null>(null);
   const lastRefreshRef = useRef(0);
@@ -211,6 +238,16 @@ export default function DriverArchivePage() {
       window.removeEventListener("focus", onVisible);
     };
   }, []);
+
+  const filteredEntries = useMemo(() => {
+    let r = entries;
+    if (fromDate) r = r.filter((e) => e.createdAt >= fromDate);
+    if (toDate)   r = r.filter((e) => e.createdAt <= toDate + "T23:59:59");
+    return r;
+  }, [entries, fromDate, toDate]);
+
+  const totalPages = Math.ceil(filteredEntries.length / PAGE_SIZE);
+  const paginated  = filteredEntries.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE);
 
   /* ── Loading ── */
   if (loading) {
@@ -280,7 +317,7 @@ export default function DriverArchivePage() {
           </div>
           <div className="text-left">
             <p className="text-xs" style={{ color: C.muted }}>أرباحك الحالية</p>
-            <p className="text-2xl font-black mt-0.5" style={{ color: C.green }}>{fmtAmt(walletBalance)}</p>
+            <p className="text-2xl font-black mt-0.5" style={{ color: C.green }}>{fmtAmt(totalCurrentEarnings)}</p>
           </div>
         </div>
 
@@ -291,42 +328,94 @@ export default function DriverArchivePage() {
             <p className="text-sm font-semibold" style={{ color: C.muted }}>لا يوجد سجل مالي بعد</p>
           </div>
         ) : (
-          <div className="rounded-2xl overflow-hidden"
-            style={{ background: C.card, border: `1px solid ${C.border}` }}>
-            {entries.map((entry, i) => (
-              <div
-                key={entry.id}
-                className="flex items-center justify-between gap-3 px-4 py-3.5"
-                style={{ borderBottom: i < entries.length - 1 ? `1px solid ${C.border}` : "none" }}
-              >
-                {/* Right: date + label */}
-                <div className="flex flex-col gap-0.5 flex-1 min-w-0">
-                  <p className="text-xs" style={{ color: C.muted }}>{entry.dateLabel}</p>
-                  <div className="flex items-center gap-1.5">
-                    {entry.isSettlement && (
-                      <span
-                        className="text-[10px] px-1.5 py-0.5 rounded font-bold flex-shrink-0"
-                        style={{ background: `${C.teal}20`, color: C.teal }}
-                      >
-                        وردية
-                      </span>
-                    )}
-                    <p className="text-sm font-bold truncate" style={{ color: C.text }}>
-                      {entry.label}
+          <>
+            {/* Date filter */}
+            <div className="rounded-2xl p-3 flex flex-col gap-2"
+              style={{ background: C.card, border: `1px solid ${C.border}` }}>
+              <div className="flex gap-2">
+                <div className="flex flex-col gap-1 flex-1">
+                  <label className="text-[10px] font-semibold" style={{ color: C.muted }}>من تاريخ</label>
+                  <input type="date" value={fromDate} onChange={(e) => setFromDate(e.target.value)}
+                    className="rounded-lg px-2 py-1.5 text-xs outline-none w-full"
+                    dir="ltr" lang="en-US"
+                    onFocus={(e) => { e.currentTarget.style.color = C.text; }}
+                    onBlur={(e)  => { if (!e.currentTarget.value) e.currentTarget.style.color = "transparent"; }}
+                    style={{ background: C.bg, border: `1px solid ${C.border}`, color: fromDate ? C.text : "transparent", colorScheme: "dark" as const, direction: "ltr", unicodeBidi: "embed" }} />
+                </div>
+                <div className="flex flex-col gap-1 flex-1">
+                  <label className="text-[10px] font-semibold" style={{ color: C.muted }}>إلى تاريخ</label>
+                  <input type="date" value={toDate} onChange={(e) => setToDate(e.target.value)}
+                    className="rounded-lg px-2 py-1.5 text-xs outline-none w-full"
+                    dir="ltr" lang="en-US"
+                    onFocus={(e) => { e.currentTarget.style.color = C.text; }}
+                    onBlur={(e)  => { if (!e.currentTarget.value) e.currentTarget.style.color = "transparent"; }}
+                    style={{ background: C.bg, border: `1px solid ${C.border}`, color: toDate ? C.text : "transparent", colorScheme: "dark" as const, direction: "ltr", unicodeBidi: "embed" }} />
+                </div>
+              </div>
+              {(fromDate || toDate) && (
+                <button onClick={() => { setFromDate(""); setToDate(""); }}
+                  className="self-start py-1 px-2.5 rounded-lg text-[11px] font-bold"
+                  style={{ background: `${C.red}18`, color: C.red, border: `1px solid ${C.red}33` }}>
+                  مسح الفلتر
+                </button>
+              )}
+            </div>
+
+            {paginated.length === 0 ? (
+              <div className="flex flex-col items-center justify-center gap-3 py-10">
+                <span style={{ fontSize: 36 }}>🔍</span>
+                <p className="text-sm font-semibold" style={{ color: C.muted }}>لا توجد نتائج لهذا النطاق</p>
+              </div>
+            ) : (
+              <div className="rounded-2xl overflow-hidden"
+                style={{ background: C.card, border: `1px solid ${C.border}` }}>
+                {paginated.map((entry, i) => (
+                  <div
+                    key={entry.id}
+                    className="flex items-center justify-between gap-3 px-4 py-3.5"
+                    style={{ borderBottom: i < paginated.length - 1 ? `1px solid ${C.border}` : "none" }}
+                  >
+                    <div className="flex flex-col gap-0.5 flex-1 min-w-0">
+                      <p className="text-xs" style={{ color: C.muted }}>{entry.dateLabel}</p>
+                      <div className="flex items-center gap-1.5">
+                        {entry.isSettlement && (
+                          <span
+                            className="text-[10px] px-1.5 py-0.5 rounded font-bold flex-shrink-0"
+                            style={{ background: `${C.teal}20`, color: C.teal }}
+                          >
+                            وردية
+                          </span>
+                        )}
+                        <p className="text-sm font-bold truncate" style={{ color: C.text }}>
+                          {entry.label}
+                        </p>
+                      </div>
+                    </div>
+                    <p
+                      className="text-sm font-black flex-shrink-0"
+                      style={{ color: entry.isIncoming ? C.green : C.red }}
+                    >
+                      {entry.isIncoming ? "+" : "−"}{fmtAmt(entry.amount)}
                     </p>
                   </div>
-                </div>
-
-                {/* Left: amount */}
-                <p
-                  className="text-sm font-black flex-shrink-0"
-                  style={{ color: entry.isIncoming ? C.green : C.red }}
-                >
-                  {entry.isIncoming ? "+" : "−"}{fmtAmt(entry.amount)}
-                </p>
+                ))}
               </div>
-            ))}
-          </div>
+            )}
+
+            {totalPages > 1 && (
+              <div className="flex items-center justify-between px-1">
+                <button onClick={() => setPage((p) => Math.max(0, p - 1))} disabled={page === 0}
+                  className="px-3 py-1.5 rounded-lg text-xs font-bold disabled:opacity-40"
+                  style={{ background: `${C.teal}18`, color: C.teal }}>السابق</button>
+                <span className="text-xs" style={{ color: C.muted }}>
+                  صفحة {page + 1} من {totalPages}
+                </span>
+                <button onClick={() => setPage((p) => Math.min(totalPages - 1, p + 1))} disabled={page >= totalPages - 1}
+                  className="px-3 py-1.5 rounded-lg text-xs font-bold disabled:opacity-40"
+                  style={{ background: `${C.teal}18`, color: C.teal }}>التالي</button>
+              </div>
+            )}
+          </>
         )}
       </div>
     </div>
