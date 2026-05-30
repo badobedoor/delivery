@@ -43,7 +43,7 @@ type CustodyTx = {
   createdAt: string;
   balance:   number;
 };
-type TxType       = "صرف" | "تحصيل" | "تحويل" | "إيداع" | "عهدة";
+type TxType       = "صرف" | "تحصيل" | "تحويل" | "إيداع" | "عهدة" | "إضافة" | "commission";
 
 type Transaction = {
   id:          string;
@@ -141,8 +141,18 @@ const TX_META: Record<TxType, { icon: string; color: string; label: (t: Transact
   },
   "تحويل": {
     icon:  "⇄",
-    color: C.blue,
+    color: C.green,
     label: (t) => `تحويل ${fmtAmt(t.amount)} من ${t.fromWallet} إلى ${t.toWallet}`,
+  },
+  "إضافة": {
+    icon:  "↓",
+    color: C.green,
+    label: (t) => `إضافة ${fmtAmt(t.amount)}${t.personName ? ` لـ ${t.personName}` : ""}`,
+  },
+  "commission": {
+    icon:  "★",
+    color: C.teal,
+    label: (t) => `حصة توصيل ${fmtAmt(t.amount)}${t.personName ? ` — ${t.personName}` : ""}`,
   },
   "إيداع": {
     icon:  "+",
@@ -894,9 +904,9 @@ function ManageModal({ target, officeBalance, deliveryBalance, motoBalance, cust
             <label className="text-xs font-semibold" style={{ color: C.muted }}>نوع العملية</label>
             <div className="flex gap-2">
               {([
-                { v: "صرف",    label: "صرف (دفع)",      col: C.teal   },
-                { v: "تحصيل", label: "تحصيل (استرداد)", col: C.orange },
-              ] as const).map(({ v, label, col }) => {
+                { v: "صرف",    label: "➖ صرف راتب / مكافأة", col: C.teal   },
+                { v: "تحصيل", label: "➕ إضافة / تصحيح",   col: C.orange },
+              ] as const).filter(({ v }) => wallet !== "custody" || v === "صرف").map(({ v, label, col }) => {
                 const active = op === v;
                 return (
                   <button key={v} onClick={() => { setOp(v); setError(""); }}
@@ -913,8 +923,8 @@ function ManageModal({ target, officeBalance, deliveryBalance, motoBalance, cust
             </div>
             <p className="text-[11px] px-1" style={{ color: C.muted }}>
               {op === "صرف"
-                ? `صرف: يزيد رصيد ${target.name} ويخصم من الخزنة المختارة`
-                : `تحصيل: يقل رصيد ${target.name} ويخصم من الخزنة المختارة أيضاً`}
+                ? `سيُخصم من رصيد ${target.name}`
+                : `سيُضاف لرصيد ${target.name}`}
             </p>
           </div>
 
@@ -922,7 +932,7 @@ function ManageModal({ target, officeBalance, deliveryBalance, motoBalance, cust
             <label className="text-xs font-semibold" style={{ color: C.muted }}>
               من خزنة <span style={{ color: C.red }}>*</span>
             </label>
-            <select value={wallet} onChange={(e) => { setWallet(e.target.value as WalletCat); setError(""); setNote(""); }}
+            <select value={wallet} onChange={(e) => { const w = e.target.value as WalletCat; setWallet(w); setError(""); setNote(""); if (w === "custody") setOp("صرف"); }}
               className="w-full rounded-xl px-3 py-2.5 text-sm outline-none" style={sel}>
               {WALLET_OPTIONS.filter((o) => o.value !== "custody" || target.type === "driver").map((o) => (
                 <option key={o.value} value={o.value}>
@@ -954,14 +964,16 @@ function ManageModal({ target, officeBalance, deliveryBalance, motoBalance, cust
             </p>
           )}
 
-          <div className="flex flex-col gap-1.5">
-            <label className="text-xs font-semibold" style={{ color: C.muted }}>البيان</label>
-            <textarea value={note} onChange={(e) => setNote(e.target.value)}
-              placeholder="مثال: راتب، مكافأة، خصم غياب، بنزين..."
-              rows={2}
-              className="w-full rounded-xl px-3 py-2.5 text-sm outline-none resize-none"
-              style={{ background: C.bg, border: `1px solid ${C.border}`, color: C.text }} />
-          </div>
+          {wallet !== "custody" && (
+            <div className="flex flex-col gap-1.5">
+              <label className="text-xs font-semibold" style={{ color: C.muted }}>البيان</label>
+              <textarea value={note} onChange={(e) => setNote(e.target.value)}
+                placeholder="مثال: راتب، مكافأة، خصم غياب، بنزين..."
+                rows={2}
+                className="w-full rounded-xl px-3 py-2.5 text-sm outline-none resize-none"
+                style={{ background: C.bg, border: `1px solid ${C.border}`, color: C.text }} />
+            </div>
+          )}
         </div>
 
         <div className="flex gap-3 px-5 py-4 border-t" style={{ borderColor: C.border }}>
@@ -969,6 +981,106 @@ function ManageModal({ target, officeBalance, deliveryBalance, motoBalance, cust
             className="flex-1 py-2.5 rounded-xl text-sm font-bold hover:opacity-90 disabled:opacity-50 transition-opacity"
             style={{ background: opColor, color: "#fff" }}>
             {submitting ? "جارٍ المعالجة..." : "تأكيد"}
+          </button>
+          <button onClick={onClose} disabled={submitting}
+            className="flex-1 py-2.5 rounded-xl text-sm font-bold hover:opacity-80 disabled:opacity-50 transition-opacity"
+            style={{ background: C.bg, color: C.muted, border: `1px solid ${C.border}` }}>إلغاء</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ─────────────────────────────────────────────
+   MODAL — إجراء بسيط (صرف / إضافة / عهدة)
+───────────────────────────────────────────── */
+
+function SimpleActionModal({
+  title,
+  targetName,
+  withNote,
+  accentColor,
+  confirmLabel,
+  onSubmit,
+  onClose,
+  submitting,
+}: {
+  title:        string;
+  targetName:   string;
+  withNote:     boolean;
+  accentColor:  string;
+  confirmLabel: string;
+  onSubmit:     (amount: number, note: string) => void;
+  onClose:      () => void;
+  submitting:   boolean;
+}) {
+  const [amount, setAmount] = useState("");
+  const [note,   setNote]   = useState("");
+  const [error,  setError]  = useState("");
+
+  function handleConfirm() {
+    const n = parseFloat(amount);
+    if (!n || n <= 0) { setError("أدخل مبلغاً أكبر من صفر"); return; }
+    onSubmit(n, note.trim());
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4"
+      style={{ background: "rgba(0,0,0,0.75)" }}
+      onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}>
+      <div className="w-full max-w-sm rounded-2xl flex flex-col"
+        style={{ background: C.card, border: `1px solid ${C.border}` }}>
+
+        <div className="flex items-center justify-between px-5 py-4 border-b" style={{ borderColor: C.border }}>
+          <div>
+            <h2 className="text-base font-black" style={{ color: C.text }}>{title}</h2>
+            <p className="text-xs mt-0.5" style={{ color: C.muted }}>{targetName}</p>
+          </div>
+          <button onClick={onClose}
+            className="w-8 h-8 rounded-full flex items-center justify-center hover:opacity-70"
+            style={{ background: C.bg, color: C.muted }}>✕</button>
+        </div>
+
+        <div className="px-5 py-4 flex flex-col gap-4">
+          <div className="flex flex-col gap-1.5">
+            <label className="text-xs font-semibold" style={{ color: C.muted }}>
+              المبلغ <span style={{ color: C.red }}>*</span>
+            </label>
+            <div className="relative">
+              <input type="number" min="0" value={amount}
+                onChange={(e) => { setAmount(e.target.value); setError(""); }}
+                placeholder="0"
+                className="w-full rounded-xl px-3 py-2.5 text-sm outline-none"
+                style={{ background: C.bg, border: `1px solid ${accentColor}55`, color: C.text }} />
+              <span className="absolute top-1/2 -translate-y-1/2 left-3 text-xs font-bold"
+                style={{ color: C.muted }}>ج.م</span>
+            </div>
+          </div>
+
+          {withNote && (
+            <div className="flex flex-col gap-1.5">
+              <label className="text-xs font-semibold" style={{ color: C.muted }}>البيان</label>
+              <input type="text" value={note}
+                onChange={(e) => setNote(e.target.value)}
+                placeholder="مثال: راتب، مكافأة..."
+                className="w-full rounded-xl px-3 py-2.5 text-sm outline-none"
+                style={{ background: C.bg, border: `1px solid ${C.border}`, color: C.text }} />
+            </div>
+          )}
+
+          {error && (
+            <p className="text-xs text-center py-1.5 px-3 rounded-lg"
+              style={{ background: `${C.red}18`, color: C.red, border: `1px solid ${C.red}33` }}>
+              ⚠ {error}
+            </p>
+          )}
+        </div>
+
+        <div className="flex gap-3 px-5 py-4 border-t" style={{ borderColor: C.border }}>
+          <button onClick={handleConfirm} disabled={submitting}
+            className="flex-1 py-2.5 rounded-xl text-sm font-bold hover:opacity-90 disabled:opacity-50 transition-opacity"
+            style={{ background: accentColor, color: "#fff" }}>
+            {submitting ? "جارٍ المعالجة..." : confirmLabel}
           </button>
           <button onClick={onClose} disabled={submitting}
             className="flex-1 py-2.5 rounded-xl text-sm font-bold hover:opacity-80 disabled:opacity-50 transition-opacity"
@@ -1197,13 +1309,103 @@ function DepositModal({ onSubmit, onClose, submitting }: {
 }
 
 /* ─────────────────────────────────────────────
+   MODAL D — سحب رصيد من خزنة المكتب
+───────────────────────────────────────────── */
+
+function WithdrawModal({ officeBalance, onSubmit, onClose, submitting }: {
+  officeBalance: number;
+  onSubmit:      (amount: number, note: string) => void;
+  onClose:       () => void;
+  submitting:    boolean;
+}) {
+  const [amount, setAmount] = useState("");
+  const [note,   setNote]   = useState("");
+  const [error,  setError]  = useState("");
+
+  function handleConfirm() {
+    const n = parseFloat(amount);
+    if (!n || n <= 0)        { setError("أدخل مبلغاً أكبر من صفر"); return; }
+    if (n > officeBalance)   { setError("رصيد غير كافٍ");           return; }
+    onSubmit(n, note.trim());
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4"
+      style={{ background: "rgba(0,0,0,0.75)" }}
+      onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}>
+      <div className="w-full max-w-sm rounded-2xl flex flex-col"
+        style={{ background: C.card, border: `1px solid ${C.border}` }}>
+
+        <div className="flex items-center justify-between px-5 py-4 border-b" style={{ borderColor: C.border }}>
+          <h2 className="text-base font-black" style={{ color: C.text }}>سحب رصيد — خزنة المكتب</h2>
+          <button onClick={onClose}
+            className="w-8 h-8 rounded-full flex items-center justify-center hover:opacity-70"
+            style={{ background: C.bg, color: C.muted }}>✕</button>
+        </div>
+
+        <div className="px-5 py-4 flex flex-col gap-4">
+          <div className="rounded-xl px-3 py-2 flex justify-between items-center"
+            style={{ background: C.bg, border: `1px solid ${C.border}` }}>
+            <span className="text-xs" style={{ color: C.muted }}>الرصيد الحالي</span>
+            <span className="text-sm font-black" style={{ color: C.teal }}>{fmtAmt(officeBalance)}</span>
+          </div>
+
+          <div className="flex flex-col gap-1.5">
+            <label className="text-xs font-semibold" style={{ color: C.muted }}>
+              المبلغ <span style={{ color: C.red }}>*</span>
+            </label>
+            <div className="relative">
+              <input type="number" min="0" value={amount}
+                onChange={(e) => { setAmount(e.target.value); setError(""); }}
+                placeholder="0"
+                className="w-full rounded-xl px-3 py-2.5 text-sm outline-none"
+                style={{ background: C.bg, border: `1px solid ${C.red}55`, color: C.text }} />
+              <span className="absolute top-1/2 -translate-y-1/2 left-3 text-xs font-bold"
+                style={{ color: C.muted }}>ج.م</span>
+            </div>
+          </div>
+
+          <div className="flex flex-col gap-1.5">
+            <label className="text-xs font-semibold" style={{ color: C.muted }}>البيان</label>
+            <input type="text" value={note}
+              onChange={(e) => { setNote(e.target.value); setError(""); }}
+              placeholder="مثال: مصاريف تشغيل، إيجار..."
+              className="w-full rounded-xl px-3 py-2.5 text-sm outline-none"
+              style={{ background: C.bg, border: `1px solid ${C.border}`, color: C.text }} />
+          </div>
+
+          {error && (
+            <p className="text-xs text-center py-1.5 px-3 rounded-lg"
+              style={{ background: `${C.red}18`, color: C.red, border: `1px solid ${C.red}33` }}>
+              ⚠ {error}
+            </p>
+          )}
+        </div>
+
+        <div className="flex gap-3 px-5 py-4 border-t" style={{ borderColor: C.border }}>
+          <button onClick={handleConfirm} disabled={submitting}
+            className="flex-1 py-2.5 rounded-xl text-sm font-bold hover:opacity-90 disabled:opacity-50 transition-opacity"
+            style={{ background: C.red, color: "#fff" }}>
+            {submitting ? "جارٍ السحب..." : "تأكيد السحب"}
+          </button>
+          <button onClick={onClose} disabled={submitting}
+            className="flex-1 py-2.5 rounded-xl text-sm font-bold hover:opacity-80 disabled:opacity-50 transition-opacity"
+            style={{ background: C.bg, color: C.muted, border: `1px solid ${C.border}` }}>إلغاء</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ─────────────────────────────────────────────
    TAB: خزنة المكتب
 ───────────────────────────────────────────── */
 
-function OfficeWalletTab({ balance, transactions, onDeposit }: {
+function OfficeWalletTab({ balance, transactions, onDeposit, onWithdraw }: {
   balance:      number;
   transactions: Transaction[];
   onDeposit:    () => void;
+  onWithdraw:   () => void;
 }) {
   return (
     <div className="flex flex-col gap-4">
@@ -1212,13 +1414,22 @@ function OfficeWalletTab({ balance, transactions, onDeposit }: {
         <div>
           <p className="text-xs mb-1" style={{ color: C.muted }}>إجمالي خزنة المكتب</p>
           <p className="text-3xl font-black" style={{ color: C.teal }}>{fmtAmt(balance)}</p>
-          <button
-            onClick={onDeposit}
-            className="mt-3 flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold hover:opacity-90 transition-opacity"
-            style={{ background: `${C.green}22`, color: C.green, border: `1px solid ${C.green}44` }}>
-            <span>+</span>
-            <span>إيداع رصيد</span>
-          </button>
+          <div className="mt-3 flex items-center gap-2">
+            <button
+              onClick={onDeposit}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold hover:opacity-90 transition-opacity"
+              style={{ background: `${C.green}22`, color: C.green, border: `1px solid ${C.green}44` }}>
+              <span>+</span>
+              <span>إيداع رصيد</span>
+            </button>
+            <button
+              onClick={onWithdraw}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold hover:opacity-90 transition-opacity"
+              style={{ background: `${C.red}22`, color: C.red, border: `1px solid ${C.red}44` }}>
+              <span>−</span>
+              <span>سحب رصيد</span>
+            </button>
+          </div>
         </div>
         <span style={{ fontSize: 40 }}>🏦</span>
       </div>
@@ -1231,19 +1442,28 @@ function OfficeWalletTab({ balance, transactions, onDeposit }: {
    TAB: خزنة الدلفري
 ───────────────────────────────────────────── */
 
-function DeliveryWalletTab({ poolBalance, drivers, transactions, onManage }: {
-  poolBalance:  number;
-  drivers:      DriverWallet[];
-  transactions: Transaction[];
-  onManage:     (id: number) => void;
+function DeliveryWalletTab({ poolBalance, totalCommission, drivers, transactions, onDriverPay, onDriverCustody, onDriverAdd }: {
+  poolBalance:     number;
+  totalCommission: number;
+  drivers:         DriverWallet[];
+  transactions:    Transaction[];
+  onDriverPay:     (id: number) => void;
+  onDriverCustody: (id: number) => void;
+  onDriverAdd:     (id: number) => void;
 }) {
   return (
     <div className="flex flex-col gap-4">
       <div className="rounded-2xl p-5 flex items-center justify-between"
         style={{ background: C.card, border: `1px solid ${C.border}` }}>
-        <div>
-          <p className="text-xs mb-1" style={{ color: C.muted }}>خزنة الدلفري</p>
-          <p className="text-3xl font-black" style={{ color: C.orange }}>{fmtAmt(poolBalance)}</p>
+        <div className="flex gap-6 flex-wrap">
+          <div>
+            <p className="text-xs mb-1" style={{ color: C.muted }}>رصيد الخزنة</p>
+            <p className="text-3xl font-black" style={{ color: C.orange }}>{fmtAmt(poolBalance)}</p>
+          </div>
+          <div className="border-r pr-6" style={{ borderColor: C.border }}>
+            <p className="text-xs mb-1" style={{ color: C.muted }}>إجمالي الحصص</p>
+            <p className="text-3xl font-black" style={{ color: C.teal }}>{fmtAmt(totalCommission)}</p>
+          </div>
         </div>
         <span style={{ fontSize: 40 }}>🛵</span>
       </div>
@@ -1287,9 +1507,17 @@ function DeliveryWalletTab({ poolBalance, drivers, transactions, onManage }: {
                       style={{ color: d.balance >= 0 ? C.green : C.red }}>{fmtAmt(d.balance)}</span>
                   </td>
                   <td className="px-4 py-3">
-                    <button onClick={() => onManage(d.id)}
-                      className="px-3 py-1.5 rounded-lg text-xs font-bold hover:opacity-80 transition-opacity"
-                      style={{ background: `${C.teal}22`, color: C.teal }}>إدارة</button>
+                    <div className="flex flex-wrap gap-1.5">
+                      <button onClick={() => onDriverPay(d.id)}
+                        className="px-3 py-1.5 rounded-lg text-xs font-bold hover:opacity-80 transition-opacity"
+                        style={{ background: `${C.teal}22`, color: C.teal }}>صرف راتب</button>
+                      <button onClick={() => onDriverCustody(d.id)}
+                        className="px-3 py-1.5 rounded-lg text-xs font-bold hover:opacity-80 transition-opacity"
+                        style={{ background: `${C.orange}22`, color: C.orange }}>عهدة</button>
+                      <button onClick={() => onDriverAdd(d.id)}
+                        className="px-3 py-1.5 rounded-lg text-xs font-bold hover:opacity-80 transition-opacity"
+                        style={{ background: `${C.green}22`, color: C.green }}>➕ إضافة</button>
+                    </div>
                   </td>
                 </tr>
               ))}
@@ -1310,19 +1538,27 @@ function DeliveryWalletTab({ poolBalance, drivers, transactions, onManage }: {
    TAB: خزنة الموتسكلات
 ───────────────────────────────────────────── */
 
-function MotoWalletTab({ poolBalance, motos, transactions, onManage }: {
-  poolBalance:  number;
-  motos:        MotoWallet[];
-  transactions: Transaction[];
-  onManage:     (id: number) => void;
+function MotoWalletTab({ poolBalance, totalCommission, motos, transactions, onMotoPay, onMotoAdd }: {
+  poolBalance:     number;
+  totalCommission: number;
+  motos:           MotoWallet[];
+  transactions:    Transaction[];
+  onMotoPay:       (id: number) => void;
+  onMotoAdd:       (id: number) => void;
 }) {
   return (
     <div className="flex flex-col gap-4">
       <div className="rounded-2xl p-5 flex items-center justify-between"
         style={{ background: C.card, border: `1px solid ${C.border}` }}>
-        <div>
-          <p className="text-xs mb-1" style={{ color: C.muted }}>خزنة الموتوسيكلات</p>
-          <p className="text-3xl font-black" style={{ color: C.teal }}>{fmtAmt(poolBalance)}</p>
+        <div className="flex gap-6 flex-wrap">
+          <div>
+            <p className="text-xs mb-1" style={{ color: C.muted }}>رصيد الخزنة</p>
+            <p className="text-3xl font-black" style={{ color: C.teal }}>{fmtAmt(poolBalance)}</p>
+          </div>
+          <div className="border-r pr-6" style={{ borderColor: C.border }}>
+            <p className="text-xs mb-1" style={{ color: C.muted }}>إجمالي الحصص</p>
+            <p className="text-3xl font-black" style={{ color: C.orange }}>{fmtAmt(totalCommission)}</p>
+          </div>
         </div>
         <span style={{ fontSize: 40 }}>🏍</span>
       </div>
@@ -1366,9 +1602,14 @@ function MotoWalletTab({ poolBalance, motos, transactions, onManage }: {
                       style={{ color: m.balance >= 0 ? C.green : C.red }}>{fmtAmt(m.balance)}</span>
                   </td>
                   <td className="px-4 py-3">
-                    <button onClick={() => onManage(m.id)}
-                      className="px-3 py-1.5 rounded-lg text-xs font-bold hover:opacity-80 transition-opacity"
-                      style={{ background: `${C.teal}22`, color: C.teal }}>إدارة</button>
+                    <div className="flex gap-1.5">
+                      <button onClick={() => onMotoPay(m.id)}
+                        className="px-3 py-1.5 rounded-lg text-xs font-bold hover:opacity-80 transition-opacity"
+                        style={{ background: `${C.red}22`, color: C.red }}>صرف</button>
+                      <button onClick={() => onMotoAdd(m.id)}
+                        className="px-3 py-1.5 rounded-lg text-xs font-bold hover:opacity-80 transition-opacity"
+                        style={{ background: `${C.green}22`, color: C.green }}>إضافة</button>
+                    </div>
                   </td>
                 </tr>
               ))}
@@ -1618,6 +1859,7 @@ export default function AdminAccountsPage() {
   const [motoTxs,        setMotoTxs]        = useState<Transaction[]>([]);
   const [mainWalletTxs,  setMainWalletTxs]  = useState<Transaction[]>([]);
   const [showDeposit,    setShowDeposit]    = useState(false);
+  const [showWithdraw,   setShowWithdraw]   = useState(false);
   const [pendingRequests, setPendingRequests] = useState<AdvanceRequest[]>([]);
 
   const [settlementRequests, setSettlementRequests] = useState<SettlementRequest[]>([]);
@@ -1629,6 +1871,11 @@ export default function AdminAccountsPage() {
   const [approveCloseGuard,  setApproveCloseGuard]  = useState(false);
 
   const [manageTarget,  setManageTarget]  = useState<{ type: "driver" | "moto"; id: number; name: string } | null>(null);
+  const [manageMode,    setManageMode]    = useState<"driver-pay" | "driver-custody" | "driver-add" | "moto-pay" | "moto-add" | null>(null);
+  const [motoPoolBalance,     setMotoPoolBalance]     = useState(0);
+  const [deliveryPoolBalance, setDeliveryPoolBalance] = useState(0);
+  const [deliveryCommission,  setDeliveryCommission]  = useState(0);
+  const [motoCommission,      setMotoCommission]      = useState(0);
   const [showTransfer,  setShowTransfer]  = useState(false);
   const [transferKey,   setTransferKey]   = useState(0);
 
@@ -1656,6 +1903,8 @@ export default function AdminAccountsPage() {
       { data: closeData },
       { data: custodyWalletData },
       { data: custodyRecordsData },
+      { data: deliveryAllTxData },
+      { data: motoAllTxData },
     ] = await Promise.all([
       supabase
         .from("main_wallet")
@@ -1698,6 +1947,14 @@ export default function AdminAccountsPage() {
         .from("custody_records")
         .select("id, delivery_id, amount, status, created_at, delivery_staff(name)")
         .order("created_at", { ascending: false }),
+      supabase
+        .from("delivery_accounts")
+        .select("type, amount")
+        .in("type", ["تحويل", "إضافة", "صرف", "commission"]),
+      supabase
+        .from("motorcycle_accounts")
+        .select("type, amount")
+        .in("type", ["تحويل", "إضافة", "صرف", "commission"]),
     ]);
 
     if (walletData) {
@@ -1723,6 +1980,36 @@ export default function AdminAccountsPage() {
     }
     if (deliveryTxData) setDeliveryTxs((deliveryTxData as any[]).map(mapDeliveryTx));
     if (motoTxData)     setMotoTxs((motoTxData as any[]).map(mapMotoTx));
+    setDeliveryPoolBalance(Math.round(
+      (deliveryAllTxData as any[] ?? []).reduce((s: number, tx: any) => {
+        if (tx.type === "تحويل") return s + tx.amount;
+        if (tx.type === "إضافة") return s - tx.amount;
+        return s;
+      }, 0)
+    ));
+    setDeliveryCommission(Math.round(
+      (deliveryAllTxData as any[] ?? []).reduce((s: number, tx: any) => {
+        if (tx.type === "commission") return s + tx.amount;
+        if (tx.type === "إضافة")     return s + tx.amount;
+        if (tx.type === "صرف")       return s - tx.amount;
+        return s;
+      }, 0)
+    ));
+    setMotoPoolBalance(Math.round(
+      (motoAllTxData as any[] ?? []).reduce((s: number, tx: any) => {
+        if (tx.type === "تحويل") return s + tx.amount;
+        if (tx.type === "إضافة") return s - tx.amount;
+        return s;
+      }, 0)
+    ));
+    setMotoCommission(Math.round(
+      (motoAllTxData as any[] ?? []).reduce((s: number, tx: any) => {
+        if (tx.type === "commission") return s + tx.amount;
+        if (tx.type === "إضافة")     return s + tx.amount;
+        if (tx.type === "صرف")       return s - tx.amount;
+        return s;
+      }, 0)
+    ));
     if (advanceData) {
       setPendingRequests((advanceData as any[]).map((r) => ({
         id:         r.id,
@@ -1807,20 +2094,27 @@ export default function AdminAccountsPage() {
     return () => {};
   }, [loadData]);
 
-  /* ── Open manage modal ── */
-  function openDriverManage(id: number) {
+  /* ── Open action modals ── */
+  function closeManage() { setManageTarget(null); setManageMode(null); }
+  function openDriverPay(id: number) {
     const d = driverWallets.find((x) => x.id === id);
-    if (d) setManageTarget({ type: "driver", id, name: d.name });
+    if (d) { setManageTarget({ type: "driver", id, name: d.name }); setManageMode("driver-pay"); }
   }
-  function openMotoManage(id: number) {
+  function openDriverCustody(id: number) {
+    const d = driverWallets.find((x) => x.id === id);
+    if (d) { setManageTarget({ type: "driver", id, name: d.name }); setManageMode("driver-custody"); }
+  }
+  function openDriverAdd(id: number) {
+    const d = driverWallets.find((x) => x.id === id);
+    if (d) { setManageTarget({ type: "driver", id, name: d.name }); setManageMode("driver-add"); }
+  }
+  function openMotoPay(id: number) {
     const m = motoWallets.find((x) => x.id === id);
-    if (m) setManageTarget({ type: "moto", id, name: m.name });
+    if (m) { setManageTarget({ type: "moto", id, name: m.name }); setManageMode("moto-pay"); }
   }
-  function getManageBalance(): number {
-    if (!manageTarget) return 0;
-    if (manageTarget.type === "driver")
-      return driverWallets.find((d) => d.id === manageTarget.id)?.balance ?? 0;
-    return motoWallets.find((m) => m.id === manageTarget.id)?.balance ?? 0;
+  function openMotoAdd(id: number) {
+    const m = motoWallets.find((x) => x.id === id);
+    if (m) { setManageTarget({ type: "moto", id, name: m.name }); setManageMode("moto-add"); }
   }
 
   /* ── Handle إيداع في خزنة المكتب ── */
@@ -1842,6 +2136,34 @@ export default function AdminAccountsPage() {
       setSubmitting(false);
       setShowDeposit(false);
     }
+  }
+
+  /* ── Handle سحب من خزنة المكتب ── */
+  async function handleWithdraw(amount: number, note: string) {
+    setSubmitting(true);
+    try {
+      const { data: lastRow } = await supabase
+        .from("main_wallet").select("balance")
+        .order("created_at", { ascending: false }).limit(1).maybeSingle();
+      const lastBal = roundEGP((lastRow as any)?.balance ?? 0);
+      await supabase.from("main_wallet").insert({
+        type:    "صرف",
+        amount:  roundEGP(amount),
+        reason:  note || "سحب رصيد",
+        balance: roundEGP(lastBal - amount),
+      });
+      await loadData();
+    } finally {
+      setSubmitting(false);
+      setShowWithdraw(false);
+    }
+  }
+
+  function getManageBalance(): number {
+    if (!manageTarget) return 0;
+    if (manageTarget.type === "driver")
+      return driverWallets.find((d) => d.id === manageTarget.id)?.balance ?? 0;
+    return motoWallets.find((m) => m.id === manageTarget.id)?.balance ?? 0;
   }
 
   /* ── Handle صرف / تحصيل ── */
@@ -1875,7 +2197,7 @@ export default function AdminAccountsPage() {
           status:      "active",
         });
       } else {
-        const personDelta = op === "صرف" ? +roundedAmount : -roundedAmount;
+        const personDelta = op === "صرف" ? -roundedAmount : +roundedAmount;
 
         if (manageTarget.type === "driver") {
           const { data: lastDel } = await supabase
@@ -1885,9 +2207,9 @@ export default function AdminAccountsPage() {
           const lastDelBal = roundEGP((lastDel as any)?.balance ?? 0);
           await supabase.from("delivery_accounts").insert({
             delivery_id: manageTarget.id,
-            type:        op,
+            type:        op === "تحصيل" ? "إضافة" : op,
             amount:      roundedAmount,
-            reason:      note || (op === "صرف" ? "صرف" : null),
+            reason:      [note, manageTarget.name, "من خزنة الدلفري"].filter(Boolean).join(" — "),
             from_wallet: wallet,
             balance:     roundEGP(lastDelBal + personDelta),
             ...(op === "صرف" && { settled: false }),
@@ -1904,9 +2226,9 @@ export default function AdminAccountsPage() {
           const lastMotoBal = roundEGP((lastMoto as any)?.balance ?? 0);
           await supabase.from("motorcycle_accounts").insert({
             motorcycle_id: manageTarget.id,
-            type:          op,
+            type:          op === "تحصيل" ? "إضافة" : op,
             amount:        roundedAmount,
-            reason:        note || null,
+            reason:        [note, manageTarget.name, "من خزنة الموتسكلات"].filter(Boolean).join(" — "),
             balance:       roundEGP(lastMotoBal + personDelta),
           });
           await supabase
@@ -2010,19 +2332,35 @@ export default function AdminAccountsPage() {
         }
 
         if (from === "delivery" || to === "delivery") {
+          const { data: lastDelivery } = await supabase
+            .from("delivery_accounts")
+            .select("balance")
+            .order("created_at", { ascending: false })
+            .limit(1)
+            .maybeSingle();
+          const lastDeliveryBalance = Math.round((lastDelivery as any)?.balance ?? 0);
           await supabase.from("delivery_accounts").insert({
             type:        "تحويل",
             amount:      roundedAmount,
             reason:      note || null,
             from_wallet: from,
             delivery_id: null,
+            balance:     Math.round(lastDeliveryBalance + roundedAmount),
           });
         } else {
+          const { data: lastMoto } = await supabase
+            .from("motorcycle_accounts")
+            .select("balance")
+            .order("created_at", { ascending: false })
+            .limit(1)
+            .maybeSingle();
+          const lastMotoBalance = Math.round((lastMoto as any)?.balance ?? 0);
           await supabase.from("motorcycle_accounts").insert({
             type:          "تحويل",
             amount:        roundedAmount,
             reason:        note || null,
             motorcycle_id: null,
+            balance:       Math.round(lastMotoBalance + roundedAmount),
           });
         }
       }
@@ -2165,7 +2503,7 @@ export default function AdminAccountsPage() {
         const lastMotoBal = roundEGP((lastMotoRow as any)?.balance ?? 0);
         await supabase.from("motorcycle_accounts").insert({
           motorcycle_id: motorcycleId,
-          type:          "تحصيل",
+          type:          "commission",
           amount:        motoShare,
           reason:        `حصة موتسكل — ${req.driverName}`,
           balance:       roundEGP(lastMotoBal + motoShare),
@@ -2409,24 +2747,30 @@ export default function AdminAccountsPage() {
             balance={officeBalance}
             transactions={mainWalletTxs}
             onDeposit={() => setShowDeposit(true)}
+            onWithdraw={() => setShowWithdraw(true)}
           />
         )}
 
         {tab === "خزنة الدلفري" && (
           <DeliveryWalletTab
-            poolBalance={deliveryBalance}
+            poolBalance={deliveryPoolBalance}
+            totalCommission={deliveryCommission}
             drivers={driverWallets}
             transactions={allTransactions}
-            onManage={openDriverManage}
+            onDriverPay={openDriverPay}
+            onDriverCustody={openDriverCustody}
+            onDriverAdd={openDriverAdd}
           />
         )}
 
         {tab === "خزنة الموتسكلات" && (
           <MotoWalletTab
-            poolBalance={motoBalance}
+            poolBalance={motoPoolBalance}
+            totalCommission={motoCommission}
             motos={motoWallets}
             transactions={allTransactions}
-            onManage={openMotoManage}
+            onMotoPay={openMotoPay}
+            onMotoAdd={openMotoAdd}
           />
         )}
 
@@ -2439,16 +2783,72 @@ export default function AdminAccountsPage() {
         )}
       </div>
 
-      {/* Manage modal */}
-      {manageTarget && (
-        <ManageModal
-          target={{ ...manageTarget, balance: getManageBalance() }}
-          officeBalance={officeBalance}
-          deliveryBalance={deliveryBalance}
-          motoBalance={motoBalance}
-          custodyBalance={custodyBalance}
-          onSubmit={handleManage}
-          onClose={() => setManageTarget(null)}
+      {/* Driver pay modal */}
+      {manageTarget && manageMode === "driver-pay" && (
+        <SimpleActionModal
+          title="صرف راتب / مكافأة"
+          targetName={manageTarget.name}
+          withNote={true}
+          accentColor={C.teal}
+          confirmLabel="تأكيد الصرف"
+          onSubmit={(amount, note) => handleManage("صرف", "delivery", amount, note)}
+          onClose={closeManage}
+          submitting={submitting}
+        />
+      )}
+
+      {/* Driver add modal */}
+      {manageTarget && manageMode === "driver-add" && (
+        <SimpleActionModal
+          title="➕ إضافة لرصيد السائق"
+          targetName={manageTarget.name}
+          withNote={true}
+          accentColor={C.green}
+          confirmLabel="تأكيد الإضافة"
+          onSubmit={(amount, note) => handleManage("تحصيل", "delivery", amount, note)}
+          onClose={closeManage}
+          submitting={submitting}
+        />
+      )}
+
+      {/* Driver custody modal */}
+      {manageTarget && manageMode === "driver-custody" && (
+        <SimpleActionModal
+          title="عهدة"
+          targetName={manageTarget.name}
+          withNote={false}
+          accentColor={C.orange}
+          confirmLabel="تأكيد العهدة"
+          onSubmit={(amount) => handleManage("صرف", "custody", amount, "")}
+          onClose={closeManage}
+          submitting={submitting}
+        />
+      )}
+
+      {/* Moto pay modal */}
+      {manageTarget && manageMode === "moto-pay" && (
+        <SimpleActionModal
+          title="صرف"
+          targetName={manageTarget.name}
+          withNote={true}
+          accentColor={C.red}
+          confirmLabel="تأكيد الصرف"
+          onSubmit={(amount, note) => handleManage("صرف", "moto", amount, note)}
+          onClose={closeManage}
+          submitting={submitting}
+        />
+      )}
+
+      {/* Moto add modal */}
+      {manageTarget && manageMode === "moto-add" && (
+        <SimpleActionModal
+          title="إضافة"
+          targetName={manageTarget.name}
+          withNote={true}
+          accentColor={C.green}
+          confirmLabel="تأكيد الإضافة"
+          onSubmit={(amount, note) => handleManage("تحصيل", "moto", amount, note)}
+          onClose={closeManage}
           submitting={submitting}
         />
       )}
@@ -2458,8 +2858,8 @@ export default function AdminAccountsPage() {
         <TransferModal
           key={transferKey}
           officeBalance={officeBalance}
-          deliveryBalance={deliveryBalance}
-          motoBalance={motoBalance}
+          deliveryBalance={deliveryPoolBalance}
+          motoBalance={motoPoolBalance}
           custodyBalance={custodyBalance}
           onSubmit={handleTransfer}
           onClose={() => setShowTransfer(false)}
@@ -2472,6 +2872,16 @@ export default function AdminAccountsPage() {
         <DepositModal
           onSubmit={handleDeposit}
           onClose={() => setShowDeposit(false)}
+          submitting={submitting}
+        />
+      )}
+
+      {/* Withdraw modal */}
+      {showWithdraw && (
+        <WithdrawModal
+          officeBalance={officeBalance}
+          onSubmit={handleWithdraw}
+          onClose={() => setShowWithdraw(false)}
           submitting={submitting}
         />
       )}

@@ -95,7 +95,7 @@ export default function DriverArchivePage() {
       { data: staffData },
       { data: txData },
       { data: settlementData },
-      { data: currentEarnings },
+      { data: allTxs },
     ] = await Promise.all([
       supabase
         .from("delivery_staff")
@@ -116,17 +116,21 @@ export default function DriverArchivePage() {
         .order("created_at", { ascending: false }),
       supabase
         .from("delivery_accounts")
-        .select("amount")
+        .select("type, amount")
         .eq("delivery_id", did)
-        .eq("type", "commission")
-        .eq("settled", false),
+        .in("type", ["commission", "إضافة", "صرف"]),
     ]);
 
     /* ── Wallet balance (current) ── */
     setWalletBalance(staffData?.wallet_balance ?? 0);
 
     const totalCE = Math.round(
-      currentEarnings?.reduce((s: number, r: any) => s + r.amount, 0) ?? 0
+      allTxs?.reduce((s: number, tx: any) => {
+        if (tx.type === "commission") return s + tx.amount;
+        if (tx.type === "إضافة")     return s + tx.amount;
+        if (tx.type === "صرف")       return s - tx.amount;
+        return s;
+      }, 0) ?? 0
     );
     setTotalCurrentEarnings(totalCE);
 
@@ -152,11 +156,14 @@ export default function DriverArchivePage() {
       };
     });
 
-    /* إجمالي الأرباح المستلمة = مجموع ما صرفه الأدمن للسائق فعلاً */
-    const received = (txData ?? [])
-      .filter((r: any) => r.type === "صرف")
-      .reduce((s: number, r: any) => s + (r.amount ?? 0), 0);
-    setTotalReceived(Math.round(received));
+    /* إجمالي الأرباح المستلمة = مجموع صرف فقط */
+    const received = Math.round(
+      allTxs?.reduce((s: number, tx: any) => {
+        if (tx.type === "صرف") return s + tx.amount;
+        return s;
+      }, 0) ?? 0
+    );
+    setTotalReceived(received);
 
     /* ── Settlement entries: fetch delivery fees per shift (display only) ── */
     // TODO: store driver's exact earnings share per settlement in a DB column when available.
