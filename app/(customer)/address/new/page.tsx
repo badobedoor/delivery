@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useState } from "react";
+import { useEffect, useState, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { supabase } from "@/lib/supabase";
 
@@ -23,7 +23,7 @@ const fields: FormField[] = [
   { label: "علامة مميزة",   key: "landmark",  placeholder: "مثال: بجوار المسجد",    required: false },
 ];
 
-export default function NewAddressPage() {
+function NewAddressPageContent() {
   const router      = useRouter();
   const searchParams = useSearchParams();
 
@@ -216,5 +216,13 @@ export default function NewAddressPage() {
 
       </div>
     </div>
+  );
+}
+
+export default function NewAddressPage() {
+  return (
+    <Suspense>
+      <NewAddressPageContent />
+    </Suspense>
   );
 }

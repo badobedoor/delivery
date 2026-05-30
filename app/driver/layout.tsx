@@ -3,6 +3,7 @@
 import Link            from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
+import NetworkStatus from "@/components/ui/NetworkStatus";
 
 const C = {
   bg:     "#0F172A",
@@ -63,6 +64,8 @@ export default function DriverLayout({ children }: { children: React.ReactNode }
         direction: "rtl",
       }}
     >
+      <NetworkStatus />
+
       {/* ── Page content ── */}
       <div className="flex-1 overflow-y-auto pb-20">
         {children}

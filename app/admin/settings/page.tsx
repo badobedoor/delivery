@@ -122,7 +122,7 @@ export default function AdminSettingsPage() {
   const [serviceFee,   setServiceFee]   = useState("");
   const [deliveryFee,  setDeliveryFee]  = useState("");
   const [driverPct,    setDriverPct]    = useState("");
-  const [restaurantPct,setRestaurantPct]= useState("");
+  const [motoPct,      setMotoPct]      = useState("");
   const [officePct,    setOfficePct]    = useState("");
   const [s2Saving,     setS2Saving]     = useState(false);
   const [s2Saved,      setS2Saved]      = useState(false);
@@ -131,7 +131,7 @@ export default function AdminSettingsPage() {
     serviceFee?: string; deliveryFee?: string; percentages?: string;
   }>({});
 
-  const totalPct = Number(driverPct) + Number(restaurantPct) + Number(officePct);
+  const totalPct = Number(driverPct) + Number(motoPct) + Number(officePct);
   const pctOk    = totalPct === 100;
 
   /* Card 3 — التحكم في الأقسام */
@@ -160,7 +160,7 @@ export default function AdminSettingsPage() {
         setServiceFee(String(d.service_fee   ?? ""));
         setDeliveryFee(String(d.delivery_fee ?? ""));
         setDriverPct(String(d.driver_percentage      ?? ""));
-        setRestaurantPct(String(d.restaurant_percentage ?? ""));
+        setMotoPct(String(d.moto_percentage ?? ""));
         setOfficePct(String(d.office_percentage      ?? ""));
         setShowMostOrdered(d.show_most_ordered ?? true);
         setShowRecommended(d.show_recommended  ?? true);
@@ -211,9 +211,9 @@ export default function AdminSettingsPage() {
       await patchSettings({
         service_fee:             sf,
         delivery_fee:            df,
-        driver_percentage:       Number(driverPct),
-        restaurant_percentage:   Number(restaurantPct),
-        office_percentage:       Number(officePct),
+        driver_percentage:  Number(driverPct),
+        moto_percentage:    Number(motoPct),
+        office_percentage:  Number(officePct),
       });
       flashSaved(setS2Saved);
     } catch (e) {
@@ -313,8 +313,8 @@ export default function AdminSettingsPage() {
             <Field label="نسبة الدلفري %">
               <TextInput value={driverPct}     onChange={setDriverPct}     type="number" placeholder="33" />
             </Field>
-            <Field label="نسبة المطعم %">
-              <TextInput value={restaurantPct} onChange={setRestaurantPct} type="number" placeholder="33" />
+            <Field label="نسبة الموتسكل %">
+              <TextInput value={motoPct} onChange={setMotoPct} type="number" placeholder="33" />
             </Field>
             <Field label="نسبة المكتب %">
               <TextInput value={officePct}     onChange={setOfficePct}     type="number" placeholder="34" />

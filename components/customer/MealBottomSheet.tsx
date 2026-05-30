@@ -12,6 +12,7 @@ interface ExtraGroupSheet { id: number; name: string; maxSelect: number; extras:
 interface Meal   {
   id: number;
   name: string;
+  description?: string | null;
   basePrice: number;
   img: string;
   extras?: Extra[];
@@ -179,15 +180,18 @@ export default function MealBottomSheet({ meal, onClose, restaurantId, restauran
             <div className="flex items-start justify-between gap-3">
               {/* الاسم والسعر — يمين */}
               <div>
-                <h2 className="text-lg font-black text-[var(--color-secondary)]">
+                <h2 className="font-bold text-lg">
                   {meal.name}
                 </h2>
-                <p className="text-base font-bold text-[var(--color-primary)] mt-1">
+                <p className="font-bold text-[#FF6000]">
                   {hasSizes && selectedSize === null
                     ? `يبدأ من ${minSizePrice} ج.م`
                     : `${activePrice} ج.م`
                   }
                 </p>
+                {meal.description && (
+                  <p className="text-sm text-gray-500 mt-1">{meal.description}</p>
+                )}
               </div>
 
               {/* عداد الكمية — يسار */}

@@ -21,6 +21,8 @@ type Restaurant = {
   status: string | null;
   opens_at: string | null;
   closes_at: string | null;
+  rating_avg: number | null;
+  rating_count: number | null;
 };
 
 type Advertisement = {
@@ -89,7 +91,7 @@ export default function RestaurantsPage() {
       const [restaurantsRes, adsRes, featuredRes] = await Promise.all([
         supabase
           .from("restaurants")
-          .select("id, name, description, image_url, cover_image_url, is_active, status, opens_at, closes_at")
+          .select("id, name, description, image_url, cover_image_url, is_active, status, opens_at, closes_at, rating_avg, rating_count")
           .eq("is_active", true)
           .in("status", ["نشط", "مشغول"])
           .order("sort_order", { ascending: true }),
@@ -108,8 +110,12 @@ export default function RestaurantsPage() {
           .order("order_index"),
       ]);
 
-      if (restaurantsRes.error) setError("تعذّر تحميل المطاعم");
-      else setRestaurants(restaurantsRes.data ?? []);
+      if (restaurantsRes.error) {
+        console.error("restaurants error:", restaurantsRes.error);
+        setError("تعذّر تحميل المطاعم");
+      } else {
+        setRestaurants(restaurantsRes.data ?? []);
+      }
 
       setAds(adsRes.data ?? []);
       setFeaturedItems(featuredRes.data ?? []);
@@ -429,6 +435,8 @@ export default function RestaurantsPage() {
                     const isOpen = !isBusy && isRestaurantOpen(r);
                     const overlayLabel = isBusy ? "مشغول" : "مغلق";
                     const statusText   = isBusy ? "مشغول حالياً" : "مغلق حالياً";
+                    const avgRating   = r.rating_avg != null ? Math.round(r.rating_avg * 10) / 10 : null;
+                    const ratingCount = r.rating_count ?? 0;
                     return (
                       <div key={r.id}>
                         <div
@@ -450,13 +458,17 @@ export default function RestaurantsPage() {
                               <p className="text-sm text-[var(--color-muted)] truncate mt-0.5">{r.description}</p>
                             )}
                             {isOpen ? (
-                              <div className="flex items-center gap-1 mt-1.5">
-                                <svg width="13" height="13" viewBox="0 0 24 24" fill="#F59E0B">
-                                  <path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z" />
-                                </svg>
-                                <span className="text-sm font-semibold text-[var(--color-secondary)]">4.5</span>
-                                <span className="text-xs text-[#9CA3AF]">• 230 تقييم</span>
-                              </div>
+                              avgRating !== null ? (
+                                <div className="flex items-center gap-1 mt-1.5">
+                                  <svg width="13" height="13" viewBox="0 0 24 24" fill="#F59E0B">
+                                    <path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z" />
+                                  </svg>
+                                  <span className="text-sm font-semibold text-[var(--color-secondary)]">{avgRating}</span>
+                                  <span className="text-xs text-[#9CA3AF]">• {ratingCount} تقييم</span>
+                                </div>
+                              ) : (
+                                <span className="mt-1 block" style={{ color: "#94A3B8", fontSize: "11px" }}>لسه مافيش تقييمات</span>
+                              )
                             ) : (
                               <p className="text-xs text-[#EF4444] mt-1">{statusText}</p>
                             )}

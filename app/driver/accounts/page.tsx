@@ -447,6 +447,7 @@ export default function DriverAccountsPage() {
   const [loading,       setLoading]       = useState(true);
   const [driverId,      setDriverId]      = useState<string | null>(null);
   const [driverInitial, setDriverInitial] = useState("م");
+  const [driverName,    setDriverName]    = useState("");
   const { user: authUser, loading: authLoading } = useCurrentUser();
   const [shiftId,       setShiftId]       = useState<string | null>(null);
 
@@ -624,6 +625,7 @@ export default function DriverAccountsPage() {
 
       setDriverId(did);
       setDriverInitial((authUser?.name ?? "م")[0] ?? "م");
+      setDriverName(authUser?.name ?? "");
 
       /* Get active shift */
       const { data: shiftData } = await supabase
@@ -841,9 +843,14 @@ export default function DriverAccountsPage() {
       <header className="sticky top-0 z-10 flex items-center justify-between px-4 py-3 border-b"
         style={{ background: C.card, borderColor: C.border }}>
         <p className="text-lg font-black" style={{ color: C.text }}>حساباتي</p>
-        <div className="w-8 h-8 rounded-full flex items-center justify-center text-sm font-black"
-          style={{ background: `${C.teal}30`, color: C.teal }}>
-          {driverInitial}
+        <div className="flex items-center gap-2">
+          <div className="w-8 h-8 rounded-full flex items-center justify-center text-sm font-black"
+            style={{ background: `${C.teal}30`, color: C.teal }}>
+            {driverInitial}
+          </div>
+          {driverName && (
+            <p className="text-sm font-semibold hidden sm:block" style={{ color: C.muted }}>{driverName}</p>
+          )}
         </div>
       </header>
 

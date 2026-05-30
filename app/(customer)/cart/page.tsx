@@ -2,7 +2,7 @@
 
 import Image from "next/image";
 import Link from "next/link";
-import { useState, useEffect } from "react";
+import { useState, useEffect, Suspense } from "react";
 import { getCart, updateQty as updateCartQty, CartItem } from "@/lib/cart";
 import { supabase } from "@/lib/supabase";
 import { isRestaurantOpen } from "@/lib/utils";
@@ -15,7 +15,7 @@ function itemUnitPrice(item: CartItem): number {
   return item.price + sizePrice + extrasPrice;
 }
 
-export default function CartPage() {
+function CartPageContent() {
   const router        = useRouter();
   const searchParams  = useSearchParams();
   const fromFavorites = searchParams.get("from") === "favorites";
@@ -331,5 +331,13 @@ export default function CartPage() {
       />
 
     </div>
+  );
+}
+
+export default function CartPage() {
+  return (
+    <Suspense>
+      <CartPageContent />
+    </Suspense>
   );
 }

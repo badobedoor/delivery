@@ -2,7 +2,7 @@
 
 import Image from "next/image";
 import Link from "next/link";
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, Suspense } from "react";
 import { useParams, useSearchParams, useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase";
 import { isRestaurantOpen } from "@/lib/utils";
@@ -16,11 +16,11 @@ type ItemExtra  = { id: number; name: string; price: number };
 type ExtraGroup = { id: number; name: string; type: string; required: boolean; max_select: number; item_extras: ItemExtra[] };
 type MenuItem   = { id: number; name: string; description: string | null; price: number; category_id: number; image_url: string | null; extra_groups: ExtraGroup[]; offer_price?: number | null; offer_starts_at?: string | null; offer_ends_at?: string | null; offer_image_url?: string | null; sort_order?: number; is_active?: boolean; is_best_seller?: boolean };
 type Category   = { id: number; name: string; restaurant_id: string; sort_order?: number; menu_items: MenuItem[] };
-type Restaurant = { id: string; name: string; description: string | null; cover_image_url: string | null; image_url: string | null; rating_avg?: number | null; rating_count?: number | null; is_active: boolean; opens_at: string | null; closes_at: string | null; status: string | null };
+type Restaurant = { id: string; name: string; description: string | null; cover_image_url: string | null; image_url: string | null; is_active: boolean; opens_at: string | null; closes_at: string | null; status: string | null; rating_avg: number | null; rating_count: number | null };
 
 /* ── MealBottomSheet meal shape ── */
 type ExtraGroupSheet = { id: number; name: string; maxSelect: number; extras: { id: number; name: string; price: number }[] };
-type SheetMeal = { id: number; name: string; basePrice: number; img: string; extras?: { id: number; name: string; price: number }[]; extraGroups?: ExtraGroupSheet[]; sizes?: { id: number; name: string; price?: number }[] };
+type SheetMeal = { id: number; name: string; description?: string | null; basePrice: number; img: string; extras?: { id: number; name: string; price: number }[]; extraGroups?: ExtraGroupSheet[]; sizes?: { id: number; name: string; price?: number }[] };
 
 function toSheetMeal(item: MenuItem): SheetMeal {
   const nonVariantGroups = item.extra_groups.filter((g) => g.type !== "variant");
@@ -36,6 +36,7 @@ function toSheetMeal(item: MenuItem): SheetMeal {
   return {
     id: item.id,
     name: item.name,
+    description: item.description,
     basePrice: item.price,
     img: item.image_url ?? "https://images.unsplash.com/photo-1546069901-ba9599a7e63c?w=400&h=400&fit=crop",
     extras: extras.length > 0 ? extras : undefined,
@@ -142,7 +143,7 @@ function QuantityCounter({ itemId, name, price, description, imageUrl, restauran
   );
 }
 
-export default function RestaurantPage() {
+function RestaurantPageContent() {
   const params        = useParams();
   const id            = params.id as string;
   const searchParams  = useSearchParams();
@@ -163,7 +164,7 @@ export default function RestaurantPage() {
       setError(null);
 
       const [restResult, catsResult] = await Promise.all([
-        supabase.from("restaurants").select("id, name, description, cover_image_url, image_url, rating_avg, rating_count, is_active, opens_at, closes_at, status").eq("id", id).single(),
+        supabase.from("restaurants").select("id, name, description, cover_image_url, image_url, is_active, opens_at, closes_at, status, rating_avg, rating_count").eq("id", id).single(),
         supabase.from("categories")
           .select("id, name, restaurant_id, menu_items(id, name, description, price, category_id, image_url, offer_price, offer_starts_at, offer_ends_at, offer_image_url, sort_order, is_active, is_best_seller, extra_groups(id, name, type, required, max_select, item_extras(id, name, price)))")
           .eq("restaurant_id", id)
@@ -303,11 +304,17 @@ export default function RestaurantPage() {
             {/* الصف الثاني: التقييم // رابط التقييمات */}
             <div className="flex items-center justify-between mt-2.5">
               <div className="flex items-center gap-1.5">
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="#F59E0B">
-                  <path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z" />
-                </svg>
-                <span className="text-sm font-semibold text-[#1A1A1A]">4.5</span>
-                <span className="text-xs text-[#9CA3AF]">• 230 تقييم</span>
+                {restaurant.rating_avg != null ? (
+                  <>
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="#F59E0B">
+                      <path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z" />
+                    </svg>
+                    <span className="text-sm font-semibold text-[#1A1A1A]">{Math.round(restaurant.rating_avg * 10) / 10}</span>
+                    <span className="text-xs text-[#9CA3AF]">• {restaurant.rating_count ?? 0} تقييم</span>
+                  </>
+                ) : (
+                  <span className="text-xs text-[#9CA3AF]">لسه مافيش تقييمات</span>
+                )}
               </div>
               <Link
                 href={`/restaurant/${id}/reviews`}
@@ -463,5 +470,17 @@ export default function RestaurantPage() {
       )}
 
     </div>
+  );
+}
+
+export default function RestaurantPage() {
+  return (
+    <Suspense fallback={
+      <div className="min-h-screen bg-[var(--color-surface)] flex items-center justify-center">
+        <p className="text-[var(--color-muted)] text-sm">جاري التحميل...</p>
+      </div>
+    }>
+      <RestaurantPageContent />
+    </Suspense>
   );
 }

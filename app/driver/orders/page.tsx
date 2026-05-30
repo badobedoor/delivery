@@ -643,30 +643,50 @@ export default function DriverOrdersPage() {
   const [assignmentId,  setAssignmentId]  = useState<number | null>(null);
   const [loading,       setLoading]       = useState(true);
   const [ordersLocked,  setOrdersLocked]  = useState(false);
+  const [driverName,    setDriverName]    = useState("");
   const { user: authUser, loading: authLoading } = useCurrentUser();
 
   /* ── Payment collection state ── */
   const [collectTarget, setCollectTarget] = useState<ActiveOrder | null>(null);
   const [collecting,    setCollecting]    = useState(false);
+  const [usingCache,    setUsingCache]    = useState(false);
+
+  const CACHE_KEY = "driver_orders_cache";
 
   const loadData = useCallback(async (did: string, sid: string | null) => {
     /* 1. Fetch active orders first */
-    const { data: act } = await supabase
+    const { data: act, error: actError } = await supabase
       .from("orders")
       .select(ORDER_SELECT)
       .in("status", ["accepted", "on_the_way"])
       .eq("delivery_id", did);
 
-    const activeOrders: ActiveOrder[] = (act ?? []).map((o) => ({
-      ...toOrder(o),
-      pickedUp:       (o as DBOrder).picked_up ?? false,
-      phone:          (o as DBOrder).users?.phone ?? "",
-      restaurantPaid: (o as DBOrder).restaurant_paid  ?? null,
-      restaurantDebt: (o as DBOrder).restaurant_debt  ?? 0,
-      paymentMethod:  (o as DBOrder).payment_method   ?? null,
-      cashAmount:     (o as DBOrder).cash_amount      ?? 0,
-      vodafoneAmount: (o as DBOrder).vodafone_amount  ?? 0,
-    }));
+    let activeOrders: ActiveOrder[];
+
+    if (actError || !act) {
+      /* Network failure — try localStorage cache */
+      try {
+        const cached = localStorage.getItem(CACHE_KEY);
+        activeOrders = cached ? JSON.parse(cached) : [];
+        setUsingCache(true);
+      } catch {
+        activeOrders = [];
+      }
+    } else {
+      activeOrders = act.map((o) => ({
+        ...toOrder(o),
+        pickedUp:       (o as DBOrder).picked_up ?? false,
+        phone:          (o as DBOrder).users?.phone ?? "",
+        restaurantPaid: (o as DBOrder).restaurant_paid  ?? null,
+        restaurantDebt: (o as DBOrder).restaurant_debt  ?? 0,
+        paymentMethod:  (o as DBOrder).payment_method   ?? null,
+        cashAmount:     (o as DBOrder).cash_amount      ?? 0,
+        vodafoneAmount: (o as DBOrder).vodafone_amount  ?? 0,
+      }));
+      /* Successful fetch — persist to cache and clear stale-cache flag */
+      try { localStorage.setItem(CACHE_KEY, JSON.stringify(activeOrders)); } catch { /* ignore */ }
+      setUsingCache(false);
+    }
     setActive(activeOrders);
 
     /* 2. Sticky lock — triggers at 3 orders or pickup, releases only at 0 */
@@ -710,100 +730,44 @@ export default function DriverOrdersPage() {
 
     async function init() {
       const did = authUser?.id;
+      console.log("[driver/orders] authUser:", authUser, "did:", did);
       if (!did) { setLoading(false); return; }
       setDriverId(did);
+      setDriverName(authUser?.name ?? "");
 
-      /* ── Stage 1: Active session (driver already started) ── */
-      const { data: activeSess } = await supabase
+      /* Get the driver's most recent delivery_shift — is_active=true means driver is working */
+      const { data: dsRows, error: dsError } = await supabase
         .from("delivery_shifts")
-        .select("shift_id")
+        .select("id, shift_id, is_active")
         .eq("delivery_id", did)
         .eq("is_active", true)
-        .limit(1)
-        .maybeSingle();
-
-      if (activeSess) {
-        const { data: shiftInfo } = await supabase
-          .from("shifts")
-          .select("id, is_active")
-          .eq("id", activeSess.shift_id)
-          .single();
-
-        if (!shiftInfo) {
-          setNoShift(true);
-          await loadData(did, null);
-          setLoading(false);
-          return;
-        }
-
-        setShiftId(shiftInfo.id);
-
-        if (!shiftInfo.is_active) {
-          /* Admin stopped shift — driver keeps current session, blocks new orders only */
-          setShiftStopped(true);
-          await loadData(did, null);
-        } else {
-          await loadData(did, shiftInfo.id);
-        }
-        setLoading(false);
-        return;
-      }
-
-      /* ── Stage 2: No active session — check for a pending assignment ── */
-      const { data: pending } = await supabase
-        .from("delivery_shifts")
-        .select("id, shift_id")
-        .eq("delivery_id", did)
-        .eq("is_active", false)
         .order("id", { ascending: false })
-        .limit(1)
-        .maybeSingle();
+        .limit(1);
 
-      if (!pending) {
+      console.log("[driver/orders] did:", did, "delivery_shifts rows:", dsRows, "error:", dsError);
+
+      const ds = dsRows?.[0] ?? null;
+
+      if (!ds?.shift_id) {
+        console.log("[driver/orders] no delivery_shift found for driver", did);
         setNoShift(true);
         await loadData(did, null);
         setLoading(false);
         return;
       }
 
-      /* Check if this assignment already has a settlement (session truly ended) */
-      const { data: settlement } = await supabase
-        .from("shift_settlement_requests")
-        .select("id")
-        .eq("delivery_id", did)
-        .eq("shift_id", pending.shift_id)
-        .maybeSingle();
+      const sid = ds.shift_id as string;
+      setShiftId(sid);
 
-      if (settlement) {
-        /* Session was properly closed — treat as no active shift */
-        setNoShift(true);
-        await loadData(did, null);
-        setLoading(false);
-        return;
-      }
-
-      /* Assigned but not yet started — check if shift is open */
-      const { data: shiftInfo } = await supabase
-        .from("shifts")
-        .select("id, is_active")
-        .eq("id", pending.shift_id)
-        .single();
-
-      if (!shiftInfo) {
-        setNoShift(true);
-        await loadData(did, null);
-        setLoading(false);
-        return;
-      }
-
-      if (shiftInfo.is_active) {
+      if (!ds.is_active) {
+        /* Driver assigned but hasn't started yet — show "بدء العمل" */
         setCanStartShift(true);
-        setAssignmentId(pending.id);
+        setAssignmentId(ds.id);
+        await loadData(did, null);
       } else {
-        /* Shift closed by admin — driver can't start */
-        setShiftStopped(true);
+        /* Driver active — load orders */
+        await loadData(did, sid);
       }
-      await loadData(did, null);
       setLoading(false);
     }
     init();
@@ -811,34 +775,25 @@ export default function DriverOrdersPage() {
 
   /* ── Start shift (driver explicitly begins work) ── */
   const startShift = useCallback(async () => {
-    if (!driverId || !assignmentId) return;
+    if (!driverId || !shiftId) return;
     setStartingShift(true);
     try {
       const { error } = await supabase
         .from("delivery_shifts")
         .update({ is_active: true })
-        .eq("id", assignmentId)
-        .eq("delivery_id", driverId);
+        .eq("delivery_id", driverId)
+        .eq("shift_id", shiftId);
       if (error) throw error;
 
-      const { data: ds } = await supabase
-        .from("delivery_shifts")
-        .select("shift_id")
-        .eq("id", assignmentId)
-        .single();
-
-      if (ds) {
-        setCanStartShift(false);
-        setAssignmentId(null);
-        setShiftId(ds.shift_id);
-        await loadData(driverId, ds.shift_id);
-      }
+      setCanStartShift(false);
+      setAssignmentId(null);
+      await loadData(driverId, shiftId);
     } catch (err) {
       console.error("startShift:", err);
     } finally {
       setStartingShift(false);
     }
-  }, [driverId, assignmentId, loadData]);
+  }, [driverId, shiftId, loadData]);
 
   /* ── Accept order ── */
   const accept = useCallback(async (order: Order) => {
@@ -945,6 +900,17 @@ export default function DriverOrdersPage() {
     };
   }, []);
 
+  /* Refetch when network is restored */
+  useEffect(() => {
+    function onRestored() {
+      const now = Date.now();
+      lastRefreshRef.current = now;
+      refreshFnRef.current?.();
+    }
+    window.addEventListener("network-restored", onRestored);
+    return () => window.removeEventListener("network-restored", onRestored);
+  }, []);
+
   /* Periodic poll — new orders appear while page stays open (every 10 s) */
   useEffect(() => {
     const id = setInterval(() => {
@@ -984,9 +950,11 @@ export default function DriverOrdersPage() {
         <div className="flex items-center gap-2">
           <div className="w-8 h-8 rounded-full flex items-center justify-center text-sm font-black"
             style={{ background: `${C.teal}30`, color: C.teal }}>
-            م
+            {(driverName || "م")[0]}
           </div>
-          <p className="text-sm font-semibold hidden sm:block" style={{ color: C.muted }}>محمود السائق</p>
+          {driverName && (
+            <p className="text-sm font-semibold hidden sm:block" style={{ color: C.muted }}>{driverName}</p>
+          )}
         </div>
       </header>
 
@@ -1122,6 +1090,20 @@ export default function DriverOrdersPage() {
           onClose={() => setCollectTarget(null)}
           submitting={collecting}
         />
+      )}
+
+      {/* ── Cached data notice ── */}
+      {usingCache && (
+        <div
+          className="fixed bottom-20 inset-x-0 flex justify-center px-4 z-40"
+        >
+          <div
+            className="px-4 py-2 rounded-xl text-xs font-bold"
+            style={{ background: `${C.orange}22`, color: C.orange, border: `1px solid ${C.orange}44` }}
+          >
+            📦 بيانات محفوظة من آخر اتصال
+          </div>
+        </div>
       )}
     </div>
   );

@@ -1,13 +1,13 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { supabase } from "@/lib/supabase";
 
 type Restaurant = { id: string; name: string; phone: string | null };
 type Area        = { id: string; name: string; delivery_fee: number };
 
-export default function ConfirmDeliveryPage() {
+function ConfirmDeliveryPageContent() {
   const router       = useRouter();
   const searchParams = useSearchParams();
   const restaurantId = searchParams.get("restaurant") ?? "";
@@ -170,5 +170,13 @@ export default function ConfirmDeliveryPage() {
 
       </div>
     </div>
+  );
+}
+
+export default function ConfirmDeliveryPage() {
+  return (
+    <Suspense>
+      <ConfirmDeliveryPageContent />
+    </Suspense>
   );
 }
