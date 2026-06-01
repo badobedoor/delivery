@@ -266,6 +266,7 @@ function RestaurantPageContent() {
             fill
             className="object-cover"
             priority
+            onError={(e) => { (e.target as HTMLImageElement).src = '/images/placeholder.png'; }}
           />
 
           {/* زرار الرجوع */}
@@ -362,67 +363,69 @@ function RestaurantPageContent() {
                 const cardInner = (
                   <>
                     {/* القسم 1 — الصورة (يمين في RTL) */}
-                    <div className={`relative flex-shrink-0 ${hasExtras ? "w-20 h-20" : "w-28 h-28"} ml-3 rounded-xl overflow-hidden`}>
-                      <Image src={offerImg} alt={meal.name} fill className="object-cover" />
+                    <div className="relative flex-shrink-0 w-24 h-24 ml-3 rounded-xl overflow-hidden">
+                      <Image src={offerImg} alt={meal.name} fill className="object-cover" onError={(e) => { (e.target as HTMLImageElement).src = '/images/placeholder.png'; }} />
                       {isOffer && discount > 0 && (
                         <div className="absolute top-1 right-1 bg-red-500 text-white text-[9px] font-black px-1.5 py-0.5 rounded-full leading-none">
                           -{discount}%
                         </div>
                       )}
-                    </div>
-
-                    {/* القسم 2 — الاسم والوصف والزرار (وسط) */}
-                    <div className={`flex-1 flex flex-col justify-between ${hasExtras ? "h-20" : "h-28"} min-w-0 px-1`}>
-                      <div>
-                        <p className="text-base font-bold text-[#1A1A1A] leading-snug">{meal.name}</p>
-                        {meal.description && (
-                          <p className="text-sm text-[#6B7280] line-clamp-2 mt-0.5">{meal.description}</p>
-                        )}
-                        {isOffer && meal.offer_starts_at && meal.offer_ends_at && (
-                          <div className="mt-1 pt-1 border-t border-[#F3F4F6]">
-                            <div className="flex items-start gap-1">
-                              <span className="text-[10px]">📅</span>
-                              <div className="text-[10px] text-[#9CA3AF]">
-                                <div>من: {new Date(meal.offer_starts_at).toLocaleDateString("ar-EG", { day: "numeric", month: "long" })} - {new Date(meal.offer_starts_at).toLocaleTimeString("ar-EG", { hour: "2-digit", minute: "2-digit" })}</div>
-                                <div>إلى: {new Date(meal.offer_ends_at).toLocaleDateString("ar-EG", { day: "numeric", month: "long" })} - {new Date(meal.offer_ends_at).toLocaleTimeString("ar-EG", { hour: "2-digit", minute: "2-digit" })}</div>
-                              </div>
-                            </div>
-                          </div>
-                        )}
-                      </div>
-                      {!hasExtras && isActive && (
-                        <div className="mt-3">
-                        <QuantityCounter
-                          itemId={String(meal.id)}
-                          name={meal.name}
-                          price={isOffer && meal.offer_price ? meal.offer_price : meal.price}
-                          description={meal.description}
-                          imageUrl={meal.image_url}
-                          restaurantId={id}
-                          restaurantName={restaurant.name}
-                        />
+                      {!isActive && (
+                        <div className="absolute inset-0 bg-black/60 flex items-center justify-center">
+                          <span className="text-white text-xs font-bold">غير متوفر</span>
                         </div>
                       )}
                     </div>
 
-                    {/* القسم 3 — السعر (يسار في RTL)، عرض ثابت */}
-                    <div className="flex-shrink-0 w-16 text-left">
-                      {isOffer && meal.offer_price ? (
-                        <div className="flex flex-col items-start gap-0.5">
-                          <p className="text-xl font-black text-[#FF6000]">{meal.offer_price} ج</p>
-                          <p className="text-xs text-gray-400 line-through">{meal.price} ج</p>
+                    {/* القسم 2 — الاسم والوصف والسعر والزرار */}
+                    <div className="flex flex-col flex-1 min-w-0 px-1">
+                      {/* السطر 1 — الاسم */}
+                      <p className="truncate font-bold text-base text-[#1A1A1A] leading-snug">{meal.name}</p>
+
+                      {/* المنتصف — الوصف + السعر */}
+                      <div className="flex items-center gap-2 flex-1 mt-0.5">
+                        {meal.description && (
+                          <p className="line-clamp-2 text-sm text-[#6B7280] flex-1">{meal.description}</p>
+                        )}
+                        {isOffer && meal.offer_price ? (
+                          <div className="flex flex-col items-end flex-shrink-0">
+                            <p className="text-base font-black text-[#FF6000]">{meal.offer_price} ج</p>
+                            <p className="text-xs text-gray-400 line-through">{meal.price} ج</p>
+                          </div>
+                        ) : (
+                          <p className="text-base font-black text-[#FF6000] flex-shrink-0">{meal.price} ج</p>
+                        )}
+                      </div>
+
+                      {/* تواريخ العرض */}
+                      {isOffer && meal.offer_starts_at && meal.offer_ends_at && (
+                        <div className="mt-1 pt-1 border-t border-[#F3F4F6]">
+                          <div className="flex items-start gap-1">
+                            <span className="text-[10px]">📅</span>
+                            <div className="text-[10px] text-[#9CA3AF]">
+                              <div>من: {new Date(meal.offer_starts_at).toLocaleDateString("ar-EG", { day: "numeric", month: "long" })} - {new Date(meal.offer_starts_at).toLocaleTimeString("ar-EG", { hour: "2-digit", minute: "2-digit" })}</div>
+                              <div>إلى: {new Date(meal.offer_ends_at).toLocaleDateString("ar-EG", { day: "numeric", month: "long" })} - {new Date(meal.offer_ends_at).toLocaleTimeString("ar-EG", { hour: "2-digit", minute: "2-digit" })}</div>
+                            </div>
+                          </div>
                         </div>
-                      ) : (
-                        <p className="text-xl font-black text-[#FF6000]">{meal.price} ج</p>
+                      )}
+
+                      {/* الأخير — الزرار */}
+                      {!hasExtras && isActive && (
+                        <div className="mt-auto pt-1">
+                          <QuantityCounter
+                            itemId={String(meal.id)}
+                            name={meal.name}
+                            price={isOffer && meal.offer_price ? meal.offer_price : meal.price}
+                            description={meal.description}
+                            imageUrl={meal.image_url}
+                            restaurantId={id}
+                            restaurantName={restaurant.name}
+                          />
+                        </div>
                       )}
                     </div>
                   </>
-                );
-
-                const unavailableOverlay = !isActive && (
-                  <div className="absolute inset-0 bg-black/50 rounded-lg flex items-center justify-center">
-                    <span className="text-white text-sm font-bold bg-black/30 px-3 py-1 rounded-full">غير متوفر حالياً</span>
-                  </div>
                 );
 
                 if (hasExtras) {
@@ -433,7 +436,6 @@ function RestaurantPageContent() {
                       onClick={isActive ? () => setSheetMeal(toSheetMeal(meal)) : undefined}
                     >
                       {cardInner}
-                      {unavailableOverlay}
                     </div>
                   );
                 }
@@ -441,7 +443,6 @@ function RestaurantPageContent() {
                 return (
                   <div key={meal.id} className="flex items-center py-3 relative">
                     {cardInner}
-                    {unavailableOverlay}
                   </div>
                 );
               })}

@@ -36,6 +36,9 @@ function unauthorized() {
 
 export async function POST(request: Request) {
 
+  console.log('JWT_SECRET exists:', !!process.env.JWT_SECRET)
+  console.log('SUPABASE_URL exists:', !!process.env.NEXT_PUBLIC_SUPABASE_URL)
+
   /* ── 1. Parse body ── */
   let body: LoginBody;
   try {

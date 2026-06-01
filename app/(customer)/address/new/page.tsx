@@ -17,7 +17,7 @@ interface FormField {
 
 const fields: FormField[] = [
   { label: "تسمية العنوان", key: "label",     placeholder: "مثال: البيت، الشغل",    required: true  },
-  { label: "رقم العمارة",   key: "building",  placeholder: "رقم العمارة",            required: true  },
+  { label: "رقم العمارة (اختياري)",   key: "building",  placeholder: "رقم العمارة",            required: false },
   { label: "رقم الشقة",    key: "apartment", placeholder: "رقم الشقة",             required: false },
   { label: "الدور",         key: "floor",     placeholder: "رقم الدور",             required: false },
   { label: "علامة مميزة",   key: "landmark",  placeholder: "مثال: بجوار المسجد",    required: false },
@@ -68,7 +68,6 @@ function NewAddressPageContent() {
     setError(null);
     if (!area)         return setError("الرجاء اختيار الحي");
     if (!form.label)   return setError("الرجاء إدخال تسمية العنوان");
-    if (!form.building) return setError("الرجاء إدخال رقم العمارة");
     if (!savedPhone) {
       if (!phone)              return setError("الرجاء إدخال رقم الهاتف");
       if (phone.length !== 11) return setError("رقم الهاتف يجب أن يكون 11 رقم");

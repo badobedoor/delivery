@@ -17,7 +17,7 @@ const C = {
 };
 
 type CouponType   = "قيمة ثابتة" | "نسبة مئوية";
-type AppliesTo    = "توصيل" | "أكل" | "الاتنين";
+type AppliesTo    = "توصيل" | "أكل";
 type Restaurant   = { id: number; name: string };
 
 type Coupon = {
@@ -36,6 +36,7 @@ type Coupon = {
   visibility:          "public" | "private";
   adTitle:             string | null;
   adDescription:       string | null;
+  usedCount:           number;
 };
 
 /* ── DB row → Coupon ── */
@@ -56,8 +57,9 @@ function fromRow(r: any): Coupon {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     restaurantName:       (r.restaurants as any)?.name ?? null,
     visibility:           (r.visibility ?? "private") as "public" | "private",
-    adTitle:              r.ad_title     ?? null,
+    adTitle:              r.ad_title       ?? null,
     adDescription:        r.ad_description ?? null,
+    usedCount:            r.used_count     ?? 0,
   };
 }
 
@@ -114,7 +116,7 @@ export default function AdminCouponsPage() {
     setFetchErr(null);
     const { data, error } = await supabase
       .from("coupons")
-      .select("id, code, type, value, applies_to, min_order, expires_at, is_active, usage_limit_total, usage_limit_per_user, visibility, ad_title, ad_description, restaurant_id, restaurants!restaurant_id(name)")
+      .select("id, code, type, value, applies_to, min_order, expires_at, is_active, usage_limit_total, usage_limit_per_user, used_count, visibility, ad_title, ad_description, restaurant_id, restaurants!restaurant_id(name)")
       .order("id", { ascending: false });
     if (error) setFetchErr("تعذّر تحميل الكوبونات");
     else setRows((data ?? []).map(fromRow));
@@ -125,6 +127,7 @@ export default function AdminCouponsPage() {
     const { data, error } = await supabase
       .from("restaurants")
       .select("id, name")
+      .eq("is_active", true)
       .order("name");
     if (error) {
       console.error("fetchRestaurants failed:", error.message, error);
@@ -188,6 +191,9 @@ export default function AdminCouponsPage() {
     }
     if (form.usage_limit_per_user && Number(form.usage_limit_per_user) < 1) {
       setFormErr("حد الاستخدام للمستخدم يجب أن يكون 1 على الأقل"); return;
+    }
+    if (!form.expiry) {
+      setFormErr("تاريخ الانتهاء مطلوب"); return;
     }
 
     const dbPayload = {
@@ -343,6 +349,7 @@ export default function AdminCouponsPage() {
                     { label: "المطعم",          hide: " hidden md:table-cell"   },
                     { label: "الحد الأدنى",     hide: " hidden lg:table-cell"   },
                     { label: "عدد الاستخدام",   hide: " hidden lg:table-cell"   },
+                    { label: "عدد المستخدمين",  hide: " hidden xl:table-cell"   },
                     { label: "تاريخ الانتهاء",  hide: " hidden xl:table-cell"   },
                     { label: "الحالة",          hide: ""                        },
                     { label: "الإتاحة",         hide: ""                        },
@@ -359,20 +366,20 @@ export default function AdminCouponsPage() {
               <tbody>
                 {loading ? (
                   <tr>
-                    <td colSpan={11} className="px-4 py-12 text-center text-sm" style={{ color: C.muted }}>
+                    <td colSpan={12} className="px-4 py-12 text-center text-sm" style={{ color: C.muted }}>
                       جاري التحميل...
                     </td>
                   </tr>
                 ) : fetchErr ? (
                   <tr>
-                    <td colSpan={11} className="px-4 py-12 text-center text-sm" style={{ color: C.red }}>
+                    <td colSpan={12} className="px-4 py-12 text-center text-sm" style={{ color: C.red }}>
                       {fetchErr}
                       <button onClick={fetchCoupons} className="mr-2 underline" style={{ color: C.teal }}>إعادة المحاولة</button>
                     </td>
                   </tr>
                 ) : filtered.length === 0 ? (
                   <tr>
-                    <td colSpan={11} className="px-4 py-12 text-center text-sm" style={{ color: C.muted }}>
+                    <td colSpan={12} className="px-4 py-12 text-center text-sm" style={{ color: C.muted }}>
                       لا توجد كوبونات مطابقة
                     </td>
                   </tr>
@@ -425,6 +432,13 @@ export default function AdminCouponsPage() {
                     {/* عدد الاستخدام */}
                     <td className="hidden lg:table-cell px-3 py-3 text-xs whitespace-nowrap" style={{ color: C.muted }}>
                       {c.usage_limit_total != null ? c.usage_limit_total : "—"}
+                    </td>
+
+                    {/* عدد المستخدمين */}
+                    <td className="hidden xl:table-cell px-3 py-3 text-xs whitespace-nowrap">
+                      <span className="font-bold" style={{ color: c.usedCount > 0 ? C.teal : C.muted }}>
+                        {c.usedCount}
+                      </span>
                     </td>
 
                     {/* تاريخ الانتهاء */}
@@ -493,7 +507,6 @@ export default function AdminCouponsPage() {
         <div
           className="fixed inset-0 z-50 flex items-center justify-center p-4"
           style={{ background: "rgba(0,0,0,0.7)" }}
-          onClick={(e) => { if (e.target === e.currentTarget) closeModal(); }}
         >
           <div className="w-full max-w-md rounded-2xl flex flex-col max-h-[90vh]"
             style={{ background: C.card, border: `1px solid ${C.border}` }}>
@@ -580,7 +593,7 @@ export default function AdminCouponsPage() {
                   className="w-full rounded-xl px-3 py-2.5 text-sm outline-none"
                   style={inp}
                 >
-                  {(["توصيل", "أكل", "الاتنين"] as AppliesTo[]).map((a) => (
+                  {(["توصيل", "أكل"] as AppliesTo[]).map((a) => (
                     <option key={a} value={a}>{a}</option>
                   ))}
                 </select>
@@ -630,14 +643,19 @@ export default function AdminCouponsPage() {
 
               {/* تاريخ الانتهاء */}
               <div className="flex flex-col gap-1.5">
-                <label className="text-xs font-semibold" style={{ color: C.muted }}>تاريخ الانتهاء</label>
+                <label className="text-xs font-semibold" style={{ color: C.muted }}>
+                  تاريخ الانتهاء <span style={{ color: C.red }}>*</span>
+                </label>
                 <input
                   type="date"
                   value={form.expiry}
                   onChange={(e) => setForm({ ...form, expiry: e.target.value })}
                   className="w-full rounded-xl px-3 py-2.5 text-sm outline-none"
-                  style={inp}
+                  style={{ ...inp, borderColor: !form.expiry && formErr ? C.red : C.border }}
                 />
+                {!form.expiry && formErr === "تاريخ الانتهاء مطلوب" && (
+                  <p className="text-xs font-semibold" style={{ color: C.red }}>تاريخ الانتهاء مطلوب</p>
+                )}
               </div>
 
               {/* المطعم (اختياري) */}
@@ -648,7 +666,7 @@ export default function AdminCouponsPage() {
                 </label>
                 <select
                   value={form.restaurantId ?? ""}
-                  onChange={(e) => setForm({ ...form, restaurantId: e.target.value ? Number(e.target.value) : null })}
+                  onChange={(e) => setForm({ ...form, restaurantId: e.target.value === "" ? null : e.target.value as any })}
                   className="w-full rounded-xl px-3 py-2.5 text-sm outline-none"
                   style={inp}
                 >

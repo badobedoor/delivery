@@ -110,6 +110,40 @@ export default function AdminSettingsPage() {
   const [loading,    setLoading]    = useState(true);
   const [loadError,  setLoadError]  = useState<string | null>(null);
 
+  /* Card 5 — صوت التنبيه */
+  const [soundCustom, setSoundCustom] = useState(false);
+
+  useEffect(() => {
+    setSoundCustom(!!localStorage.getItem("notification_sound"));
+  }, []);
+
+  function handleSoundUpload(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = () => {
+      const base64 = reader.result as string;
+      localStorage.setItem("notification_sound", base64);
+      setSoundCustom(true);
+    };
+    reader.readAsDataURL(file);
+    e.target.value = "";
+  }
+
+  function testSound() {
+    try {
+      const saved = localStorage.getItem("notification_sound");
+      const src = saved ?? "/sounds/new-order.mp3";
+      const audio = new Audio(src);
+      audio.play().catch(() => {});
+    } catch { /* ignore */ }
+  }
+
+  function resetSound() {
+    localStorage.removeItem("notification_sound");
+    setSoundCustom(false);
+  }
+
   /* Card 1 — معلومات المنصة */
   const [appName,   setAppName]   = useState("");
   const [whatsapp,  setWhatsapp]  = useState("");
@@ -353,6 +387,49 @@ export default function AdminSettingsPage() {
         </div>
         {s3Err && <p className="text-xs font-semibold" style={{ color: C.red }}>{s3Err}</p>}
         <SaveButton onClick={saveCard3} saved={s3Saved} saving={s3Saving} />
+      </Card>
+
+      {/* Card 5 — صوت التنبيه */}
+      <Card title="🔔 صوت التنبيه">
+        <div className="flex items-center gap-3 px-4 py-3 rounded-xl"
+          style={{ background: C.bg, border: `1px solid ${soundCustom ? C.green : C.border}` }}>
+          <span className="text-xl">{soundCustom ? "🎵" : "🔊"}</span>
+          <p className="text-sm font-semibold flex-1" style={{ color: soundCustom ? C.green : C.muted }}>
+            الصوت الحالي: {soundCustom ? "مخصص" : "افتراضي"}
+          </p>
+          {soundCustom && (
+            <button onClick={resetSound}
+              className="text-xs font-bold px-2 py-1 rounded-lg hover:opacity-70"
+              style={{ background: `${C.red}22`, color: C.red }}>
+              حذف
+            </button>
+          )}
+        </div>
+
+        <div className="flex flex-wrap gap-3">
+          <label
+            className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-bold cursor-pointer hover:opacity-90 transition-opacity"
+            style={{ background: C.orange, color: "#fff" }}>
+            <span>📂</span>
+            <span>رفع ملف صوت</span>
+            <input
+              type="file"
+              accept=".mp3,.wav,audio/mp3,audio/wav"
+              className="hidden"
+              onChange={handleSoundUpload}
+            />
+          </label>
+          <button onClick={testSound}
+            className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-bold hover:opacity-90 transition-opacity"
+            style={{ background: `${C.teal}22`, color: C.teal, border: `1px solid ${C.teal}44` }}>
+            <span>▶</span>
+            <span>تجربة الصوت</span>
+          </button>
+        </div>
+
+        <p className="text-xs" style={{ color: C.muted }}>
+          يدعم ملفات MP3 و WAV فقط. الصوت يُشغَّل تلقائياً عند وصول طلب جديد.
+        </p>
       </Card>
 
       {/* Card 4 — توقيت العمل */}

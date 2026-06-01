@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase";
 import { useAutoRefresh } from "@/hooks/useAutoRefresh";
@@ -126,8 +126,12 @@ export default function AdminOrdersPage() {
     extras:   { name: string; price: number }[];
     notes:    string | null;
   }[]>([]);
-  const [modalLoading, setModalLoading] = useState(false);
-  const [modalError,   setModalError]   = useState<string | null>(null);
+  const [modalLoading,    setModalLoading]    = useState(false);
+  const [modalError,      setModalError]      = useState<string | null>(null);
+  const [newOrderBanner,  setNewOrderBanner]  = useState(false);
+  const [soundBlocked,    setSoundBlocked]    = useState(false);
+  const [notifBlocked,    setNotifBlocked]    = useState(false);
+  const pendingSoundRef = useRef<string | null>(null);
 
   /* ── Shift time validation (handles overnight shifts) ── */
   function isShiftActiveNow(shift: { start_time: string; end_time: string }): boolean {
@@ -166,6 +170,26 @@ export default function AdminOrdersPage() {
       setActiveShiftLabel(null);
     }
 
+    /* ── نطاق الوقت للفلترة ── */
+    const today    = new Date().toISOString().split("T")[0];
+    const tomorrow = new Date(Date.now() + 86_400_000).toISOString().split("T")[0];
+
+    let rangeStart: string;
+    let rangeEnd:   string;
+
+    if (shiftData) {
+      const startH = parseInt(shiftData.start_time.split(":")[0], 10);
+      const endH   = parseInt(shiftData.end_time.split(":")[0],   10);
+      rangeStart = `${today}T${shiftData.start_time}`;
+      /* وردية ليلية تنتهي الصبح — نهايتها الغد */
+      rangeEnd = endH <= startH
+        ? `${tomorrow}T${shiftData.end_time}`
+        : `${today}T${shiftData.end_time}`;
+    } else {
+      rangeStart = `${today}T00:00:00`;
+      rangeEnd   = `${today}T23:59:59`;
+    }
+
     // 1. جلب الطلبات بدون order_items
     const { data: newOrdersData, error: e1 } = await supabase
       .from("orders")
@@ -187,6 +211,8 @@ export default function AdminOrdersPage() {
         users:users (name, phone)
       `)
       .eq("status", "new")
+      .gte("created_at", rangeStart)
+      .lte("created_at", rangeEnd)
       .order("created_at", { ascending: false });
 
     console.log("New Orders Error:", e1);
@@ -232,6 +258,8 @@ export default function AdminOrdersPage() {
         delivery_staff (name)
       `)
       .neq("status", "new")
+      .gte("created_at", rangeStart)
+      .lte("created_at", rangeEnd)
       .order("created_at", { ascending: false });
 
     if (shiftData?.id) {
@@ -254,9 +282,132 @@ export default function AdminOrdersPage() {
 
   useEffect(() => {
     loadData().finally(() => setLoading(false));
+
+    const channel = supabase
+      .channel("admin-orders-realtime")
+      .on(
+        "postgres_changes",
+        { event: "INSERT", schema: "public", table: "orders" },
+        async (payload) => {
+          try {
+            const inserted = payload.new as any;
+            if (inserted.status !== "new") return;
+
+            const { data: orderData } = await supabase
+              .from("orders")
+              .select(`
+                id, user_id, total, subtotal, notes, order_type, user_order_number, created_at, restaurant_id,
+                restaurants:restaurants!restaurant_id (name),
+                addresses:addresses!address_id (full_address, areas (name)),
+                users:users (name, phone)
+              `)
+              .eq("id", inserted.id)
+              .single();
+
+            if (!orderData) return;
+
+            const { data: itemsData } = await supabase
+              .from("order_items")
+              .select("order_id, quantity, price_at_order, extras, notes, menu_items (name, categories (name))")
+              .eq("order_id", inserted.id);
+
+            const fullOrder: DBNewOrder = {
+              ...(orderData as any),
+              order_items: (itemsData ?? []).map((row: any) => ({
+                quantity:       row.quantity,
+                price_at_order: row.price_at_order ?? 0,
+                extras:         Array.isArray(row.extras) ? row.extras : [],
+                menu_items:     row.menu_items ?? null,
+                notes:          row.notes ?? null,
+                category_name:  row.menu_items?.categories?.name ?? null,
+              })),
+            };
+
+            setNewOrdersList((prev) => [fullOrder, ...prev]);
+
+            /* ── صوت + banner تنبيه ── */
+            try {
+              const savedSound = localStorage.getItem("notification_sound");
+              const src = savedSound ?? "/sounds/new-order.mp3";
+              const audio = new Audio(src);
+              audio.play().catch(() => {
+                pendingSoundRef.current = src;
+                setSoundBlocked(true);
+              });
+            } catch { /* ignore */ }
+            setNewOrderBanner(true);
+            setTimeout(() => setNewOrderBanner(false), 5000);
+
+            /* ── إشعار المتصفح ── */
+            if (Notification.permission === "granted") {
+              new Notification("🔔 طلب جديد وصل!", {
+                body: "يوجد طلب جديد يحتاج مراجعة",
+                icon: "/icon.png",
+              });
+            }
+          } catch (err) {
+            console.error("Realtime INSERT error:", err);
+          }
+        }
+      )
+      .on(
+        "postgres_changes",
+        { event: "UPDATE", schema: "public", table: "orders" },
+        (payload) => {
+          try {
+            const updated = payload.new as any;
+
+            setNewOrdersList((prev) => {
+              if (updated.status !== "new") return prev.filter((o) => o.id !== updated.id);
+              return prev.map((o) => o.id === updated.id ? { ...o, ...updated } : o);
+            });
+
+            setAllOrdersList((prev) =>
+              prev.map((o) => o.id === updated.id ? { ...o, status: updated.status } : o)
+            );
+          } catch (err) {
+            console.error("Realtime UPDATE error:", err);
+          }
+        }
+      )
+      .subscribe((status) => {
+        if (status === "CHANNEL_ERROR") {
+          console.error("Realtime channel error on orders table");
+        }
+      });
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
   }, []);
 
   useAutoRefresh(loadData);
+
+  /* ── طلب إذن الإشعارات + تسجيل Service Worker ── */
+  useEffect(() => {
+    if ("Notification" in window) {
+      Notification.requestPermission().then((perm) => {
+        if (perm === "denied") setNotifBlocked(true);
+      });
+    }
+    if ("serviceWorker" in navigator) {
+      navigator.serviceWorker.register("/sw.js").catch(() => {});
+    }
+  }, []);
+
+  /* ── إعادة تشغيل الصوت بعد تفاعل المستخدم ── */
+  useEffect(() => {
+    if (!soundBlocked) return;
+    function handleClick() {
+      setSoundBlocked(false);
+      if (pendingSoundRef.current) {
+        new Audio(pendingSoundRef.current).play().catch(() => {});
+        pendingSoundRef.current = null;
+      }
+    }
+    document.addEventListener("click", handleClick, { once: true });
+    return () => document.removeEventListener("click", handleClick);
+  }, [soundBlocked]);
 
   async function sendToRestaurant(order: DBNewOrder) {
     console.log("Order:", order);
@@ -530,6 +681,46 @@ export default function AdminOrdersPage() {
 
   return (
     <div className="flex flex-col gap-5" dir="rtl">
+
+      {/* ── New order banner ── */}
+      {newOrderBanner && (
+        <div
+          className="fixed top-4 left-1/2 -translate-x-1/2 z-[9999] flex items-center gap-2 px-5 py-3 rounded-2xl shadow-xl text-sm font-black"
+          style={{ background: C.green, color: "#fff", whiteSpace: "nowrap" }}
+        >
+          🔔 طلب جديد وصل!
+        </div>
+      )}
+
+      {/* ── Notification permission denied banner ── */}
+      {notifBlocked && (
+        <div
+          className="fixed bottom-20 left-1/2 -translate-x-1/2 z-[9998] flex items-center gap-2 px-4 py-2.5 rounded-2xl shadow-xl text-xs font-semibold cursor-pointer"
+          style={{ background: C.card, border: `1px solid ${C.orange}55`, color: C.muted, whiteSpace: "nowrap" }}
+          onClick={() => setNotifBlocked(false)}
+        >
+          <span style={{ color: C.orange }}>🔕</span>
+          الإشعارات مرفوضة — فعّلها من إعدادات المتصفح
+          <span style={{ color: C.muted, fontSize: 10 }}>✕</span>
+        </div>
+      )}
+
+      {/* ── Sound blocked banner ── */}
+      {soundBlocked && (
+        <div
+          className="fixed bottom-6 left-1/2 -translate-x-1/2 z-[9999] flex items-center gap-2 px-5 py-3 rounded-2xl shadow-xl text-sm font-bold cursor-pointer"
+          style={{ background: C.orange, color: "#fff", whiteSpace: "nowrap" }}
+          onClick={() => {
+            setSoundBlocked(false);
+            if (pendingSoundRef.current) {
+              new Audio(pendingSoundRef.current).play().catch(() => {});
+              pendingSoundRef.current = null;
+            }
+          }}
+        >
+          ⚠️ المتصفح منع الصوت — اضغط في أي مكان لتفعيله
+        </div>
+      )}
 
       {/* ── Top info bar ── */}
       <div

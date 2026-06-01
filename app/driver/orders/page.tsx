@@ -922,6 +922,82 @@ export default function DriverOrdersPage() {
     return () => clearInterval(id);
   }, []);
 
+  /* ── Realtime subscription on orders table ── */
+  useEffect(() => {
+    if (!driverId) return;
+
+    const channel = supabase
+      .channel("driver-orders-realtime")
+      .on(
+        "postgres_changes",
+        { event: "INSERT", schema: "public", table: "orders" },
+        async (payload) => {
+          try {
+            const inserted = payload.new as DBOrder;
+            if (inserted.status !== "pending") return;
+            if (shiftId && inserted.shift_id !== shiftId) return;
+
+            const { data } = await supabase
+              .from("orders")
+              .select(`
+                id, total, subtotal, delivery_fee, discount_amount, notes, user_order_number,
+                restaurants!restaurant_id (name),
+                addresses!address_id (full_address, areas (name)),
+                order_items (quantity, price_at_order, extras, notes, menu_items (name))
+              `)
+              .eq("id", inserted.id as string)
+              .single();
+
+            if (!data) return;
+
+            setAvailable((prev) => {
+              if (prev.some((o) => o.id === (data as DBOrder).id)) return prev;
+              return [...prev, toOrder(data as DBOrder)];
+            });
+            playNotif();
+          } catch (err) {
+            console.error("Realtime INSERT error:", err);
+          }
+        }
+      )
+      .on(
+        "postgres_changes",
+        { event: "UPDATE", schema: "public", table: "orders" },
+        (payload) => {
+          try {
+            const updated = payload.new as DBOrder;
+
+            /* Remove from available if no longer pending */
+            if (updated.status !== "pending") {
+              setAvailable((prev) => prev.filter((o) => o.id !== updated.id));
+            }
+
+            /* Update active orders for this driver */
+            if (updated.delivery_id === driverId) {
+              setActive((prev) =>
+                prev.map((o) =>
+                  o.id !== updated.id
+                    ? o
+                    : { ...o, pickedUp: (updated.picked_up as boolean) ?? o.pickedUp }
+                )
+              );
+            }
+          } catch (err) {
+            console.error("Realtime UPDATE error:", err);
+          }
+        }
+      )
+      .subscribe((status) => {
+        if (status === "CHANNEL_ERROR") {
+          console.error("Realtime channel error on orders table");
+        }
+      });
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [driverId, shiftId]);
+
   const canTakeNewOrders = !ordersLocked;
 
   const availCount = available.length;

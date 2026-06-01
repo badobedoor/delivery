@@ -161,17 +161,17 @@ export default function AddressPage() {
                     <div className="flex items-center gap-2">
                       <p className="text-sm font-bold text-[var(--color-secondary)]">{addr.label}</p>
                       {addr.is_default && (
-                        <span className="text-[10px] font-bold text-white bg-[var(--color-primary)] px-2 py-0.5 rounded-full">
-                          افتراضي
+                        <span className="text-[10px] font-bold text-[var(--color-primary)] border border-[var(--color-primary)] px-2 py-0.5 rounded-full">
+                          افتراضي ✓
                         </span>
                       )}
                     </div>
                     {!addr.is_default && (
                       <button
                         onClick={(e) => { e.stopPropagation(); setDefault(addr.id); }}
-                        className="text-xs text-[var(--color-muted)] mt-0.5"
+                        className="text-[11px] font-bold text-[var(--color-primary)] border border-[var(--color-primary)] px-2.5 py-0.5 rounded-lg mt-1 active:scale-[0.97] transition-transform"
                       >
-                        اجعله افتراضي
+                        تعيين كافتراضي
                       </button>
                     )}
                     <p className="text-xs text-[var(--color-muted)] mt-0.5 leading-relaxed">{addr.full_address}</p>

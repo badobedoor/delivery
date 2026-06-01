@@ -99,6 +99,10 @@ export default function AboutPage() {
           <p className="text-center text-sm text-[var(--color-muted)] pt-4">
             صنع بـ ❤️ في مصر
           </p>
+          <div className="flex flex-col items-center gap-0.5">
+            <p className="text-center text-sm text-[var(--color-muted)]">بواسطة أنس بدور</p>
+            <p className="text-center text-sm text-[var(--color-muted)]">01024980355</p>
+          </div>
 
         </main>
       </div>

@@ -56,15 +56,6 @@ type Transaction = {
   description: string;
 };
 
-type AdvanceRequest = {
-  id:         number;
-  deliveryId: number;
-  driverName: string;
-  amount:     number;
-  note:       string;
-  createdAt:  string;   /* ISO 8601 */
-};
-
 type SettlementRequest = {
   id:           number;
   deliveryId:   number;
@@ -616,99 +607,28 @@ function SettlementModal({
 }
 
 /* ─────────────────────────────────────────────
-   TAB: ملخص — طلبات السلفة + تصفية الورديات
+   TAB: ملخص — تصفية الورديات
 ───────────────────────────────────────────── */
 
 function SummaryTab({
-  pendingRequests,
   closeRequests,
   settlementRequests,
-  onApprove,
-  onReject,
   onApproveClose,
   onRejectClose,
   onSettle,
-  processingIds,
   closeProcessingIds,
   settlingId,
 }: {
-  pendingRequests:    AdvanceRequest[];
   closeRequests:      CloseRequest[];
   settlementRequests: SettlementRequest[];
-  onApprove:          (req: AdvanceRequest) => void;
-  onReject:           (id: number) => void;
   onApproveClose:     (req: CloseRequest) => void;
   onRejectClose:      (id: number) => void;
   onSettle:           (req: SettlementRequest) => void;
-  processingIds:      Set<number>;
   closeProcessingIds: Set<number>;
   settlingId:         number | null;
 }) {
   return (
     <div className="flex flex-col gap-5">
-
-      {pendingRequests.length === 0 ? (
-        <div className="rounded-2xl p-8 flex flex-col items-center gap-3"
-          style={{ background: C.card, border: `1px solid ${C.border}` }}>
-          <span style={{ fontSize: 36 }}>✅</span>
-          <p className="text-sm font-semibold" style={{ color: C.muted }}>لا توجد طلبات سلفة معلقة</p>
-        </div>
-      ) : (
-        <div className="rounded-2xl overflow-hidden"
-          style={{ background: C.card, border: `1px solid ${C.border}` }}>
-          <div className="flex items-center justify-between px-4 py-3 border-b"
-            style={{ borderColor: C.border }}>
-            <h3 className="text-sm font-black" style={{ color: C.text }}>طلبات السلفة المعلقة</h3>
-            <span className="text-[11px] px-2 py-0.5 rounded-full font-semibold"
-              style={{ background: `${C.orange}22`, color: C.orange }}>
-              {pendingRequests.length} طلب
-            </span>
-          </div>
-
-          <div className="flex flex-col">
-            {pendingRequests.map((req, i) => {
-              const processing = processingIds.has(req.id);
-              const isLast     = i === pendingRequests.length - 1;
-              return (
-                <div key={req.id}
-                  className="flex items-start gap-4 px-4 py-3.5"
-                  style={{ borderBottom: isLast ? "none" : `1px solid ${C.border}` }}>
-                  <div className="w-10 h-10 rounded-xl flex items-center justify-center text-base flex-shrink-0 mt-0.5"
-                    style={{ background: `${C.orange}20` }}>💸</div>
-                  <div className="flex-1 min-w-0">
-                    <p className="text-sm font-bold" style={{ color: C.text }}>{req.driverName}</p>
-                    <p className="text-sm font-black mt-0.5" style={{ color: C.orange }}>
-                      {fmtAmt(req.amount)}
-                    </p>
-                    {req.note && (
-                      <p className="text-xs mt-0.5 truncate" style={{ color: C.muted }}>{req.note}</p>
-                    )}
-                    <p className="text-[10px] mt-1" style={{ color: `${C.muted}99` }}>
-                      {fmtDateAr(req.createdAt)}
-                    </p>
-                  </div>
-                  <div className="flex flex-col gap-2 flex-shrink-0">
-                    <button
-                      onClick={() => onApprove(req)}
-                      disabled={processing}
-                      className="px-3 py-1.5 rounded-lg text-xs font-bold hover:opacity-80 disabled:opacity-40 transition-opacity"
-                      style={{ background: `${C.green}22`, color: C.green }}>
-                      {processing ? "..." : "موافقة"}
-                    </button>
-                    <button
-                      onClick={() => onReject(req.id)}
-                      disabled={processing}
-                      className="px-3 py-1.5 rounded-lg text-xs font-bold hover:opacity-80 disabled:opacity-40 transition-opacity"
-                      style={{ background: `${C.red}22`, color: C.red }}>
-                      {processing ? "..." : "رفض"}
-                    </button>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        </div>
-      )}
 
       {/* ── Close requests ── */}
       {closeRequests.length > 0 && (
@@ -1129,7 +1049,7 @@ function TransferModal({ officeBalance, deliveryBalance, motoBalance, custodyBal
   function handleSubmit() {
     const n = parseFloat(amount);
     if (!n || n <= 0)         { setError("أدخل مبلغاً أكبر من صفر");        return; }
-    if (from === to)          { setError("لا يمكن التحويل لنفس الخزنة");     return; }
+    if (from === to)          { setError("❌ لا يمكن التحويل من خزنة إلى نفسها"); return; }
     if (getBalance(from) < n) { setError("رصيد غير كافٍ في الخزنة المصدر"); return; }
     onSubmit(from, to, n, note.trim());
   }
@@ -1847,7 +1767,6 @@ export default function AdminAccountsPage() {
   const [tab,          setTab]          = useState<Tab>("ملخص");
   const [loading,      setLoading]      = useState(true);
   const [submitting,   setSubmitting]   = useState(false);
-  const [processingIds, setProcessingIds] = useState<Set<number>>(new Set());
 
   const [officeBalance,     setOfficeBalance]     = useState(0);
   const [custodyBalance,    setCustodyBalance]    = useState(0);
@@ -1860,7 +1779,6 @@ export default function AdminAccountsPage() {
   const [mainWalletTxs,  setMainWalletTxs]  = useState<Transaction[]>([]);
   const [showDeposit,    setShowDeposit]    = useState(false);
   const [showWithdraw,   setShowWithdraw]   = useState(false);
-  const [pendingRequests, setPendingRequests] = useState<AdvanceRequest[]>([]);
 
   const [settlementRequests, setSettlementRequests] = useState<SettlementRequest[]>([]);
   const [settleTarget,  setSettleTarget]  = useState<SettlementRequest | null>(null);
@@ -1899,7 +1817,6 @@ export default function AdminAccountsPage() {
       { data: motosData },
       { data: deliveryTxData },
       { data: motoTxData },
-      { data: advanceData },
       { data: closeData },
       { data: custodyWalletData },
       { data: custodyRecordsData },
@@ -1928,11 +1845,6 @@ export default function AdminAccountsPage() {
         .select("id, motorcycle_id, type, amount, reason, created_at, motorcycles(name)")
         .order("created_at", { ascending: false })
         .limit(50),
-      supabase
-        .from("advance_requests")
-        .select("id, delivery_id, amount, note, created_at, delivery_staff(name)")
-        .eq("status", "pending")
-        .order("created_at", { ascending: false }),
       supabase
         .from("advance_requests")
         .select("id, delivery_id, amount, created_at, delivery_staff(name)")
@@ -2010,16 +1922,6 @@ export default function AdminAccountsPage() {
         return s;
       }, 0)
     ));
-    if (advanceData) {
-      setPendingRequests((advanceData as any[]).map((r) => ({
-        id:         r.id,
-        deliveryId: r.delivery_id,
-        driverName: (r.delivery_staff as any)?.name ?? "—",
-        amount:     r.amount,
-        note:       r.note ?? "",
-        createdAt:  r.created_at,
-      })));
-    }
     if (closeData && (closeData as any[]).length > 0) {
       const enriched = await Promise.all(
         (closeData as any[]).map(async (r) => {
@@ -2090,8 +1992,35 @@ export default function AdminAccountsPage() {
   useEffect(() => {
     loadData().finally(() => setLoading(false));
 
-    // REALTIME DISABLED
-    return () => {};
+    /* ── delivery_accounts: INSERT → حدّث سجل العمليات ── */
+    const deliveryChannel = supabase
+      .channel("admin-delivery-accounts-realtime")
+      .on(
+        "postgres_changes",
+        { event: "INSERT", schema: "public", table: "delivery_accounts" },
+        async (payload) => {
+          try {
+            const { data } = await supabase
+              .from("delivery_accounts")
+              .select("id, delivery_id, type, amount, reason, from_wallet, created_at, delivery_staff(name)")
+              .eq("id", (payload.new as any).id)
+              .single();
+            if (!data) return;
+            setDeliveryTxs((prev) => [mapDeliveryTx(data), ...prev]);
+          } catch (err) {
+            console.error("Realtime delivery_accounts INSERT error:", err);
+          }
+        }
+      )
+      .subscribe((status) => {
+        if (status === "CHANNEL_ERROR") {
+          console.error("Realtime channel error on delivery_accounts");
+        }
+      });
+
+    return () => {
+      supabase.removeChannel(deliveryChannel);
+    };
   }, [loadData]);
 
   /* ── Open action modals ── */
@@ -2372,66 +2301,6 @@ export default function AdminAccountsPage() {
     }
   }
 
-  /* ── Approve سلفة ── */
-  async function handleApprove(req: AdvanceRequest) {
-    setProcessingIds((p) => new Set(p).add(req.id));
-    try {
-      const driver         = driverWallets.find((d) => d.id === req.deliveryId);
-      const currentBalance = driver?.balance ?? 0;
-
-      const [{ data: lastDelRow }, { data: lastMainRow }] = await Promise.all([
-        supabase.from("delivery_accounts").select("balance")
-          .eq("delivery_id", req.deliveryId)
-          .order("created_at", { ascending: false }).limit(1).maybeSingle(),
-        supabase.from("main_wallet").select("balance")
-          .order("created_at", { ascending: false }).limit(1).maybeSingle(),
-      ]);
-      const lastDelBal  = roundEGP((lastDelRow as any)?.balance ?? 0);
-      const lastMainBal = roundEGP((lastMainRow as any)?.balance ?? 0);
-
-      await supabase.from("delivery_accounts").insert({
-        delivery_id: req.deliveryId,
-        type:        "صرف",
-        amount:      req.amount,
-        reason:      "سلفة",
-        from_wallet: "office",
-        balance:     roundEGP(lastDelBal + req.amount),
-      });
-      await supabase
-        .from("delivery_staff")
-        .update({ wallet_balance: roundEGP(currentBalance + req.amount) })
-        .eq("id", req.deliveryId);
-      await supabase.from("main_wallet").insert({
-        type:    "صرف",
-        amount:  req.amount,
-        reason:  `سلفة لـ ${req.driverName}`,
-        balance: roundEGP(lastMainBal - req.amount),
-      });
-      await supabase
-        .from("advance_requests")
-        .update({ status: "approved" })
-        .eq("id", req.id);
-
-      await loadData();
-    } finally {
-      setProcessingIds((p) => { const s = new Set(p); s.delete(req.id); return s; });
-    }
-  }
-
-  /* ── Reject سلفة ── */
-  async function handleReject(id: number) {
-    setProcessingIds((p) => new Set(p).add(id));
-    try {
-      await supabase
-        .from("advance_requests")
-        .update({ status: "rejected" })
-        .eq("id", id);
-      await loadData();
-    } finally {
-      setProcessingIds((p) => { const s = new Set(p); s.delete(id); return s; });
-    }
-  }
-
   /* ── Approve close request ── */
   async function handleApproveClose(req: CloseRequest) {
     if (approveCloseGuard) return;
@@ -2706,10 +2575,10 @@ export default function AdminAccountsPage() {
                   color:      tab === t ? "#fff" : C.muted,
                 }}>
                 {t}
-                {t === "ملخص" && (pendingRequests.length + closeRequests.length) > 0 && (
+                {t === "ملخص" && closeRequests.length > 0 && (
                   <span className="px-1.5 py-0.5 rounded-full text-[10px] font-black leading-none"
                     style={{ background: C.orange, color: "#fff" }}>
-                    {pendingRequests.length + closeRequests.length}
+                    {closeRequests.length}
                   </span>
                 )}
               </button>
@@ -2728,15 +2597,11 @@ export default function AdminAccountsPage() {
 
         {tab === "ملخص" && (
           <SummaryTab
-            pendingRequests={pendingRequests}
             closeRequests={closeRequests}
             settlementRequests={settlementRequests}
-            onApprove={handleApprove}
-            onReject={handleReject}
             onApproveClose={handleApproveClose}
             onRejectClose={handleRejectClose}
             onSettle={(req) => setSettleTarget(req)}
-            processingIds={processingIds}
             closeProcessingIds={closeProcessingIds}
             settlingId={settlingId}
           />

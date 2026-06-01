@@ -82,6 +82,8 @@ export default function AdminShiftsPage() {
   const [editErr,          setEditErr]          = useState<string | null>(null);
   const [editSaving,       setEditSaving]       = useState(false);
   const [editCheckingId,   setEditCheckingId]   = useState<number | null>(null);
+  const [stopTarget,       setStopTarget]       = useState<Shift | null>(null);
+  const [stopActiveCount,  setStopActiveCount]  = useState(0);
 
   /* live clock — re-evaluates active shift every minute */
   const [now, setNow] = useState(() => new Date());
@@ -138,10 +140,42 @@ export default function AdminShiftsPage() {
   async function handleToggle(s: Shift) {
     const next = !s.isActive;
     setToggleErr(null);
+
     if (next) {
       const conflict = rows.find((r) => r.id !== s.id && r.isActive && shiftsOverlap(s.startTime, s.endTime, r.startTime, r.endTime));
       if (conflict) { setToggleErr("لا يمكن تشغيل وردية متداخلة مع وردية نشطة"); return; }
+      await doToggle(s, true);
+      return;
     }
+
+    /* stopping — check for in-progress orders first */
+    const { data: dShifts } = await supabase
+      .from("delivery_shifts")
+      .select("delivery_id")
+      .eq("shift_id", s.id)
+      .eq("is_active", true);
+
+    const deliveryIds = (dShifts ?? []).map((d: any) => d.delivery_id);
+
+    let activeCount = 0;
+    if (deliveryIds.length > 0) {
+      const { count } = await supabase
+        .from("orders")
+        .select("id", { count: "exact", head: true })
+        .in("delivery_id", deliveryIds)
+        .eq("status", "in_progress");
+      activeCount = count ?? 0;
+    }
+
+    if (activeCount > 0) {
+      setStopTarget(s);
+      setStopActiveCount(activeCount);
+    } else {
+      await doToggle(s, false);
+    }
+  }
+
+  async function doToggle(s: Shift, next: boolean) {
     setDelId(s.id);
     setRows((p) => p.map((r) => r.id === s.id ? { ...r, isActive: next } : r));
     const { error } = await supabase.from("shifts").update({ is_active: next }).eq("id", s.id);
@@ -428,6 +462,39 @@ export default function AdminShiftsPage() {
           </div>
         </div>
       )}
+      {/* ── Stop Shift Warning Popup ── */}
+      {stopTarget && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4"
+          style={{ background: "rgba(0,0,0,0.75)" }}>
+          <div className="w-full max-w-sm rounded-2xl flex flex-col"
+            style={{ background: C.card, border: `1px solid ${C.border}` }}>
+
+            <div className="px-5 py-5 flex flex-col items-center gap-3 text-center">
+              <span className="text-4xl">⚠️</span>
+              <p className="text-base font-black" style={{ color: C.text }}>تحذير</p>
+              <p className="text-sm leading-relaxed" style={{ color: C.muted }}>
+                يوجد <span className="font-black" style={{ color: C.orange }}>{stopActiveCount}</span> أوردر جاري حالياً — إيقاف الوردية لن يلغي الأوردرات الجارية وسيستمر السائقون في إتمامها
+              </p>
+            </div>
+
+            <div className="flex gap-3 px-5 py-4 border-t" style={{ borderColor: C.border }}>
+              <button
+                onClick={async () => { const t = stopTarget; setStopTarget(null); await doToggle(t, false); }}
+                className="flex-1 py-2.5 rounded-xl text-sm font-bold hover:opacity-90 transition-opacity"
+                style={{ background: C.red, color: "#fff" }}>
+                إيقاف على أي حال
+              </button>
+              <button
+                onClick={() => setStopTarget(null)}
+                className="flex-1 py-2.5 rounded-xl text-sm font-bold hover:opacity-80 transition-opacity"
+                style={{ background: C.bg, color: C.muted, border: `1px solid ${C.border}` }}>
+                إلغاء
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* ── Edit Shift Modal ── */}
       {editModal && editShift && (
         <div

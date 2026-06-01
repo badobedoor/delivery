@@ -1435,7 +1435,9 @@ export default function AdminRestaurantsPage() {
                                 // eslint-disable-next-line @next/next/no-img-element
                                 <img src={item.image_url} alt={item.name}
                                   className="w-10 h-10 rounded-xl object-cover flex-shrink-0"
-                                  style={{ border: `1px solid ${C.border}` }} />
+                                  style={{ border: `1px solid ${C.border}` }}
+                                  loading="lazy"
+                                  onError={(e) => { e.currentTarget.src = '/images/placeholder.png'; }} />
                               ) : (
                                 <div className="w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0 text-base"
                                   style={{ background: `${C.teal}18`, border: `1px solid ${C.border}` }}>
@@ -1627,7 +1629,9 @@ export default function AdminRestaurantsPage() {
                               // eslint-disable-next-line @next/next/no-img-element
                               <img src={r.image_url} alt={r.name}
                                 className="w-10 h-10 rounded-xl object-cover flex-shrink-0"
-                                style={{ border: `1px solid ${C.border}` }} />
+                                style={{ border: `1px solid ${C.border}` }}
+                                loading="lazy"
+                                onError={(e) => { e.currentTarget.src = '/images/placeholder.png'; }} />
                             ) : (
                               <div className="w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0 text-lg"
                                 style={{ background: `${C.orange}22`, border: `1px solid ${C.border}` }}>

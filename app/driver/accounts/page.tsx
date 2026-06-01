@@ -50,14 +50,6 @@ type ArchiveOrder = {
   isoDate:        string;
 };
 
-type AdvReq = {
-  id:        number;
-  amount:    number;
-  note:      string;
-  status:    "pending" | "approved" | "rejected" | "pending_close";
-  createdAt: string;
-};
-
 type AccountTx = {
   id:        number;
   type:      string;
@@ -95,86 +87,6 @@ function ChevronIcon({ open }: { open: boolean }) {
       style={{ transition: "transform 0.2s", transform: open ? "rotate(180deg)" : "rotate(0deg)" }}>
       <polyline points="6 9 12 15 18 9" />
     </svg>
-  );
-}
-
-/* ─────────────────────────────────────────────
-   AdvanceModal
-───────────────────────────────────────────── */
-function AdvanceModal({
-  onConfirm, onClose, submitting,
-}: {
-  onConfirm:  (amount: number, note: string) => void;
-  onClose:    () => void;
-  submitting: boolean;
-}) {
-  const [amount, setAmount] = useState("");
-  const [note,   setNote]   = useState("");
-  const [error,  setError]  = useState("");
-
-  function handleConfirm() {
-    const n = parseFloat(amount);
-    if (!n || n <= 0) { setError("أدخل مبلغاً أكبر من صفر"); return; }
-    onConfirm(n, note.trim());
-  }
-
-  return (
-    <div className="fixed inset-0 z-50 flex items-end justify-center p-4"
-      style={{ background: "rgba(0,0,0,0.8)" }}
-      onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}>
-      <div className="w-full max-w-sm rounded-2xl flex flex-col"
-        style={{ background: C.card, border: `1px solid ${C.border}` }}>
-
-        <div className="flex items-center justify-between px-5 py-4 border-b" style={{ borderColor: C.border }}>
-          <h2 className="text-base font-black" style={{ color: C.text }}>طلب سلفة</h2>
-          <button onClick={onClose}
-            className="w-8 h-8 rounded-full flex items-center justify-center hover:opacity-70"
-            style={{ background: C.bg, color: C.muted }}>✕</button>
-        </div>
-
-        <div className="px-5 py-4 flex flex-col gap-4">
-          <div className="flex flex-col gap-1.5">
-            <label className="text-xs font-semibold" style={{ color: C.muted }}>المبلغ المطلوب</label>
-            <div className="relative">
-              <input type="number" value={amount}
-                onChange={(e) => { setAmount(e.target.value); setError(""); }}
-                placeholder="0"
-                className="w-full rounded-xl px-3 py-2.5 text-sm outline-none"
-                style={{ background: C.bg, border: `1px solid ${C.orange}55`, color: C.text }} />
-              <span className="absolute top-1/2 -translate-y-1/2 left-3 text-xs font-bold"
-                style={{ color: C.muted }}>ج.م</span>
-            </div>
-          </div>
-
-          {error && (
-            <p className="text-xs text-center py-1.5 px-3 rounded-lg"
-              style={{ background: `${C.red}18`, color: C.red, border: `1px solid ${C.red}33` }}>
-              ⚠ {error}
-            </p>
-          )}
-
-          <div className="flex flex-col gap-1.5">
-            <label className="text-xs font-semibold" style={{ color: C.muted }}>ملاحظة (اختياري)</label>
-            <textarea value={note} onChange={(e) => setNote(e.target.value)}
-              placeholder="سبب طلب السلفة..."
-              rows={2}
-              className="w-full rounded-xl px-3 py-2.5 text-sm outline-none resize-none"
-              style={{ background: C.bg, border: `1px solid ${C.border}`, color: C.text }} />
-          </div>
-        </div>
-
-        <div className="flex gap-3 px-5 py-4 border-t" style={{ borderColor: C.border }}>
-          <button onClick={handleConfirm} disabled={submitting}
-            className="flex-1 py-2.5 rounded-xl text-sm font-bold hover:opacity-90 disabled:opacity-50 transition-opacity"
-            style={{ background: C.orange, color: "#fff" }}>
-            {submitting ? "جارٍ الإرسال..." : "إرسال الطلب"}
-          </button>
-          <button onClick={onClose} disabled={submitting}
-            className="flex-1 py-2.5 rounded-xl text-sm font-bold hover:opacity-80 disabled:opacity-50 transition-opacity"
-            style={{ background: C.bg, color: C.muted, border: `1px solid ${C.border}` }}>إلغاء</button>
-        </div>
-      </div>
-    </div>
   );
 }
 
@@ -452,7 +364,6 @@ export default function DriverAccountsPage() {
   const [shiftId,       setShiftId]       = useState<string | null>(null);
 
   const [todayOrders,   setTodayOrders]   = useState<TodayOrder[]>([]);
-  const [pendingAdv,    setPendingAdv]    = useState<AdvReq | null>(null);
   const [archiveOrders, setArchiveOrders] = useState<ArchiveOrder[]>([]);
   const [archiveLoaded, setArchiveLoaded] = useState(false);
   const [walletBalance, setWalletBalance] = useState(0);
@@ -460,9 +371,6 @@ export default function DriverAccountsPage() {
 
   const [totalCustody,  setTotalCustody]  = useState(0);
 
-  const [showAdv,               setShowAdv]               = useState(false);
-  const [advSubmit,             setAdvSubmit]             = useState(false);
-  const [advSuccess,            setAdvSuccess]            = useState(false);
   const [settlementSubmitting,  setSettlementSubmitting]  = useState(false);
   const [settlementSent,        setSettlementSent]        = useState(false);
   const [showSettlementConfirm, setShowSettlementConfirm] = useState(false);
@@ -473,7 +381,6 @@ export default function DriverAccountsPage() {
   const loadData = useCallback(async (did: string) => {
     const [
       { data: ordersData, error: ordersErr },
-      { data: advData },
       { data: driverData },
       { data: txData },
       { data: custodyData },
@@ -489,13 +396,6 @@ export default function DriverAccountsPage() {
         .in("status", ["accepted", "on_the_way", "delivered"])
         .eq("settled", false)
         .order("created_at", { ascending: true }),
-      supabase
-        .from("advance_requests")
-        .select("id, amount, note, status, created_at")
-        .eq("delivery_id", did)
-        .order("created_at", { ascending: false })
-        .limit(1)
-        .maybeSingle(),
       supabase
         .from("delivery_staff")
         .select("wallet_balance")
@@ -544,21 +444,6 @@ export default function DriverAccountsPage() {
         createdAt: t.created_at,
       })),
     );
-
-    if (advData && advData.status === "pending_close") {
-      setSettlementSent(true);
-      setPendingAdv(null);
-    } else if (advData && advData.status === "pending") {
-      setPendingAdv({
-        id:        advData.id,
-        amount:    advData.amount,
-        note:      advData.note ?? "",
-        status:    advData.status,
-        createdAt: advData.created_at,
-      });
-    } else {
-      setPendingAdv(null);
-    }
 
     const custodyTotal = Math.round((custodyData ?? []).reduce((s: number, c: any) => s + (c.amount ?? 0), 0));
     setTotalCustody(custodyTotal);
@@ -658,47 +543,49 @@ export default function DriverAccountsPage() {
     }
   }, [tab, archiveLoaded, driverId, loadArchive]);
 
-  /* ── Realtime: تحديث تلقائي عند موافقة الأدمن ── */
+  /* ── Realtime: تحديث تلقائي ── */
   useEffect(() => {
     if (!driverId) return;
-    const channel = supabase
-      .channel("advance_requests_changes")
+
+    /* delivery_accounts: INSERT → حدّث سجل العمليات */
+    const deliveryChannel = supabase
+      .channel("driver-delivery-accounts-realtime")
       .on(
         "postgres_changes",
         {
-          event:  "UPDATE",
+          event:  "INSERT",
           schema: "public",
-          table:  "advance_requests",
+          table:  "delivery_accounts",
           filter: `delivery_id=eq.${driverId}`,
         },
         (payload) => {
-          if ((payload.new as any).status === "approved") {
-            setShiftClosed(true);
+          try {
+            const row = payload.new as any;
+            setAccountTxs((prev) => [
+              {
+                id:        row.id,
+                type:      row.type      ?? "",
+                amount:    row.amount    ?? 0,
+                reason:    row.reason    ?? null,
+                createdAt: row.created_at,
+              },
+              ...prev,
+            ]);
+          } catch (err) {
+            console.error("Realtime delivery_accounts INSERT error:", err);
           }
         },
       )
-      .subscribe();
-    return () => { supabase.removeChannel(channel); };
-  }, [driverId]);
-
-  /* ── Advance request ── */
-  async function handleAdvanceRequest(amount: number, note: string) {
-    if (!driverId) return;
-    setAdvSubmit(true);
-    try {
-      await supabase.from("advance_requests").insert({
-        delivery_id: driverId,
-        amount,
-        note:   note || null,
-        status: "pending",
+      .subscribe((status) => {
+        if (status === "CHANNEL_ERROR") {
+          console.error("Realtime channel error on delivery_accounts");
+        }
       });
-      await loadData(driverId);
-      setShowAdv(false);
-      setAdvSuccess(true);
-      setTimeout(() => setAdvSuccess(false), 5000);
-    } catch { setPageError("خطأ في إرسال الطلب، حاول مرة أخرى"); }
-    finally   { setAdvSubmit(false); }
-  }
+
+    return () => {
+      supabase.removeChannel(deliveryChannel);
+    };
+  }, [driverId]);
 
   /* ── Shift settlement — step 1: validate then show confirm modal ── */
   async function openSettlementConfirm() {
@@ -978,33 +865,6 @@ export default function DriverAccountsPage() {
               </div>
             )}
 
-            {/* Advance success */}
-            {advSuccess && (
-              <div className="flex items-center gap-3 px-4 py-3 rounded-xl"
-                style={{ background: `${C.green}18`, border: `1px solid ${C.green}44` }}>
-                <span className="text-lg">✅</span>
-                <p className="text-sm font-semibold" style={{ color: C.green }}>
-                  تم إرسال طلب السلفة، في انتظار موافقة الإدارة
-                </p>
-              </div>
-            )}
-
-            {/* Pending advance */}
-            {pendingAdv && !advSuccess && (
-              <div className="rounded-2xl p-4 flex items-start gap-3"
-                style={{ background: C.card, border: `1px solid ${C.orange}44` }}>
-                <span className="text-2xl">💵</span>
-                <div className="flex-1">
-                  <p className="text-sm font-bold" style={{ color: C.orange }}>
-                    طلب سلفة معلق: {fmtAmt(pendingAdv.amount)}
-                  </p>
-                  {pendingAdv.note && (
-                    <p className="text-xs mt-0.5" style={{ color: C.muted }}>{pendingAdv.note}</p>
-                  )}
-                  <p className="text-xs mt-1" style={{ color: C.muted }}>⏳ في انتظار موافقة الإدارة</p>
-                </div>
-              </div>
-            )}
           </>
         )}
 
@@ -1077,30 +937,7 @@ export default function DriverAccountsPage() {
           )
         )}
 
-        {/* طلب سلفة */}
-        {!pendingAdv ? (
-          <button
-            onClick={() => setShowAdv(true)}
-            className="pointer-events-auto flex items-center gap-2 px-5 py-3 rounded-2xl text-sm font-bold shadow-lg hover:opacity-90 transition-opacity"
-            style={{ background: C.orange, color: "#fff" }}>
-            💵 طلب سلفة
-          </button>
-        ) : (
-          <div className="pointer-events-auto px-4 py-2 rounded-xl text-xs font-bold"
-            style={{ background: `${C.orange}22`, color: C.orange, border: `1px solid ${C.orange}44` }}>
-            ⏳ سلفة معلقة: {fmtAmt(pendingAdv.amount)}
-          </div>
-        )}
       </div>
-
-      {/* Advance modal */}
-      {showAdv && (
-        <AdvanceModal
-          onConfirm={handleAdvanceRequest}
-          onClose={() => setShowAdv(false)}
-          submitting={advSubmit}
-        />
-      )}
 
       {/* Settlement confirm modal */}
       {showSettlementConfirm && (

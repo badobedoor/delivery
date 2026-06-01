@@ -5,15 +5,18 @@ import { useEffect, useState } from "react";
 import { supabase } from "@/lib/supabase";
 
 type Coupon = {
-  id:             string;
-  code:           string;
-  type:           string;
-  value:          number | null;
-  applies_to:     string | null;
-  expires_at:     string | null;
-  is_active:      boolean;
-  ad_title?:      string | null;
-  ad_description?: string | null;
+  id:                   string;
+  code:                 string;
+  type:                 string;
+  value:                number | null;
+  applies_to:           string | null;
+  expires_at:           string | null;
+  is_active:            boolean;
+  ad_title?:            string | null;
+  ad_description?:      string | null;
+  used_count?:          number | null;
+  usage_limit_total?:   number | null;
+  usage_limit_per_user?: number | null;
 };
 
 type TabKey = "valid" | "used";
@@ -115,12 +118,13 @@ export default function CouponsPage() {
     async function load() {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) { setLoading(false); return; }
+      console.log("[coupons] user.id:", user.id);
 
       const [publicRes, usageRes] = await Promise.all([
         /* تاب "صالح" — الكوبونات العامة النشطة */
         supabase
           .from("coupons")
-          .select("id, code, type, value, applies_to, min_order, expires_at, is_active, usage_limit_total, usage_limit_per_user, visibility, ad_title, ad_description")
+          .select("id, code, type, value, applies_to, min_order, expires_at, is_active, used_count, usage_limit_total, usage_limit_per_user, visibility, ad_title, ad_description")
           .eq("visibility", "public")
           .eq("is_active", true)
           .order("created_at", { ascending: false }),
@@ -128,22 +132,42 @@ export default function CouponsPage() {
         /* تاب "تم الاستخدام" — كوبونات العميل المستخدمة */
         supabase
           .from("coupon_usages")
-          .select("*, coupons(id, code, type, value, applies_to, ad_title, ad_description)")
+          .select("*, coupons(id, code, type, value, applies_to, expires_at, ad_title, ad_description)")
           .eq("user_id", user.id)
           .order("created_at", { ascending: false }),
       ]);
 
-      setValid((publicRes.data ?? []) as Coupon[]);
+      console.log("[coupons] publicRes data:", publicRes.data, "| error:", publicRes.error);
+      console.log("[coupons] usageRes data:", usageRes.data,  "| error:", usageRes.error);
+
+      /* map: coupon_id → user's personal used_count */
+      const userUsage: Record<string, number> = {};
+      for (const row of (usageRes.data ?? [])) {
+        userUsage[row.coupon_id] = row.used_count ?? 0;
+      }
+
+      const allValid = (publicRes.data ?? []) as Coupon[];
+      const filtered = allValid.filter((c) => {
+        if (c.usage_limit_total != null && (c.used_count ?? 0) >= c.usage_limit_total) return false;
+        if (c.usage_limit_per_user != null && (userUsage[c.id] ?? 0) >= c.usage_limit_per_user) return false;
+        return true;
+      });
+
+      setValid(filtered);
 
       const usedCoupons: Coupon[] = (usageRes.data ?? []).map((row: any) => ({
-        id:         row.coupons?.id         ?? row.coupon_id,
-        code:       row.coupons?.code       ?? "",
-        type:       row.coupons?.type       ?? "",
-        value:      row.coupons?.value      ?? null,
-        applies_to: row.coupons?.applies_to ?? null,
-        expires_at: null,
-        is_active:  true,
+        id:             row.coupons?.id             ?? row.coupon_id,
+        code:           row.coupons?.code           ?? "",
+        type:           row.coupons?.type           ?? "",
+        value:          row.coupons?.value          ?? null,
+        applies_to:     row.coupons?.applies_to     ?? null,
+        expires_at:     row.coupons?.expires_at     ?? null,
+        is_active:      true,
+        ad_title:       row.coupons?.ad_title       ?? null,
+        ad_description: row.coupons?.ad_description ?? null,
       }));
+
+      console.log("[coupons] usedCoupons mapped:", usedCoupons);
       setUsed(usedCoupons);
       setLoading(false);
     }

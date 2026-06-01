@@ -47,6 +47,7 @@ export default function CheckoutPage() {
   const [applying,       setApplying]       = useState(false);
   const [appliedCoupon,  setAppliedCoupon]  = useState<{ id: number; used_count: number } | null>(null);
   const [areaName,       setAreaName]       = useState("");
+  const [networkError,   setNetworkError]   = useState(false);
 
   async function fetchDeliveryFee(areaId: string) {
     const { data } = await supabase
@@ -105,15 +106,44 @@ export default function CheckoutPage() {
 
     const { data } = await supabase
       .from("coupons")
-      .select("*")
+      .select("*, restaurants!restaurant_id(name)")
       .eq("code", code)
       .eq("is_active", true)
-      .single();
+      .maybeSingle();
 
-    if (!data) { setCouponError("كود غير صحيح أو منتهي"); setApplying(false); return; }
+    if (!data) {
+      setCouponError("❌ هذا الكوبون غير صالح");
+      setApplying(false); return;
+    }
 
     if (data.expires_at && new Date(data.expires_at) < new Date()) {
-      setCouponError("هذا الكود منتهي الصلاحية"); setApplying(false); return;
+      setCouponError("❌ انتهت صلاحية هذا الكوبون");
+      setApplying(false); return;
+    }
+
+    if (data.usage_limit_total != null && (data.used_count ?? 0) >= data.usage_limit_total) {
+      setCouponError("❌ تم استنفاد هذا الكوبون بالكامل");
+      setApplying(false); return;
+    }
+
+    if (data.usage_limit_per_user != null && userId) {
+      const { data: usageRow } = await supabase
+        .from("coupon_usages")
+        .select("used_count")
+        .eq("coupon_id", data.id)
+        .eq("user_id", userId)
+        .maybeSingle();
+      if (usageRow && usageRow.used_count >= data.usage_limit_per_user) {
+        setCouponError("❌ لقد استخدمت هذا الكوبون من قبل");
+        setApplying(false); return;
+      }
+    }
+
+    if (data.restaurant_id && data.restaurant_id !== cart?.restaurantId) {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const restName = (data.restaurants as any)?.name ?? data.restaurant_id;
+      setCouponError(`❌ هذا الكوبون صالح فقط لمطعم ${restName}`);
+      setApplying(false); return;
     }
 
     const cartNow = getCart();
@@ -122,14 +152,20 @@ export default function CheckoutPage() {
     );
 
     if (data.min_order && sub < data.min_order) {
-      setCouponError(`الحد الأدنى للطلب ${data.min_order} ج.م`); setApplying(false); return;
+      setCouponError(`❌ الحد الأدنى للطلب هو ${data.min_order} جنيه`);
+      setApplying(false); return;
     }
 
-    if (data.type === "قيمة ثابتة" || data.type === "fixed") {
-      setCouponDiscount(data.value);
-    } else if (data.type === "نسبة" || data.type === "percentage" || data.type === "نسبة مئوية") {
-      setCouponDiscount(Math.round(deliveryFee * data.value / 100));
+    /* ── حساب الخصم بناءً على applies_to ── */
+    const base = data.applies_to === "توصيل" ? deliveryFee : sub;
+
+    let discount = 0;
+    if (data.type === "قيمة ثابتة") {
+      discount = data.value;
+    } else if (data.type === "نسبة مئوية") {
+      discount = Math.round(base * data.value / 100);
     }
+    setCouponDiscount(Math.max(0, Math.min(discount, base)));
 
     setAppliedCoupon({ id: data.id, used_count: data.used_count ?? 0 });
     setApplying(false);
@@ -137,6 +173,13 @@ export default function CheckoutPage() {
 
   async function handleConfirm() {
     if (!cart || !address || !userId) return;
+
+    if (!navigator.onLine) {
+      setNetworkError(true);
+      return;
+    }
+
+    setNetworkError(false);
     setSubmitting(true);
 
     /* ── 1. Frontend guard — فحص سريع قبل الـ API call ── */
@@ -156,29 +199,36 @@ export default function CheckoutPage() {
     const subtotal = cart.items.reduce((sum, item) => sum + itemUnitPrice(item) * item.qty, 0);
     const total    = Math.max(0, subtotal + deliveryFee - couponDiscount);
 
-    const res = await fetch("/api/orders", {
-      method:  "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        order: {
-          address_id:      address.id,
-          restaurant_id:   cart.restaurantId,
-          status:          "new",
-          subtotal,
-          delivery_fee:    deliveryFee,
-          discount_amount: couponDiscount || null,
-          total,
-          notes:           orderNote.trim() || null,
-        },
-        items: cart.items.map((item) => ({
-          menu_item_id:   item.id,
-          quantity:       item.qty,
-          price_at_order: itemUnitPrice(item),
-          extras:         item.extras ?? null,
-          notes:          item.notes  ?? null,
-        })),
-      }),
-    });
+    let res: Response;
+    try {
+      res = await fetch("/api/orders", {
+        method:  "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          order: {
+            address_id:      address.id,
+            restaurant_id:   cart.restaurantId,
+            status:          "new",
+            subtotal,
+            delivery_fee:    deliveryFee,
+            discount_amount: couponDiscount || null,
+            total,
+            notes:           orderNote.trim() || null,
+          },
+          items: cart.items.map((item) => ({
+            menu_item_id:   item.id,
+            quantity:       item.qty,
+            price_at_order: itemUnitPrice(item),
+            extras:         item.extras ?? null,
+            notes:          item.notes  ?? null,
+          })),
+        }),
+      });
+    } catch {
+      setNetworkError(true);
+      setSubmitting(false);
+      return;
+    }
 
     if (res.status === 429) {
       setShowLimitModal(true);
@@ -188,6 +238,7 @@ export default function CheckoutPage() {
 
     if (!res.ok) {
       console.log("Order API error:", res.status);
+      setNetworkError(true);
       setSubmitting(false);
       return;
     }
@@ -196,28 +247,33 @@ export default function CheckoutPage() {
 
     /* ── 3. تسجيل استخدام الكوبون ── */
     if (appliedCoupon) {
-      const { data: existingUsage } = await supabase
+      const { data: existingUsage, error: selectErr } = await supabase
         .from("coupon_usages")
         .select("id, used_count")
         .eq("coupon_id", appliedCoupon.id)
         .eq("user_id", userId)
         .maybeSingle();
 
+      if (selectErr) console.error("[coupon] select error:", selectErr);
+
       if (existingUsage) {
-        await supabase
+        const { error: updErr } = await supabase
           .from("coupon_usages")
           .update({ used_count: existingUsage.used_count + 1 })
           .eq("id", existingUsage.id);
+        if (updErr) console.error("[coupon] usage update error:", updErr);
       } else {
-        await supabase
+        const { error: insErr } = await supabase
           .from("coupon_usages")
           .insert({ coupon_id: appliedCoupon.id, user_id: userId, used_count: 1 });
+        if (insErr) console.error("[coupon] usage insert error:", insErr);
       }
 
-      await supabase
+      const { error: coupUpdErr } = await supabase
         .from("coupons")
         .update({ used_count: appliedCoupon.used_count + 1 })
         .eq("id", appliedCoupon.id);
+      if (coupUpdErr) console.error("[coupon] coupons update error:", coupUpdErr);
     }
 
     clearCart();
@@ -399,16 +455,33 @@ export default function CheckoutPage() {
 
           {/* زرار التأكيد */}
           <div className="px-4 pb-6 pt-2">
-            <button
-              onClick={handleConfirm}
-              disabled={submitting}
-              className="w-full bg-[var(--color-primary)] text-white text-base font-bold py-4 rounded-2xl shadow-md active:scale-[0.98] transition-transform disabled:opacity-60"
-            >
-              {submitting ? "جاري الإرسال..." : "تأكيد الطلب"}
-            </button>
-            <p className="text-center text-xs text-[var(--color-muted)] mt-2">
-              سيتم إرسال طلبك فور التأكيد
-            </p>
+            {networkError ? (
+              <div className="flex flex-col gap-2">
+                <p className="text-center text-sm font-semibold text-red-500">
+                  ❌ فشل إرسال الطلب — تحقق من اتصالك وحاول مرة أخرى
+                </p>
+                <button
+                  onClick={handleConfirm}
+                  disabled={submitting}
+                  className="w-full bg-red-500 text-white text-base font-bold py-4 rounded-2xl shadow-md active:scale-[0.98] transition-transform disabled:opacity-60"
+                >
+                  {submitting ? "جاري الإرسال..." : "إعادة المحاولة"}
+                </button>
+              </div>
+            ) : (
+              <>
+                <button
+                  onClick={handleConfirm}
+                  disabled={submitting}
+                  className="w-full bg-[var(--color-primary)] text-white text-base font-bold py-4 rounded-2xl shadow-md active:scale-[0.98] transition-transform disabled:opacity-60"
+                >
+                  {submitting ? "جاري الإرسال..." : "تأكيد الطلب"}
+                </button>
+                <p className="text-center text-xs text-[var(--color-muted)] mt-2">
+                  سيتم إرسال طلبك فور التأكيد
+                </p>
+              </>
+            )}
           </div>
         </div>
 

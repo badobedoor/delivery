@@ -175,13 +175,13 @@ export default function HomePage() {
                   <Link key={ad.id} href={ad.link}
                     className={`absolute inset-0 transition-opacity duration-500 ${i === adIndex ? "opacity-100" : "opacity-0 pointer-events-none"}`}>
                     {/* eslint-disable-next-line @next/next/no-img-element */}
-                    <img src={ad.image_url} alt="إعلان" className="w-full h-full object-cover" />
+                    <img src={ad.image_url} alt="إعلان" className="w-full h-full object-cover" loading="lazy" onError={(e) => { e.currentTarget.src = '/images/placeholder.png'; }} />
                   </Link>
                 ) : (
                   <div key={ad.id}
                     className={`absolute inset-0 transition-opacity duration-500 ${i === adIndex ? "opacity-100" : "opacity-0"}`}>
                     {/* eslint-disable-next-line @next/next/no-img-element */}
-                    <img src={ad.image_url} alt="إعلان" className="w-full h-full object-cover" />
+                    <img src={ad.image_url} alt="إعلان" className="w-full h-full object-cover" loading="lazy" onError={(e) => { e.currentTarget.src = '/images/placeholder.png'; }} />
                   </div>
                 )
               ))}
@@ -254,27 +254,6 @@ export default function HomePage() {
         </section>
 
 
-        {/* ── اختيارات لا تفوتك ── */}
-        <section className="pt-6">
-          <h2 className="text-base font-bold text-[var(--color-secondary)] px-4 mb-3">
-            اختيارات لا تفوتك 🔥
-          </h2>
-          <div className="flex gap-3 overflow-x-auto px-4 pb-2 scrollbar-hide">
-            {shortcuts.map((s) => (
-              <button
-                key={s.name}
-                className="flex flex-col items-center gap-1.5 flex-shrink-0 w-20"
-              >
-                <div className="w-20 h-20 rounded-2xl bg-[var(--color-primary-light)]/30 border border-[var(--color-primary-light)] flex items-center justify-center text-3xl shadow-sm">
-                  {s.emoji}
-                </div>
-                <span className="text-xs font-medium text-[var(--color-secondary)] text-center leading-tight">
-                  {s.name}
-                </span>
-              </button>
-            ))}
-          </div>
-        </section>
 
       </main>
 

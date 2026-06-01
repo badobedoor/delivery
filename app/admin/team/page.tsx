@@ -655,7 +655,7 @@ function StaffTab({
                       {r.phone || "—"}
                     </td>
                     <td className="hidden md:table-cell px-4 py-3 text-sm font-mono" style={{ color: C.muted }}>
-                      {r.password || "—"}
+                      {r.password ? (r.password.startsWith("$2") ? "مشفر" : r.password) : "—"}
                     </td>
                     <td className="px-4 py-3">
                       <span className="px-2.5 py-1 rounded-full text-[10px] font-bold whitespace-nowrap"
@@ -875,7 +875,7 @@ function DriversTab({
                       {r.phone || "—"}
                     </td>
                     <td className="hidden md:table-cell px-4 py-3 text-sm font-mono" style={{ color: C.muted }}>
-                      {r.password || "—"}
+                      {r.password ? (r.password.startsWith("$2") ? "مشفر" : r.password) : "—"}
                     </td>
                     <td className="px-4 py-3">
                       <span className="px-2.5 py-1 rounded-full text-[10px] font-bold whitespace-nowrap"
