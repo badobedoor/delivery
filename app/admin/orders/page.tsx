@@ -152,45 +152,33 @@ export default function AdminOrdersPage() {
   }
 
   async function loadData() {
-    // 0. جلب الوردية النشطة
-    const { data: shiftData } = await supabase
+    const today = new Date().toISOString().slice(0, 10);
+
+    // 0. جلب الورديات النشطة لليوم
+    const { data: shiftsData } = await supabase
       .from("shifts")
       .select("id, num, start_time, end_time")
       .eq("is_active", true)
-      .limit(1)
-      .maybeSingle();
+      .eq("started_date", today);
 
-    if (shiftData) {
+    const activeShiftIds: number[] = (shiftsData ?? []).map((s: any) => s.id);
+
+    if (shiftsData && shiftsData.length > 0) {
       const fmt = (t: string) => {
         const [h, m] = t.split(":").map(Number);
         return `${h % 12 || 12}:${String(m).padStart(2, "0")} ${h < 12 ? "ص" : "م"}`;
       };
-      setActiveShiftLabel(`الوردية ${shiftData.num} — ${fmt(shiftData.start_time)} إلى ${fmt(shiftData.end_time)}`);
+      const first = shiftsData[0];
+      setActiveShiftLabel(
+        shiftsData.length === 1
+          ? `الوردية ${first.num} — ${fmt(first.start_time)} إلى ${fmt(first.end_time)}`
+          : `${shiftsData.length} ورديات نشطة`
+      );
     } else {
       setActiveShiftLabel(null);
     }
 
-    /* ── نطاق الوقت للفلترة ── */
-    const today    = new Date().toISOString().split("T")[0];
-    const tomorrow = new Date(Date.now() + 86_400_000).toISOString().split("T")[0];
-
-    let rangeStart: string;
-    let rangeEnd:   string;
-
-    if (shiftData) {
-      const startH = parseInt(shiftData.start_time.split(":")[0], 10);
-      const endH   = parseInt(shiftData.end_time.split(":")[0],   10);
-      rangeStart = `${today}T${shiftData.start_time}`;
-      /* وردية ليلية تنتهي الصبح — نهايتها الغد */
-      rangeEnd = endH <= startH
-        ? `${tomorrow}T${shiftData.end_time}`
-        : `${today}T${shiftData.end_time}`;
-    } else {
-      rangeStart = `${today}T00:00:00`;
-      rangeEnd   = `${today}T23:59:59`;
-    }
-
-    // 1. جلب الطلبات بدون order_items
+    // 1. الطلبات الجديدة — بدون فلتر وقت أو وردية
     const { data: newOrdersData, error: e1 } = await supabase
       .from("orders")
       .select(`
@@ -211,8 +199,6 @@ export default function AdminOrdersPage() {
         users:users (name, phone)
       `)
       .eq("status", "new")
-      .gte("created_at", rangeStart)
-      .lte("created_at", rangeEnd)
       .order("created_at", { ascending: false });
 
     console.log("New Orders Error:", e1);
@@ -247,7 +233,7 @@ export default function AdminOrdersPage() {
       order_items: itemsMap[o.id] ?? [],
     }));
 
-    /* Only show orders belonging to the currently active shift */
+    // 4. الجدول — فلتر بـ shift_id في الورديات النشطة لليوم
     let allOrdersQuery = supabase
       .from("orders")
       .select(`
@@ -258,23 +244,23 @@ export default function AdminOrdersPage() {
         delivery_staff (name)
       `)
       .neq("status", "new")
-      .gte("created_at", rangeStart)
-      .lte("created_at", rangeEnd)
       .order("created_at", { ascending: false });
 
-    if (shiftData?.id) {
-      /* الطلبات العادية للوردية + طلبات الدليفري (مفيش shift_id) */
-      allOrdersQuery = allOrdersQuery.or(`shift_id.eq.${shiftData.id},order_type.eq.delivery_request`);
+    if (activeShiftIds.length > 0) {
+      allOrdersQuery = allOrdersQuery
+        .gte("created_at", `${today}T00:00:00`)
+        .or(`shift_id.in.(${activeShiftIds.join(",")}),shift_id.is.null`);
     } else {
-      /* لو مفيش وردية — اعرض طلبات الدليفري فقط */
-      allOrdersQuery = allOrdersQuery.eq("order_type", "delivery_request");
+      /* لو مفيش ورديات نشطة — اعرض كل طلبات اليوم */
+      allOrdersQuery = allOrdersQuery
+        .gte("created_at", `${today}T00:00:00`)
+        .lte("created_at", `${today}T23:59:59`);
     }
 
     const { data: allOrdersData, error: e2 } = await allOrdersQuery;
 
     console.log("All Orders Error:", e2);
     console.log("All Orders:", allOrdersData);
-    console.log("Delivery requests:", allOrdersData?.filter((o: any) => o.order_type === "delivery_request"));
 
     setNewOrdersList(finalOrders);
     setAllOrdersList((allOrdersData as unknown as DBOrder[]) ?? []);
@@ -1053,7 +1039,7 @@ export default function AdminOrdersPage() {
                       </td>
                       <td className="px-3 py-2.5 text-[10px] whitespace-nowrap" style={{ color: C.muted }}>
                         <p>{formatTime(order.created_at)}</p>
-                        <p style={{ color: C.border }}>{formatDate(order.created_at)}</p>
+                        <p style={{ color: C.muted }}>{formatDate(order.created_at)}</p>
                       </td>
                     </tr>
                   );

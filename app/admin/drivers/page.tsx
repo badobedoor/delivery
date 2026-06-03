@@ -238,7 +238,11 @@ function ShiftsSection({ assignments }: { assignments: Assignment[] }) {
     setOpErr(null);
     setShifts((p) => p.map((x) => x.id === s.id ? { ...x, is_active: next } : x));
     try {
-      const { error } = await supabase.from("shifts").update({ is_active: next }).eq("id", s.id);
+      const today = new Date().toISOString().slice(0, 10);
+      const { error } = await supabase.from("shifts").update({
+        is_active:    next,
+        started_date: next ? today : null,
+      }).eq("id", s.id);
       if (error) throw error;
     } catch (err) {
       console.error("ShiftsSection.toggle:", err);

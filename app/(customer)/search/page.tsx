@@ -43,31 +43,33 @@ export default function SearchPage() {
 
     setSearching(true);
     const timer = setTimeout(async () => {
-      const [{ data: restData }, { data: mealData }] = await Promise.all([
-        supabase
-          .from("restaurants")
-          .select("id, name, image_url, cuisine_type, status, is_active, opens_at, closes_at")
-          .or(`name.ilike.%${trimmed}%,description.ilike.%${trimmed}%`)
-          .eq("is_active", true)
-          .eq("status", "نشط")
-          .limit(20),
+      const [itemsRes, restaurantsRes] = await Promise.all([
         supabase
           .from("menu_items")
           .select("id, name, price, image_url, restaurant_id, restaurants(name, is_active, status, opens_at, closes_at), categories(name)")
           .ilike("name", `%${trimmed}%`)
           .eq("is_active", true)
-          .limit(20),
+          .limit(40),
+        supabase
+          .from("restaurants")
+          .select("id, name, description, image_url, cover_image_url, is_active, status, opens_at, closes_at")
+          .or(`name.ilike.%${trimmed}%,description.ilike.%${trimmed}%`)
+          .eq("is_active", true)
+          .eq("status", "نشط")
+          .limit(40),
       ]);
 
-      const openRests = (restData ?? []).filter((r) => isRestaurantOpen(r));
+      const openRestaurants = ((restaurantsRes.data ?? []) as Restaurant[])
+        .filter((r) => isRestaurantOpen(r));
 
-      const openMeals = ((mealData ?? []) as unknown as Meal[]).filter((m) => {
-        const r = m.restaurants;
-        if (!r || !r.is_active || r.status !== "نشط") return false;
-        return isRestaurantOpen({ is_active: r.is_active, opens_at: r.opens_at, closes_at: r.closes_at });
-      });
+      const openMeals = ((itemsRes.data ?? []) as unknown as Meal[])
+        .filter((item) => {
+          const r = item.restaurants;
+          if (!r || !r.is_active || r.status !== "نشط") return false;
+          return isRestaurantOpen({ is_active: r.is_active, opens_at: r.opens_at, closes_at: r.closes_at });
+        });
 
-      setRestaurants(openRests);
+      setRestaurants(openRestaurants);
       setMeals(openMeals);
       setSearching(false);
     }, 400);

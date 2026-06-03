@@ -206,20 +206,16 @@ function SidebarContent({
                   )}
                 </div>
 
-                {/* Label + blinking dot in expanded mode */}
+                {/* Label + count badge in expanded mode */}
                 {!collapsed && (
                   <div className="flex items-center justify-between flex-1 min-w-0">
                     <span>{link.label}</span>
                     {hasNewBadge && (
-                      <span className="relative flex h-2 w-2 mr-1 flex-shrink-0">
-                        <span
-                          className="animate-ping absolute inline-flex h-full w-full rounded-full opacity-75"
-                          style={{ background: C.red }}
-                        />
-                        <span
-                          className="relative inline-flex rounded-full h-2 w-2"
-                          style={{ background: C.red }}
-                        />
+                      <span
+                        className="mr-1 flex-shrink-0 min-w-[18px] h-[18px] flex items-center justify-center rounded-full text-[10px] font-black"
+                        style={{ background: C.red, color: "#fff" }}
+                      >
+                        {newOrdersCount}
                       </span>
                     )}
                   </div>
@@ -301,6 +297,27 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
 
   useEffect(() => { fetchNewOrdersCount(); }, [fetchNewOrdersCount]);
   useAutoRefresh(fetchNewOrdersCount);
+
+  /* ── Realtime: تحديث العداد فور وصول طلب جديد أو تغيير حالة ── */
+  useEffect(() => {
+    if (!user || isLoginPage) return;
+    const channel = supabase
+      .channel("layout-orders-count")
+      .on("postgres_changes", { event: "INSERT", schema: "public", table: "orders" }, (payload) => {
+        fetchNewOrdersCount();
+        if ((payload.new as any)?.status !== "new") return;
+        try {
+          const src = localStorage.getItem("notification_sound") ?? "/sounds/new-order.mp3";
+          new Audio(src).play().catch(() => {});
+        } catch { /* ignore */ }
+        if (Notification.permission === "granted") {
+          new Notification("🔔 طلب جديد وصل!", { body: "يوجد طلب جديد يحتاج مراجعة", icon: "/icon.png" });
+        }
+      })
+      .on("postgres_changes", { event: "UPDATE", schema: "public", table: "orders" }, fetchNewOrdersCount)
+      .subscribe();
+    return () => { supabase.removeChannel(channel); };
+  }, [user, isLoginPage, fetchNewOrdersCount]);
 
   /* ── Fetch current user from secure cookie ── */
   useEffect(() => {
