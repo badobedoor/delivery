@@ -9,7 +9,7 @@ import { isRestaurantOpen } from "@/lib/utils";
 
 /* ── Types ── */
 type Restaurant = {
-  id: string; name: string; image_url: string | null; cuisine_type: string | null;
+  id: string; name: string; image_url: string | null; cover_image_url: string | null;
   status: string | null; is_active: boolean; opens_at: string | null; closes_at: string | null;
 };
 type Meal = {
