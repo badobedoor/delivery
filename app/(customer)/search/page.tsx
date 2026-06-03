@@ -223,9 +223,6 @@ export default function SearchPage() {
                       </div>
                       <div className="flex-1 min-w-0">
                         <p className="text-sm font-bold text-[var(--color-secondary)] truncate">{r.name}</p>
-                        {r.cuisine_type && (
-                          <p className="text-xs text-[var(--color-muted)] mt-0.5">{r.cuisine_type}</p>
-                        )}
                       </div>
                       <svg width="16" height="16" viewBox="0 0 24 24" fill="none"
                         stroke="var(--color-muted)" strokeWidth="2" strokeLinecap="round" className="flex-shrink-0">
