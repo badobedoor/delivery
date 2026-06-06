@@ -240,10 +240,11 @@ function TransactionActivity({
   walletKey: WalletCat | "all";
   transactions: Transaction[];
 }) {
-  const [query,    setQuery]    = useState("");
-  const [fromDate, setFromDate] = useState("");
-  const [toDate,   setToDate]   = useState("");
-  const [page,     setPage]     = useState(0);
+  const [query,      setQuery]      = useState("");
+  const [typeFilter, setTypeFilter] = useState("");
+  const [fromDate,   setFromDate]   = useState("");
+  const [toDate,     setToDate]     = useState("");
+  const [page,       setPage]       = useState(0);
   const PAGE_SIZE = 10;
 
   const walletLabel = walletKey === "all" ? null : WALLET_LABELS[walletKey];
@@ -255,12 +256,17 @@ function TransactionActivity({
     );
   }, [transactions, walletLabel]);
 
+  const typeFiltered = useMemo(() => {
+    if (!typeFilter) return walletFiltered;
+    return walletFiltered.filter((t) => t.type === typeFilter);
+  }, [walletFiltered, typeFilter]);
+
   const dateFiltered = useMemo(() => {
-    let r = walletFiltered;
+    let r = typeFiltered;
     if (fromDate) r = r.filter((t) => t.createdAt >= fromDate);
     if (toDate)   r = r.filter((t) => t.createdAt <= toDate + "T23:59:59");
     return r;
-  }, [walletFiltered, fromDate, toDate]);
+  }, [typeFiltered, fromDate, toDate]);
 
   const displayed = useMemo(() => {
     if (!query.trim()) return dateFiltered;
@@ -269,19 +275,17 @@ function TransactionActivity({
       (t) =>
         (t.personName ?? "").toLowerCase().includes(q) ||
         t.description.toLowerCase().includes(q) ||
-        t.type.includes(q) ||
-        t.fromWallet.toLowerCase().includes(q) ||
-        t.toWallet.toLowerCase().includes(q),
+        t.type.toLowerCase().includes(q),
     );
   }, [dateFiltered, query]);
 
-  useEffect(() => { setPage(0); }, [query, fromDate, toDate]);
+  useEffect(() => { setPage(0); }, [query, typeFilter, fromDate, toDate]);
 
   const totalPages = Math.ceil(displayed.length / PAGE_SIZE);
   const paginated  = displayed.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE);
-  const hasFilter  = !!(query || fromDate || toDate);
+  const hasFilter  = !!(query || typeFilter || fromDate || toDate);
 
-  function clearFilters() { setQuery(""); setFromDate(""); setToDate(""); setPage(0); }
+  function clearFilters() { setQuery(""); setTypeFilter(""); setFromDate(""); setToDate(""); setPage(0); }
 
   return (
     <div className="rounded-2xl flex flex-col gap-0 overflow-hidden"
@@ -340,23 +344,30 @@ function TransactionActivity({
         </div>
 
         <div className="flex gap-2 flex-wrap">
-          {(["الكل", "صرف", "تحصيل", "تحويل", "إيداع"] as const).map((f) => {
-            const active = f === "الكل" ? query === "" : query === f;
+          {([
+            { value: "",            label: "الكل"       },
+            { value: "صرف",         label: "صرف"        },
+            { value: "تحصيل",      label: "تحصيل"      },
+            { value: "تحويل",      label: "تحويل"      },
+            { value: "إيداع",      label: "إيداع"      },
+            { value: "commission",  label: "حصة توصيل"  },
+          ]).map(({ value, label }) => {
+            const active = typeFilter === value;
             const col =
-              f === "صرف"    ? C.red   :
-              f === "تحصيل" ? C.green :
-              f === "تحويل" ? C.blue  :
-              f === "إيداع" ? C.green : C.teal;
+              value === "صرف"        ? C.red   :
+              value === "تحصيل"     ? C.green :
+              value === "تحويل"     ? C.blue  :
+              value === "commission" ? C.teal  : C.teal;
             return (
-              <button key={f}
-                onClick={() => { setQuery(f === "الكل" ? "" : f); setPage(0); }}
+              <button key={value || "all"}
+                onClick={() => { setTypeFilter(value); setPage(0); }}
                 className="px-3 py-1 rounded-lg text-[11px] font-bold transition-all"
                 style={{
                   background: active ? col : `${col}18`,
                   color:      active ? "#fff" : col,
                   border:     `1px solid ${active ? col : `${col}33`}`,
                 }}>
-                {f}
+                {label}
               </button>
             );
           })}
@@ -376,6 +387,17 @@ function TransactionActivity({
             {paginated.map((t, i) => {
               const meta   = TX_META[t.type] ?? { icon: "•", color: C.muted, label: () => t.description || t.type };
               const isLast = i === paginated.length - 1;
+              const amountColor = (() => {
+                if (t.type !== "تحويل") return meta.color;
+                if (walletKey === "all") {
+                  if (t.fromWallet === "خزنة المكتب") return C.red;
+                  if (t.toWallet   === "خزنة المكتب") return C.green;
+                  return meta.color;
+                }
+                if (walletLabel && t.fromWallet === walletLabel) return C.red;
+                if (walletLabel && t.toWallet   === walletLabel) return C.green;
+                return meta.color;
+              })();
               return (
                 <div key={t.id}
                   className="flex items-start gap-4 px-4 py-3.5 transition-all"
@@ -416,11 +438,11 @@ function TransactionActivity({
                     </p>
                   </div>
                   <div className="flex flex-col items-end gap-1.5 flex-shrink-0">
-                    <p className="text-base font-black" style={{ color: meta.color }}>
+                    <p className="text-base font-black" style={{ color: amountColor }}>
                       {fmtAmt(t.amount)}
                     </p>
                     <span className="text-[10px] px-2 py-0.5 rounded-full font-bold"
-                      style={{ background: `${meta.color}22`, color: meta.color }}>
+                      style={{ background: `${amountColor}22`, color: amountColor }}>
                       {t.type}
                     </span>
                   </div>
@@ -2387,7 +2409,7 @@ export default function AdminAccountsPage() {
 
       // Step 4: INSERT main_wallet — حصة المكتب من رسوم التوصيل
       await supabase.from("main_wallet").insert({
-        type:    "تحصيل",
+        type:    "commission",
         amount:  officeShare,
         reason:  `حصة المكتب — ${req.driverName}`,
         balance: roundEGP(lastMainBal + officeShare),

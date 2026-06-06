@@ -48,6 +48,11 @@ export default function CheckoutPage() {
   const [appliedCoupon,  setAppliedCoupon]  = useState<{ id: number; used_count: number } | null>(null);
   const [areaName,       setAreaName]       = useState("");
   const [networkError,   setNetworkError]   = useState(false);
+  const [userPhone,      setUserPhone]      = useState<string | null>(null);
+  const [showPhoneModal, setShowPhoneModal] = useState(false);
+  const [phoneInput,     setPhoneInput]     = useState("");
+  const [phoneError,     setPhoneError]     = useState("");
+  const [savingPhone,    setSavingPhone]    = useState(false);
 
   async function fetchDeliveryFee(areaId: string) {
     const { data } = await supabase
@@ -69,7 +74,7 @@ export default function CheckoutPage() {
       if (!user) { setLoading(false); return; }
       setUserId(user.id);
 
-      const [{ data: addrData }, { data: allAddrData }] = await Promise.all([
+      const [{ data: addrData }, { data: allAddrData }, { data: userData }] = await Promise.all([
         supabase
           .from("addresses")
           .select("id, label, full_address, area_id")
@@ -80,6 +85,11 @@ export default function CheckoutPage() {
           .from("addresses")
           .select("id, label, full_address, area_id")
           .eq("user_id", user.id),
+        supabase
+          .from("users")
+          .select("phone")
+          .eq("id", user.id)
+          .single(),
       ]);
 
       if (addrData) {
@@ -90,6 +100,7 @@ export default function CheckoutPage() {
       }
 
       setAllAddresses(allAddrData ?? []);
+      setUserPhone(userData?.phone ?? null);
       setLoading(false);
     }
 
@@ -171,7 +182,43 @@ export default function CheckoutPage() {
     setApplying(false);
   }
 
+  function validatePhone(phone: string): string {
+    if (!phone.trim()) return "من فضلك أدخل رقم هاتفك";
+    if (!/^\d+$/.test(phone)) return "أرقام فقط بدون حروف أو مسافات";
+    if (phone.length !== 11) return "الرقم لازم يكون 11 رقم";
+    if (!/^01[0125]/.test(phone)) return "الرقم لازم يبدأ بـ 010 أو 011 أو 012 أو 015";
+    return "";
+  }
+
+  async function savePhone() {
+    const err = validatePhone(phoneInput);
+    if (err) { setPhoneError(err); return; }
+    setSavingPhone(true);
+    const { error: updateErr } = await supabase
+      .from("users")
+      .update({ phone: phoneInput })
+      .eq("id", userId!);
+    if (updateErr) {
+      setPhoneError("حصل خطأ، حاول تاني");
+      setSavingPhone(false);
+      return;
+    }
+    setShowPhoneModal(false);
+    setSavingPhone(false);
+    setUserPhone(phoneInput);
+    await submitOrder();
+  }
+
   async function handleConfirm() {
+    if (!cart || !address || !userId) return;
+    if (!userPhone) {
+      setShowPhoneModal(true);
+      return;
+    }
+    await submitOrder();
+  }
+
+  async function submitOrder() {
     if (!cart || !address || !userId) return;
 
     if (!navigator.onLine) {
@@ -221,6 +268,7 @@ export default function CheckoutPage() {
             price_at_order: itemUnitPrice(item),
             extras:         item.extras ?? null,
             notes:          item.notes  ?? null,
+            size_name:      item.size?.name ?? null,
           })),
         }),
       });
@@ -486,6 +534,59 @@ export default function CheckoutPage() {
         </div>
 
       </div>
+
+      {/* ── Phone Modal ── */}
+      {showPhoneModal && (
+        <div className="fixed inset-0 bg-black/50 z-[100] flex items-center justify-center">
+          <div className="bg-white rounded-2xl max-w-[320px] w-full mx-4 p-6">
+            <div className="flex flex-col gap-3">
+              <div className="flex items-center justify-between">
+                <h3 className="text-base font-black text-[var(--color-secondary)]">رقم هاتفك؟</h3>
+                <button
+                  onClick={() => { setShowPhoneModal(false); setPhoneError(""); }}
+                  className="w-7 h-7 rounded-full bg-[var(--color-surface)] flex items-center justify-center"
+                >
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none"
+                    stroke="var(--color-secondary)" strokeWidth="2.5" strokeLinecap="round">
+                    <path d="M18 6 6 18M6 6l12 12" />
+                  </svg>
+                </button>
+              </div>
+              <p className="text-sm text-[var(--color-muted)]">
+                محتاجين رقمك عشان المندوب يقدر يتواصل معاك
+              </p>
+              <input
+                type="tel"
+                inputMode="numeric"
+                value={phoneInput}
+                onChange={(e) => { setPhoneInput(e.target.value.replace(/\D/g, "")); setPhoneError(""); }}
+                placeholder="01xxxxxxxxx"
+                maxLength={11}
+                dir="ltr"
+                className="w-full text-sm outline-none bg-[var(--color-surface)] rounded-xl px-3 py-3 text-[var(--color-secondary)] placeholder:text-[var(--color-muted)] border border-[var(--color-border)] focus:border-[var(--color-primary)] transition-colors"
+              />
+              {phoneError && (
+                <p className="text-xs text-red-500 text-right">{phoneError}</p>
+              )}
+              <div className="flex gap-2 mt-1">
+                <button
+                  onClick={() => { setShowPhoneModal(false); setPhoneError(""); }}
+                  className="flex-1 border border-[var(--color-border)] text-[var(--color-secondary)] text-sm font-bold py-2.5 rounded-xl active:scale-[0.98] transition-transform"
+                >
+                  إلغاء
+                </button>
+                <button
+                  onClick={savePhone}
+                  disabled={savingPhone}
+                  className="flex-1 bg-[var(--color-primary)] text-white text-sm font-bold py-2.5 rounded-xl active:scale-[0.98] transition-transform disabled:opacity-60"
+                >
+                  {savingPhone ? "..." : "حفظ ومتابعة"}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* ── Limit Modal ── */}
       {showLimitModal && (

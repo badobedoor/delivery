@@ -128,6 +128,20 @@ export default function OrderDetailPage() {
       setLoading(false);
     }
     load();
+
+    const channel = supabase
+      .channel(`order-${id}`)
+      .on("postgres_changes", {
+        event:  "UPDATE",
+        schema: "public",
+        table:  "orders",
+        filter: `id=eq.${id}`,
+      }, () => {
+        load();
+      })
+      .subscribe();
+
+    return () => { supabase.removeChannel(channel); };
   }, [id]);
 
   async function handleReorder() {

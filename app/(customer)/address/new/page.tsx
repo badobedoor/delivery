@@ -32,8 +32,6 @@ function NewAddressPageContent() {
   const [form, setForm]     = useState<Record<string, string>>({
     label: "", building: "", apartment: "", floor: "", landmark: "",
   });
-  const [phone, setPhone]       = useState("");
-  const [savedPhone, setSavedPhone] = useState("");
   const [userId, setUserId] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [error, setError]   = useState<string | null>(null);
@@ -47,14 +45,6 @@ function NewAddressPageContent() {
       setAreas(areasData ?? []);
       if (user) {
         setUserId(user.id);
-        const { data: userData } = await supabase
-          .from("users")
-          .select("phone")
-          .eq("id", user.id)
-          .single();
-        const p = userData?.phone ?? "";
-        setPhone(p);
-        setSavedPhone(p);
       }
     }
     load();
@@ -68,10 +58,6 @@ function NewAddressPageContent() {
     setError(null);
     if (!area)         return setError("الرجاء اختيار الحي");
     if (!form.label)   return setError("الرجاء إدخال تسمية العنوان");
-    if (!savedPhone) {
-      if (!phone)              return setError("الرجاء إدخال رقم الهاتف");
-      if (phone.length !== 11) return setError("رقم الهاتف يجب أن يكون 11 رقم");
-    }
 
     const full_address = [
       `عمارة ${form.building}`,
@@ -81,9 +67,6 @@ function NewAddressPageContent() {
     ].filter(Boolean).join("، ");
 
     setSaving(true);
-    if (phone !== savedPhone && userId) {
-      await supabase.from("users").update({ phone }).eq("id", userId);
-    }
     const { count } = await supabase
       .from("addresses")
       .select("*", { count: "exact", head: true })
@@ -175,23 +158,6 @@ function NewAddressPageContent() {
               />
             </div>
           ))}
-
-          {/* ── 7. رقم الهاتف ── */}
-          {!savedPhone && (
-            <div className="bg-white rounded-2xl border border-[var(--color-border)] px-4 py-3">
-              <label className="block text-xs font-bold text-[var(--color-secondary)] mb-1.5">
-                رقم الهاتف <span className="text-[var(--color-danger)]">*</span>
-              </label>
-              <input
-                type="tel"
-                value={phone}
-                onChange={(e) => setPhone(e.target.value)}
-                placeholder="01xxxxxxxxx"
-                className="w-full text-sm bg-transparent outline-none text-[var(--color-secondary)] placeholder:text-[var(--color-muted)]"
-                dir="ltr"
-              />
-            </div>
-          )}
 
           {/* ── خطأ ── */}
           {error && (

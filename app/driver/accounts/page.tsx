@@ -547,45 +547,21 @@ export default function DriverAccountsPage() {
   useEffect(() => {
     if (!driverId) return;
 
-    /* delivery_accounts: INSERT → حدّث سجل العمليات */
-    const deliveryChannel = supabase
-      .channel("driver-delivery-accounts-realtime")
-      .on(
-        "postgres_changes",
-        {
-          event:  "INSERT",
-          schema: "public",
-          table:  "delivery_accounts",
-          filter: `delivery_id=eq.${driverId}`,
-        },
-        (payload) => {
-          try {
-            const row = payload.new as any;
-            setAccountTxs((prev) => [
-              {
-                id:        row.id,
-                type:      row.type      ?? "",
-                amount:    row.amount    ?? 0,
-                reason:    row.reason    ?? null,
-                createdAt: row.created_at,
-              },
-              ...prev,
-            ]);
-          } catch (err) {
-            console.error("Realtime delivery_accounts INSERT error:", err);
-          }
-        },
-      )
-      .subscribe((status) => {
-        if (status === "CHANNEL_ERROR") {
-          console.error("Realtime channel error on delivery_accounts");
-        }
-      });
+    const channel = supabase
+      .channel("driver-accounts")
+      .on("postgres_changes", {
+        event:  "*",
+        schema: "public",
+        table:  "delivery_accounts",
+      }, () => {
+        loadData(driverId);
+      })
+      .subscribe();
 
     return () => {
-      supabase.removeChannel(deliveryChannel);
+      supabase.removeChannel(channel);
     };
-  }, [driverId]);
+  }, [driverId, loadData]);
 
   /* ── Shift settlement — step 1: validate then show confirm modal ── */
   async function openSettlementConfirm() {

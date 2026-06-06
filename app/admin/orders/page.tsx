@@ -419,34 +419,35 @@ export default function AdminOrdersPage() {
     const phone = restaurant.phone.replace(/^0/, "20").replace(/\D/g, "");
 
     const itemsText = order.order_items.map((item) => {
-      const extras      = item.extras ?? [];
-      const extrasTotal = extras.reduce((sum, e) => sum + (e.price ?? 0), 0);
+      const extras  = item.extras ?? [];
+      const extrasTotal = extras.reduce((sum: number, e: { price?: number }) => sum + (e.price ?? 0), 0);
       const basePrice   = item.price_at_order - extrasTotal;
 
-      const categoryPart = item.category_name ? ` — ${item.category_name}` : "";
-      let line = `- ${item.menu_items?.name ?? "—"} × ${item.quantity}${categoryPart}\n  السعر الأساسي: ${basePrice}ج`;
+      const categoryPart = item.category_name ? ` ${item.category_name}` : "";
+      const sizePart     = item.size_name ? ` ${item.size_name}` : "";
+
+      let line = `- عدد ${item.quantity}${categoryPart} ${item.menu_items?.name ?? "—"}${sizePart} بسعر ${basePrice}ج`;
 
       if (extras.length > 0) {
-        const extrasLines = extras.map((e) => `    + ${e.name} (+${e.price}ج)`).join("\n");
-        line += `\n  الإضافات:\n${extrasLines}`;
+        const extrasParts = extras.map((e: { name: string; price?: number }) => `مع اضافة ${e.name} بسعر ${e.price ?? 0}ج`).join(" ");
+        line += ` ${extrasParts}`;
       }
 
       if (item.notes) {
-        line += `\n  📝 ملاحظة: ${item.notes}`;
+        line += ` مع ملاحظة: ${item.notes}`;
       }
 
       return line;
-    }).join("\n\n");
-
+    }).join("\n");
+const bell = String.fromCodePoint(0x1F6CE, 0xFE0F);
+const money = String.fromCodePoint(0x1F4B8);
+const finger = String.fromCodePoint(0x1F447);
     const message = [
-      "🛵 طلب جديد من حالا",
-      "",
-      "الأصناف:",
+      `${bell} *طلب* *جديد* *من* *حالا*`,
+      "الاصناف:",
       itemsText,
-      "",
-      `📊 الإجمالي: ${order.subtotal ?? order.total}ج`,
-      "",
-      "يرجى الرد لتأكيد استلام الطلب 🙏",
+      `*${money}  الاجمالي : ${order.subtotal ?? order.total}ج*`,
+      `يرجي سرعة الرد لتأكيد استلامكم للطلب ${finger}`,
     ].join("\n");
 
     console.log("WhatsApp message:", message);

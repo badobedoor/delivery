@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase";
 import UserSync from "@/components/UserSync";
 import BottomNav from "@/components/customer/BottomNav";
+import InstallPrompt from "@/components/customer/InstallPrompt";
 
 export default function CustomerLayout({ children }: { children: React.ReactNode }) {
   const router = useRouter();
@@ -34,6 +35,7 @@ export default function CustomerLayout({ children }: { children: React.ReactNode
       <UserSync />
       {children}
       <BottomNav />
+      <InstallPrompt />
     </>
   );
 }

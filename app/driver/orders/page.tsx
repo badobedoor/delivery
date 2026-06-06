@@ -1037,7 +1037,9 @@ export default function DriverOrdersPage() {
       {/* ── Tabs ── */}
       <div className="flex gap-1 p-3" style={{ background: C.card, borderBottom: `1px solid ${C.border}` }}>
         {(["available", "active"] as TabId[]).map((t) => {
-          const label = t === "available" ? "الطلبات المتاحة" : "قيد التنفيذ";
+          const label = t === "available"
+            ? (availCount > 0 ? `الطلبات المتاحة (${availCount})` : "الطلبات المتاحة")
+            : "قيد التنفيذ";
           const count = t === "available" ? availCount : active.length;
           return (
             <button
