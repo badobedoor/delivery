@@ -32,7 +32,7 @@ export default function RootLayout({
         <meta name="apple-mobile-web-app-title" content="حالا" />
         <link rel="apple-touch-icon" href="/icon.png" />
         <script dangerouslySetInnerHTML={{__html: `
-          if ('serviceWorker' in navigator) {
+          if (${process.env.NODE_ENV === "production"} && 'serviceWorker' in navigator) {
             window.addEventListener('load', () => {
               navigator.serviceWorker.register('/sw.js')
             })

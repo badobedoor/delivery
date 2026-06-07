@@ -43,11 +43,21 @@ export default function SearchPage() {
 
     setSearching(true);
     const timer = setTimeout(async () => {
+      const { data: matchedCategories } = await supabase
+        .from("categories")
+        .select("id")
+        .ilike("name", `%${trimmed}%`);
+
+      const categoryIds = (matchedCategories ?? []).map((c) => c.id);
+      const itemsFilter = categoryIds.length > 0
+        ? `name.ilike.%${trimmed}%,description.ilike.%${trimmed}%,category_id.in.(${categoryIds.join(",")})`
+        : `name.ilike.%${trimmed}%,description.ilike.%${trimmed}%`;
+
       const [itemsRes, restaurantsRes] = await Promise.all([
         supabase
           .from("menu_items")
           .select("id, name, price, image_url, restaurant_id, restaurants(name, is_active, status, opens_at, closes_at), categories(name)")
-          .ilike("name", `%${trimmed}%`)
+          .or(itemsFilter)
           .eq("is_active", true)
           .limit(40),
         supabase

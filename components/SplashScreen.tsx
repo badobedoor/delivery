@@ -1,64 +1,90 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
-
-type Phase = 1 | 3;
+import { useEffect, useRef } from "react";
 
 export default function SplashScreen({ onDone }: { onDone: () => void }) {
-  const [phase, setPhase] = useState<Phase>(1);
   const onDoneRef = useRef(onDone);
   onDoneRef.current = onDone;
 
   useEffect(() => {
-    console.log('SplashScreen mounted');
-    const t1 = setTimeout(() => setPhase(3), 1500);
-    const t2 = setTimeout(() => onDoneRef.current(), 3000);
-    return () => { clearTimeout(t1); clearTimeout(t2); };
+    const timer = setTimeout(() => onDoneRef.current(), 2500);
+    return () => clearTimeout(timer);
   }, []);
 
-  const fullScreen: React.CSSProperties = {
-    position:  "fixed",
-    inset:     0,
-    width:     "100vw",
-    height:    "100vh",
-    zIndex:    9999,
-    overflow:  "hidden",
-  };
-
-  const coverImg: React.CSSProperties = {
-    width:          "100%",
-    height:         "100%",
-    objectFit:      "cover",
-    objectPosition: "center",
-    display:        "block",
-  };
-
   return (
-    <>
+    <div
+      dir="rtl"
+      className="flex flex-col items-center justify-center"
+      style={{ position: "fixed", inset: 0, background: "#ffffff", zIndex: 9999 }}
+    >
       <style>{`
-        @keyframes moto-zoom {
-          from { transform: scale(0.3); opacity: 0.7; }
-          to   { transform: scale(3);   opacity: 1;   }
+        @keyframes splash-ring {
+          0%   { transform: scale(0.8); opacity: 0.35; }
+          100% { transform: scale(1.4); opacity: 0; }
         }
-        @keyframes hala-fadein {
-          from { opacity: 0; }
-          to   { opacity: 1; }
+        @keyframes splash-dot-pulse {
+          0%, 80%, 100% { opacity: 0.3; transform: scale(0.8); }
+          40%           { opacity: 1;   transform: scale(1.15); }
         }
+
+        .splash-ring-1 { animation: splash-ring 3s ease-out infinite; }
+        .splash-ring-2 { animation: splash-ring 3s ease-out infinite 1.5s; }
+
+        .splash-dot-1 { animation: splash-dot-pulse 1.4s ease-in-out infinite; }
+        .splash-dot-2 { animation: splash-dot-pulse 1.4s ease-in-out infinite 0.2s; }
+        .splash-dot-3 { animation: splash-dot-pulse 1.4s ease-in-out infinite 0.4s; }
       `}</style>
 
-      {/* المرحلة 1 — موتوسيكل يكبر */}
-      {phase === 1 && (
-        <div style={{ ...fullScreen, background: "#000", animation: "moto-zoom 1.5s ease-in forwards" }}>
-          <img src="/images/splash-moto.png" alt="" style={coverImg} />
-        </div>
-      )}
+      {/* صندوق الصورة */}
+      <div
+        className="relative flex items-center justify-center"
+        style={{ width: 320, height: 220 }}
+      >
+        {/* الدوائر الخفيفة - ring effect */}
+        <span
+          className="splash-ring-1 absolute rounded-full"
+          style={{ width: 160, height: 160, border: "2px solid rgba(255,96,0,0.25)" }}
+        />
+        <span
+          className="splash-ring-2 absolute rounded-full"
+          style={{ width: 160, height: 160, border: "2px solid rgba(255,96,0,0.25)" }}
+        />
 
-      {/* المرحلة 3 — لوجو حالا يظهر */}
-      {phase === 3 && (
-        <div style={{ ...fullScreen, background: "#000", animation: "hala-fadein 1.5s ease-out forwards" }}>
-          <img src="/images/splash-hala.png" alt="حالا" style={coverImg} />
-        </div>
-      )}
-    </>
+        {/* الموتسكل بالخلفية البيضا */}
+        <img
+          src="/splash-logo-1.png"
+          alt="حالاً دلفري"
+          className="absolute"
+          style={{ width: 320, height: 220, objectFit: "contain" }}
+        />
+      </div>
+
+      {/* النصوص */}
+      <h1
+        className="font-[var(--font-cairo)]"
+        style={{ color: "#FF6000", fontSize: 28, fontWeight: 900, marginTop: 8 }}
+      >
+        حالاً دلفري
+      </h1>
+      <p style={{ color: "#9CA3AF", fontSize: 13, marginTop: 4 }}>
+        توصيل سريع لباب بيتك
+      </p>
+
+      {/* النقاط النابضة */}
+      <div className="flex items-center gap-2" style={{ marginTop: 16 }}>
+        <span
+          className="splash-dot-1 rounded-full"
+          style={{ width: 8, height: 8, background: "#FF6000" }}
+        />
+        <span
+          className="splash-dot-2 rounded-full"
+          style={{ width: 8, height: 8, background: "#FF6000" }}
+        />
+        <span
+          className="splash-dot-3 rounded-full"
+          style={{ width: 8, height: 8, background: "#FF6000" }}
+        />
+      </div>
+    </div>
   );
 }

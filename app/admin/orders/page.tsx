@@ -38,6 +38,7 @@ type DBNewOrder = {
     menu_items:     { name: string } | null;
     notes?:         string | null;
     category_name?: string | null;
+    size_name?:     string | null;
   }[];
   users: { name: string | null; phone: string | null } | null;
   user_id: string | null;
@@ -211,7 +212,7 @@ export default function AdminOrdersPage() {
     if (orderIds.length > 0) {
       const { data: itemsData } = await supabase
         .from("order_items")
-        .select("order_id, quantity, price_at_order, extras, notes, menu_items (name, categories (name))")
+        .select("order_id, quantity, price_at_order, extras, notes, size_name, menu_items (name, categories (name))")
         .in("order_id", orderIds);
 
       for (const row of (itemsData ?? []) as any[]) {
@@ -223,6 +224,7 @@ export default function AdminOrdersPage() {
           menu_items:     row.menu_items ?? null,
           notes:          row.notes ?? null,
           category_name:  row.menu_items?.categories?.name ?? null,
+          size_name:      row.size_name ?? null,
         });
       }
     }
@@ -311,16 +313,7 @@ export default function AdminOrdersPage() {
 
             setNewOrdersList((prev) => [fullOrder, ...prev]);
 
-            /* ── صوت + banner تنبيه ── */
-            try {
-              const savedSound = localStorage.getItem("notification_sound");
-              const src = savedSound ?? "/sounds/new-order.mp3";
-              const audio = new Audio(src);
-              audio.play().catch(() => {
-                pendingSoundRef.current = src;
-                setSoundBlocked(true);
-              });
-            } catch { /* ignore */ }
+            /* ── banner تنبيه ── */
             setNewOrderBanner(true);
             setTimeout(() => setNewOrderBanner(false), 5000);
 
@@ -386,10 +379,6 @@ export default function AdminOrdersPage() {
     if (!soundBlocked) return;
     function handleClick() {
       setSoundBlocked(false);
-      if (pendingSoundRef.current) {
-        new Audio(pendingSoundRef.current).play().catch(() => {});
-        pendingSoundRef.current = null;
-      }
     }
     document.addEventListener("click", handleClick, { once: true });
     return () => document.removeEventListener("click", handleClick);
@@ -424,36 +413,40 @@ export default function AdminOrdersPage() {
       const basePrice   = item.price_at_order - extrasTotal;
 
       const categoryPart = item.category_name ? ` ${item.category_name}` : "";
-      const sizePart     = item.size_name ? ` ${item.size_name}` : "";
+      const sizePart     = item.size_name ? ` *${item.size_name}*` : "";
 
-      let line = `- عدد ${item.quantity}${categoryPart} ${item.menu_items?.name ?? "—"}${sizePart} بسعر ${basePrice}ج`;
+      const lines = [
+        `• عدد ${item.quantity}${categoryPart} ${item.menu_items?.name ?? "—"}${sizePart}`,
+        `السعر : ${basePrice}ج`,
+      ];
 
       if (extras.length > 0) {
-        const extrasParts = extras.map((e: { name: string; price?: number }) => `مع اضافة ${e.name} بسعر ${e.price ?? 0}ج`).join(" ");
-        line += ` ${extrasParts}`;
+        lines.push("الإضافات:");
+        extras.forEach((e: { name: string; price?: number }) => lines.push(`+ ${e.name} (+${e.price ?? 0}ج)`));
       }
 
       if (item.notes) {
-        line += ` مع ملاحظة: ${item.notes}`;
+        lines.push(`*ملاحظة: ${item.notes}*`);
       }
 
-      return line;
-    }).join("\n");
-const bell = String.fromCodePoint(0x1F6CE, 0xFE0F);
-const money = String.fromCodePoint(0x1F4B8);
-const finger = String.fromCodePoint(0x1F447);
+      return lines.join("\n");
+    }).join("\n----------------------\n");
+
     const message = [
-      `${bell} *طلب* *جديد* *من* *حالا*`,
-      "الاصناف:",
+      `*طلب جديد من حالا*`,
+      "",
+      "الأصناف:",
       itemsText,
-      `*${money}  الاجمالي : ${order.subtotal ?? order.total}ج*`,
-      `يرجي سرعة الرد لتأكيد استلامكم للطلب ${finger}`,
+      "",
+      `*الإجمالي: ${order.subtotal ?? order.total}ج*`,
+      "",
+      `يرجي سرعة الرد لتأكيد استلام الطلب`,
     ].join("\n");
 
     console.log("WhatsApp message:", message);
 
-    const encodedMessage = encodeURIComponent(message);
-    window.open(`https://wa.me/${phone}?text=${encodedMessage}`, "_blank");
+    const encodedMessage = encodeURIComponent(message).replace(/%20/g, "+");
+    window.open(`https://web.whatsapp.com/send?phone=${phone}&text=${encodedMessage}`, "whatsapp_tab");
   }
 
   async function confirmOrder(id: string) {
@@ -699,10 +692,6 @@ const finger = String.fromCodePoint(0x1F447);
           style={{ background: C.orange, color: "#fff", whiteSpace: "nowrap" }}
           onClick={() => {
             setSoundBlocked(false);
-            if (pendingSoundRef.current) {
-              new Audio(pendingSoundRef.current).play().catch(() => {});
-              pendingSoundRef.current = null;
-            }
           }}
         >
           ⚠️ المتصفح منع الصوت — اضغط في أي مكان لتفعيله

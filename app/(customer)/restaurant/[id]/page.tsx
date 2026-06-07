@@ -20,7 +20,7 @@ type Restaurant = { id: string; name: string; description: string | null; cover_
 
 /* ── MealBottomSheet meal shape ── */
 type ExtraGroupSheet = { id: number; name: string; maxSelect: number; extras: { id: number; name: string; price: number }[] };
-type SheetMeal = { id: number; name: string; description?: string | null; basePrice: number; img: string; extras?: { id: number; name: string; price: number }[]; extraGroups?: ExtraGroupSheet[]; sizes?: { id: number; name: string; price?: number }[] };
+type SheetMeal = { id: number; name: string; description?: string | null; basePrice: number; img: string; extras?: { id: number; name: string; price: number }[]; extraGroups?: ExtraGroupSheet[]; sizes?: { id: string; name: string; price?: number }[] };
 
 function toSheetMeal(item: MenuItem): SheetMeal {
   const nonVariantGroups = item.extra_groups.filter((g) => g.type !== "variant");
@@ -32,7 +32,7 @@ function toSheetMeal(item: MenuItem): SheetMeal {
     extras: g.item_extras.map((e) => ({ id: e.id, name: e.name, price: e.price })),
   }));
   const variantGroup = item.extra_groups.find((g) => g.type === "variant");
-  const sizes = variantGroup?.item_extras.map((e) => ({ id: e.id, name: e.name, price: e.price }));
+  const sizes = variantGroup?.item_extras.map((e) => ({ id: String(e.id), name: e.name, price: e.price }));
   return {
     id: item.id,
     name: item.name,

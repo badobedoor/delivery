@@ -4,6 +4,29 @@ import Link            from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
 import NetworkStatus from "@/components/ui/NetworkStatus";
+import { supabase } from "@/lib/supabase";
+
+function DriverNotificationSound() {
+  useEffect(() => {
+    const channel = supabase
+      .channel("driver-new-orders-global")
+      .on("postgres_changes", {
+        event:  "UPDATE",
+        schema: "public",
+        table:  "orders",
+        filter: "status=eq.pending",
+      }, () => {
+        try {
+          new Audio("/sounds/driver_new_order.mp3").play().catch(() => {});
+        } catch { /* ignore */ }
+      })
+      .subscribe();
+
+    return () => { supabase.removeChannel(channel); };
+  }, []);
+
+  return null;
+}
 
 const C = {
   bg:     "#0F172A",
@@ -65,6 +88,7 @@ export default function DriverLayout({ children }: { children: React.ReactNode }
       }}
     >
       <NetworkStatus />
+      <DriverNotificationSound />
 
       {/* ── Page content ── */}
       <div className="flex-1 overflow-y-auto pb-20">

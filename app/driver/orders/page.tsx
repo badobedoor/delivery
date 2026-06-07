@@ -85,22 +85,20 @@ const ORDER_SELECT = `
 
 function fmtAmt(n: number) { return `${n.toLocaleString("ar-EG")} ج.م`; }
 
-/* ── Web Audio notification ── */
-function playNotif() {
-  try {
-    const ctx  = new AudioContext();
-    const osc  = ctx.createOscillator();
-    const gain = ctx.createGain();
-    osc.connect(gain);
-    gain.connect(ctx.destination);
-    osc.type      = "sine";
-    osc.frequency.setValueAtTime(880, ctx.currentTime);
-    osc.frequency.setValueAtTime(660, ctx.currentTime + 0.15);
-    gain.gain.setValueAtTime(0.4, ctx.currentTime);
-    gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.5);
-    osc.start(ctx.currentTime);
-    osc.stop(ctx.currentTime + 0.5);
-  } catch { /* ignore if AudioContext unavailable */ }
+/* ── Accept sound (Web Audio API) ── */
+function playAcceptSound() {
+  const ctx = new (window.AudioContext || (window as any).webkitAudioContext)();
+  const oscillator = ctx.createOscillator();
+  const gainNode   = ctx.createGain();
+  oscillator.connect(gainNode);
+  gainNode.connect(ctx.destination);
+  oscillator.frequency.setValueAtTime(523, ctx.currentTime);
+  oscillator.frequency.setValueAtTime(659, ctx.currentTime + 0.1);
+  oscillator.frequency.setValueAtTime(784, ctx.currentTime + 0.2);
+  gainNode.gain.setValueAtTime(0.3, ctx.currentTime);
+  gainNode.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.5);
+  oscillator.start(ctx.currentTime);
+  oscillator.stop(ctx.currentTime + 0.5);
 }
 
 /* ── Chevron icon ── */
@@ -798,7 +796,7 @@ export default function DriverOrdersPage() {
   /* ── Accept order ── */
   const accept = useCallback(async (order: Order) => {
     if (!driverId || !shiftId || ordersLocked) return;
-    playNotif();
+    playAcceptSound();
     await supabase
       .from("orders")
       .update({ status: "accepted", delivery_id: driverId })
@@ -954,7 +952,6 @@ export default function DriverOrdersPage() {
               if (prev.some((o) => o.id === (data as DBOrder).id)) return prev;
               return [...prev, toOrder(data as DBOrder)];
             });
-            playNotif();
           } catch (err) {
             console.error("Realtime INSERT error:", err);
           }

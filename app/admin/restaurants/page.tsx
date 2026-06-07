@@ -57,7 +57,7 @@ type RestForm = {
 };
 type FormErrors = Partial<Record<keyof RestForm, string>>;
 
-type Category = { id: number; name: string; restaurant_id: string; sort_order: number };
+type Category = { id: number; name: string; restaurant_id: string; sort_order: number; is_active: boolean };
 type ExtraGroup = { key: number; name: string; required: boolean; max_select: number; type: string; extras: { key: number; name: string; price: number }[] };
 type MenuItem = {
   id: number;
@@ -431,6 +431,7 @@ export default function AdminRestaurantsPage() {
   const [saveError,    setSaveError]    = useState<string | null>(null);
   const [search,       setSearch]       = useState("");
   const [statusFilter, setStatusFilter] = useState<"الكل" | "قيد الإنشاء" | "نشط" | "مشغول">("الكل");
+  const [currentRole,  setCurrentRole]  = useState<string>("");
 
   /* ── Modal state ── */
   const [showModal,   setShowModal]   = useState(false);
@@ -507,6 +508,24 @@ export default function AdminRestaurantsPage() {
 
   useEffect(() => { fetchRestaurants(); }, []);
   useAutoRefresh(fetchRestaurants);
+
+  /* ── Current user role (for delete-button visibility) ── */
+  useEffect(() => {
+    try {
+      const stored = localStorage.getItem("staff_user");
+      if (stored) {
+        const u = JSON.parse(stored) as { role?: string };
+        if (u.role) setCurrentRole(u.role);
+      }
+    } catch {}
+
+    fetch("/api/auth/me", { credentials: "include" })
+      .then((r) => r.json())
+      .then((data) => { if (data.authenticated) setCurrentRole(data.user?.role ?? ""); })
+      .catch(() => {});
+  }, []);
+
+  const canDelete = currentRole === "admin" || currentRole === "super_admin";
 
   /* ── Filtered list ── */
   const filtered = rows.filter((r) => {
@@ -703,7 +722,7 @@ export default function AdminRestaurantsPage() {
 
   /* ── Soft delete ── */
   async function softDelete(id: string) {
-    if (!window.confirm("هل تريد حذف هذا المطعم؟")) return;
+    if (!window.confirm("هل أنت متأكد من الحذف؟")) return;
     const { error } = await supabase.from("restaurants").update({ is_active: false }).eq("id", id);
     if (error) { console.error("Soft delete error:", error.message, error); return; }
     setRows((p) => p.filter((r) => r.id !== id));
@@ -744,7 +763,7 @@ export default function AdminRestaurantsPage() {
     const [catsResult] = await Promise.all([
       supabase
         .from("categories")
-        .select("id, name, restaurant_id, sort_order")
+        .select("id, name, restaurant_id, sort_order, is_active")
         .eq("restaurant_id", r.id)
         .order("sort_order", { ascending: true }),
       fetchMenuItems(r.id),
@@ -786,7 +805,7 @@ export default function AdminRestaurantsPage() {
       const { data, error } = await supabase
         .from("categories")
         .insert([{ name: catName.trim(), restaurant_id: selectedRest.id, sort_order: categories.length }])
-        .select("id, name, restaurant_id, sort_order")
+        .select("id, name, restaurant_id, sort_order, is_active")
         .maybeSingle();
       if (error) {
         console.error("Insert category error:", error.message, error);
@@ -819,6 +838,21 @@ export default function AdminRestaurantsPage() {
     }
   }
 
+  async function toggleCatActive(cat: Category) {
+    const newVal = !cat.is_active;
+    setCategories((prev) => prev.map((c) => c.id === cat.id ? { ...c, is_active: newVal } : c));
+    setMenuItems((prev) => prev.map((i) => i.category_id === cat.id ? { ...i, is_active: newVal } : i));
+
+    const { error: catErr } = await supabase.from("categories").update({ is_active: newVal }).eq("id", cat.id);
+    const { error: itemsErr } = await supabase.from("menu_items").update({ is_active: newVal }).eq("category_id", cat.id);
+
+    if (catErr || itemsErr) {
+      console.error("Toggle category active error:", catErr?.message ?? itemsErr?.message, catErr ?? itemsErr);
+      setCategories((prev) => prev.map((c) => c.id === cat.id ? { ...c, is_active: cat.is_active } : c));
+      setMenuItems((prev) => prev.map((i) => i.category_id === cat.id ? { ...i, is_active: cat.is_active } : i));
+    }
+  }
+
   async function saveItemOrder(items: MenuItem[]) {
     await Promise.all(
       items.map((item, i) =>
@@ -836,6 +870,7 @@ export default function AdminRestaurantsPage() {
   }
 
   async function deleteCat(id: number) {
+    if (!window.confirm("هل أنت متأكد من الحذف؟")) return;
     const { error } = await supabase
       .from("categories")
       .delete()
@@ -1231,6 +1266,7 @@ export default function AdminRestaurantsPage() {
   }
 
   async function deleteItem(id: number) {
+    if (!window.confirm("هل أنت متأكد من الحذف؟")) return;
     const { data: groups } = await supabase
       .from("extra_groups").select("id").eq("menu_item_id", id);
     if (groups && groups.length > 0) {
@@ -1390,16 +1426,26 @@ export default function AdminRestaurantsPage() {
                           style={{ background: `${C.teal}22`, color: C.teal }}>
                           + وجبة
                         </button>
+                        <button onClick={(e) => { e.stopPropagation(); toggleCatActive(cat); }}
+                          className="px-2.5 py-1 rounded-lg text-xs font-bold transition-opacity hover:opacity-80"
+                          style={{
+                            background: cat.is_active ? `${C.green}22` : `${C.muted}22`,
+                            color:      cat.is_active ? C.green        : C.muted,
+                          }}>
+                          {cat.is_active ? "متاح" : "غير متاح"}
+                        </button>
                         <button onClick={(e) => { e.stopPropagation(); openEditCat(cat); }}
                           className="px-2.5 py-1 rounded-lg text-xs font-bold transition-opacity hover:opacity-80"
                           style={{ background: `${C.yellow}22`, color: C.yellow }}>
                           تعديل
                         </button>
-                        <button onClick={(e) => { e.stopPropagation(); deleteCat(cat.id); }}
-                          className="px-2.5 py-1 rounded-lg text-xs font-bold transition-opacity hover:opacity-80"
-                          style={{ background: `${C.red}22`, color: C.red }}>
-                          حذف
-                        </button>
+                        {canDelete && (
+                          <button onClick={(e) => { e.stopPropagation(); deleteCat(cat.id); }}
+                            className="px-2.5 py-1 rounded-lg text-xs font-bold transition-opacity hover:opacity-80"
+                            style={{ background: `${C.red}22`, color: C.red }}>
+                            حذف
+                          </button>
+                        )}
                       </div>
 
                       {/* Items — مع animation */}
@@ -1491,11 +1537,13 @@ export default function AdminRestaurantsPage() {
                                   style={{ background: `${C.yellow}22`, color: C.yellow }}>
                                   تعديل
                                 </button>
-                                <button onClick={() => deleteItem(item.id)}
-                                  className="px-2.5 py-1 rounded-lg text-xs font-bold transition-opacity hover:opacity-80"
-                                  style={{ background: `${C.red}22`, color: C.red }}>
-                                  حذف
-                                </button>
+                                {canDelete && (
+                                  <button onClick={() => deleteItem(item.id)}
+                                    className="px-2.5 py-1 rounded-lg text-xs font-bold transition-opacity hover:opacity-80"
+                                    style={{ background: `${C.red}22`, color: C.red }}>
+                                    حذف
+                                  </button>
+                                )}
                               </div>
                             </div>
                             )}
@@ -1695,13 +1743,15 @@ export default function AdminRestaurantsPage() {
                             >
                               المنيو
                             </button>
-                            <button
-                              onClick={() => softDelete(r.id)}
-                              className="px-3 py-1.5 rounded-lg text-xs font-bold transition-opacity hover:opacity-80"
-                              style={{ background: `${C.red}22`, color: C.red }}
-                            >
-                              حذف
-                            </button>
+                            {canDelete && (
+                              <button
+                                onClick={() => softDelete(r.id)}
+                                className="px-3 py-1.5 rounded-lg text-xs font-bold transition-opacity hover:opacity-80"
+                                style={{ background: `${C.red}22`, color: C.red }}
+                              >
+                                حذف
+                              </button>
+                            )}
                           </div>
                         </td>
                         </>

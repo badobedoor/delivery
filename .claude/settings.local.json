@@ -24,7 +24,8 @@
       "Bash(node -e \"const p = require\\('./node_modules/@supabase/supabase-js/package.json'\\); console.log\\(p.version\\)\")",
       "mcp__ide__getDiagnostics",
       "Bash(git commit *)",
-      "Bash(powershell *)"
+      "Bash(powershell *)",
+      "Bash(npx eslint *)"
     ]
   }
 }

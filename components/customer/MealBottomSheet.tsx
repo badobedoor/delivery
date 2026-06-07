@@ -7,7 +7,7 @@ import ConfirmModal from "@/components/customer/ConfirmModal";
 
 /* ── Types ── */
 interface Extra  { id: number; name: string; price: number }
-interface Size   { id: number; name: string; price?: number }
+interface Size   { id: string; name: string; price?: number }
 interface ExtraGroupSheet { id: number; name: string; maxSelect: number; extras: Extra[] }
 interface Meal   {
   id: number;
@@ -41,8 +41,8 @@ export const sampleMeal: Meal = {
     { id: 5, name: "صوص طماطم",  price: 5 },
   ],
   sizes: [
-    { id: 1, name: "وسط" },
-    { id: 2, name: "كبير" },
+    { id: "1", name: "وسط" },
+    { id: "2", name: "كبير" },
   ],
 };
 
@@ -50,7 +50,7 @@ export const sampleMeal: Meal = {
 export default function MealBottomSheet({ meal, onClose, restaurantId, restaurantName }: Props) {
   const [qty,            setQty]            = useState(1);
   const [selectedExtras, setSelectedExtras] = useState<number[]>([]);
-  const [selectedSize,   setSelectedSize]   = useState<number | null>(null);
+  const [selectedSize,   setSelectedSize]   = useState<string | null>(null);
   const [showNote,       setShowNote]       = useState(false);
   const [note,           setNote]           = useState("");
   const [conflictMsg,    setConflictMsg]    = useState<string | null>(null);
