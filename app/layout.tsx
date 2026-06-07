@@ -11,6 +11,10 @@ const cairo = Cairo({
 export const metadata: Metadata = {
   title: "حالا دلفري",
   description: "كل احتياجاتك، توصلك... حالاً",
+  icons: {
+    icon: '/icon.ico',
+    apple: '/icon.ico',
+  },
 };
 
 export default function RootLayout({
