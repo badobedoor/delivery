@@ -39,6 +39,26 @@ function isCustomerPath(pathname: string): boolean {
   );
 }
 
+/* ── Hostname-based redirects (subdomains) ── */
+const HOSTNAME_REDIRECTS: { prefix: string; base: string; loginPath: string }[] = [
+  { prefix: "admin.",  base: "/admin",  loginPath: "/admin/login"  },
+  { prefix: "driver.", base: "/driver", loginPath: "/driver/login" },
+  { prefix: "staff.",  base: "/staff",  loginPath: "/staff/login"  },
+];
+
+function getHostnameRedirect(request: NextRequest): NextResponse | null {
+  const hostname = request.nextUrl.hostname;
+  const { pathname } = request.nextUrl;
+
+  for (const { prefix, base, loginPath } of HOSTNAME_REDIRECTS) {
+    if (hostname.startsWith(prefix) && !pathname.startsWith(base)) {
+      return NextResponse.redirect(new URL(loginPath, request.url));
+    }
+  }
+
+  return null;
+}
+
 /* ─────────────────────────────────────────────
    Edge-compatible JWT verifier
    (jsonwebtoken uses Node.js APIs not available
@@ -116,6 +136,10 @@ function getLoginUrl(request: NextRequest, pathname: string): NextResponse {
 ───────────────────────────────────────────── */
 export async function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl;
+
+  /* ── Hostname-based redirects (admin./driver./staff. subdomains) ── */
+  const hostnameRedirect = getHostnameRedirect(request);
+  if (hostnameRedirect) return hostnameRedirect;
 
   /* ── Customer route protection (Supabase session) ── */
   if (pathname === "/login" || isCustomerPath(pathname)) {
@@ -208,6 +232,8 @@ export async function proxy(request: NextRequest) {
 
 export const config = {
   matcher: [
+    /* Catch-all so hostname-based redirects run on every route */
+    "/((?!_next/static|_next/image|favicon.ico).*)",
     "/admin/:path*",
     "/driver/:path*",
     "/login",
