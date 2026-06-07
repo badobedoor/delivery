@@ -269,6 +269,15 @@ type AuthUser = { id: string; name: string; role: string; type: string };
 export default function AdminLayout({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
 
+  /* ── PWA manifest for the admin portal ── */
+  useEffect(() => {
+    const link = document.createElement("link");
+    link.rel  = "manifest";
+    link.href = "/manifest-admin.json";
+    document.head.appendChild(link);
+    return () => { document.head.removeChild(link); };
+  }, []);
+
   /* ── All hooks declared before any conditional return ── */
   const [user,           setUser]           = useState<AuthUser | null>(null);
   const [checked,        setChecked]        = useState(false);

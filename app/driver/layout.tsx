@@ -49,6 +49,15 @@ export default function DriverLayout({ children }: { children: React.ReactNode }
 
   const [ready, setReady] = useState(false);
 
+  /* ── PWA manifest for the driver portal ── */
+  useEffect(() => {
+    const link = document.createElement("link");
+    link.rel  = "manifest";
+    link.href = "/manifest-driver.json";
+    document.head.appendChild(link);
+    return () => { document.head.removeChild(link); };
+  }, []);
+
   useEffect(() => {
     if (isLoginPage) { setReady(true); return; }
 
