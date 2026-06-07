@@ -121,7 +121,15 @@ export default function AccountPage() {
 
     setPhoneSaving(false);
     if (error) {
-      setPhoneError("حدث خطأ أثناء الحفظ، حاول مرة أخرى");
+      const code = error.code ?? "";
+      const msg  = (error.message ?? "").toLowerCase();
+      if (code === "23505" || msg.includes("unique") || msg.includes("duplicate")) {
+        setPhoneError("هذا الرقم مسجل لدى مستخدم آخر");
+      } else if (msg.includes("blocked") || msg.includes("محظور")) {
+        setPhoneError("هذا الرقم محظور");
+      } else {
+        setPhoneError("حصل خطأ، حاول تاني");
+      }
       return;
     }
     setPhone(newPhone.trim());

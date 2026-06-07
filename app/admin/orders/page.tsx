@@ -446,7 +446,7 @@ export default function AdminOrdersPage() {
     console.log("WhatsApp message:", message);
 
     const encodedMessage = encodeURIComponent(message).replace(/%20/g, "+");
-    window.open(`https://web.whatsapp.com/send?phone=${phone}&text=${encodedMessage}`, "whatsapp_tab");
+    window.open(`https://wa.me/${phone}?text=${encodedMessage}`, "_blank");
   }
 
   async function confirmOrder(id: string) {

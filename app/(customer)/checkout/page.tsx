@@ -199,7 +199,15 @@ export default function CheckoutPage() {
       .update({ phone: phoneInput })
       .eq("id", userId!);
     if (updateErr) {
-      setPhoneError("حصل خطأ، حاول تاني");
+      const code = updateErr.code ?? "";
+      const msg  = (updateErr.message ?? "").toLowerCase();
+      if (code === "23505" || msg.includes("unique") || msg.includes("duplicate")) {
+        setPhoneError("هذا الرقم مسجل لدى مستخدم آخر");
+      } else if (msg.includes("blocked") || msg.includes("محظور")) {
+        setPhoneError("هذا الرقم محظور");
+      } else {
+        setPhoneError("حصل خطأ، حاول تاني");
+      }
       setSavingPhone(false);
       return;
     }
