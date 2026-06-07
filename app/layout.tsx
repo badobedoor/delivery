@@ -9,8 +9,8 @@ const cairo = Cairo({
 });
 
 export const metadata: Metadata = {
-  title: "Delivery App",
-  description: "Delivery application",
+  title: "حالا دلفري",
+  description: "كل احتياجاتك، توصلك... حالاً",
 };
 
 export default function RootLayout({
