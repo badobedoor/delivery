@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase";
+import { getEffectiveMealPrice } from "@/lib/pricing";
 import BottomNav from "@/components/customer/BottomNav";
 
 type OfferItem = {
@@ -53,7 +54,7 @@ export default function OffersPage() {
           categories!inner(name),
           restaurants!inner(name)
         `)
-        .eq("categories.name", "العروض")
+        .eq("categories.name", "عروض")
         .eq("is_active", true)
         .not("offer_price", "is", null);
 
@@ -81,7 +82,7 @@ export default function OffersPage() {
                 <path d="M9 18l6-6-6-6" />
               </svg>
             </button>
-            <h1 className="text-base font-black text-[var(--color-secondary)]">العروض</h1>
+            <h1 className="text-base font-black text-[var(--color-secondary)]">عروض</h1>
             <div className="w-9" />
           </div>
         </header>
@@ -102,13 +103,15 @@ export default function OffersPage() {
             <div className="flex flex-col gap-4">
               {offers.map((offer) => {
                 const img = offer.offer_image_url || offer.image_url;
-                const discount = offer.offer_price && offer.price
+                const effectivePrice = getEffectiveMealPrice(offer);
+                const showOffer = effectivePrice !== offer.price;
+                const discount = showOffer && offer.offer_price
                   ? Math.round((1 - offer.offer_price / offer.price) * 100)
                   : 0;
 
                 return (
                   <div key={offer.id}
-                    onClick={() => offer.restaurant_id && router.push(`/restaurant/${offer.restaurant_id}?category=العروض`)}
+                    onClick={() => offer.restaurant_id && router.push(`/restaurant/${offer.restaurant_id}?category=عروض`)}
                     className={`bg-white rounded-2xl overflow-hidden shadow-sm border border-[var(--color-border)] ${offer.restaurant_id ? "cursor-pointer active:scale-[0.99] transition-transform" : ""}`}>
 
                     {/* الصورة */}
@@ -141,8 +144,14 @@ export default function OffersPage() {
 
                       {/* الأسعار */}
                       <div className="flex items-center gap-3 mt-3">
-                        <span className="text-xl font-black text-[#FF6000]">{offer.offer_price} ج.م</span>
-                        <span className="text-sm text-gray-400 line-through">{offer.price} ج.م</span>
+                        {showOffer ? (
+                          <>
+                            <span className="text-xl font-black text-[#FF6000]">{effectivePrice} ج.م</span>
+                            <span className="text-sm text-gray-400 line-through">{offer.price} ج.م</span>
+                          </>
+                        ) : (
+                          <span className="text-xl font-black text-[#FF6000]">{offer.price} ج.م</span>
+                        )}
                       </div>
 
                       {/* التواريخ */}

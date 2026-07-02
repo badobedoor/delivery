@@ -65,8 +65,8 @@ function CartPageContent() {
     localStorage.setItem("hala_order_note", orderNote);
   }, [orderNote]);
 
-  function handleQtyChange(itemId: string, newQty: number) {
-    updateCartQty(itemId, newQty);
+  function handleQtyChange(signature: string, newQty: number) {
+    updateCartQty(signature, newQty);
     setCart(getCart());
   }
 
@@ -192,7 +192,7 @@ function CartPageContent() {
                 ].filter(Boolean).join(" · ");
 
                 return (
-                  <div key={item.id} className="flex items-center py-3 px-3">
+                  <div key={item.signature} className="flex items-center py-3 px-3">
 
                     {/* القسم 1 — الصورة (يمين في RTL) */}
                     <div className="relative flex-shrink-0 w-20 h-20 ml-3 rounded-xl overflow-hidden">
@@ -215,7 +215,7 @@ function CartPageContent() {
                       {/* العداد: + يمين، - يسار */}
                       <div className="flex items-center gap-2">
                         <button
-                          onClick={() => handleQtyChange(item.id, item.qty + 1)}
+                          onClick={() => handleQtyChange(item.signature ?? item.id, item.qty + 1)}
                           className="w-9 h-9 rounded-full bg-[var(--color-primary)] flex items-center justify-center flex-shrink-0"
                         >
                           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2.5">
@@ -224,7 +224,7 @@ function CartPageContent() {
                         </button>
                         <span className="text-sm font-bold text-[#1A1A1A] w-6 text-center">{item.qty}</span>
                         <button
-                          onClick={() => handleQtyChange(item.id, item.qty - 1)}
+                          onClick={() => handleQtyChange(item.signature ?? item.id, item.qty - 1)}
                           className="w-9 h-9 rounded-full bg-white border border-[var(--color-border)] flex items-center justify-center flex-shrink-0"
                         >
                           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--color-secondary)" strokeWidth="2.5">

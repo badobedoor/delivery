@@ -185,8 +185,16 @@ function validate(
   else if (rows.some((r) => r.order_index === ord && r.id !== editingId))
     errs.order_index = "ترتيب الإعلان مستخدم بالفعل";
 
-  if (form.link.trim() && !/^https?:\/\/.+/.test(form.link.trim()))
-    errs.link = "الرابط لازم يبدأ بـ http:// أو https://";
+  const rawLink = form.link.trim();
+  if (rawLink) {
+    const hasLeadingSlash  = rawLink.startsWith("/");
+    const hasHttpProtocol  = /^https?:\/\//i.test(rawLink);
+    const hasOtherProtocol = /^[a-zA-Z][a-zA-Z0-9+.-]*:\/\//.test(rawLink) ||
+                             /^[a-zA-Z][a-zA-Z0-9+.-]*:/.test(rawLink);
+    if (!hasLeadingSlash && !hasHttpProtocol && hasOtherProtocol) {
+      errs.link = "أدخل رابطًا داخليًا (/favorites أو offers) أو رابطًا خارجيًا يبدأ بـ https://";
+    }
+  }
 
   if (!form.starts_at)
     errs.starts_at = "تاريخ البداية مطلوب";
@@ -576,9 +584,13 @@ export default function AdminAdvertisementsPage() {
       image_url = url;
     }
 
+    const rawLink = form.link.trim();
+    const normalizedLink = rawLink && !rawLink.startsWith("/") && !/^https?:\/\//i.test(rawLink)
+      ? `/${rawLink}`
+      : rawLink;
     const payload = {
       image_url,
-      link:        form.link.trim() || null,
+      link:        normalizedLink || null,
       page:        form.page,
       order_index: Number(form.order_index),
       starts_at:   form.starts_at || null,

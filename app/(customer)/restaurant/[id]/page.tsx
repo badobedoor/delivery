@@ -6,6 +6,7 @@ import { useState, useEffect, useRef, Suspense } from "react";
 import { useParams, useSearchParams, useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase";
 import { isRestaurantOpen } from "@/lib/utils";
+import { getEffectiveMealPrice } from "@/lib/pricing";
 import { addToCart, clearCart, getCart, updateQty, CartItem } from "@/lib/cart";
 import ConfirmModal from "@/components/customer/ConfirmModal";
 import MealBottomSheet from "@/components/customer/MealBottomSheet";
@@ -20,7 +21,7 @@ type Restaurant = { id: string; name: string; description: string | null; cover_
 
 /* ── MealBottomSheet meal shape ── */
 type ExtraGroupSheet = { id: number; name: string; maxSelect: number; extras: { id: number; name: string; price: number }[] };
-type SheetMeal = { id: number; name: string; description?: string | null; basePrice: number; img: string; extras?: { id: number; name: string; price: number }[]; extraGroups?: ExtraGroupSheet[]; sizes?: { id: string; name: string; price?: number }[] };
+type SheetMeal = { id: number; name: string; description?: string | null; basePrice: number; img: string; offerPrice?: number; offerStartsAt?: string; offerEndsAt?: string; offerImageUrl?: string; extras?: { id: number; name: string; price: number }[]; extraGroups?: ExtraGroupSheet[]; sizes?: { id: string; name: string; price?: number }[] };
 
 function toSheetMeal(item: MenuItem): SheetMeal {
   const nonVariantGroups = item.extra_groups.filter((g) => g.type !== "variant");
@@ -39,6 +40,10 @@ function toSheetMeal(item: MenuItem): SheetMeal {
     description: item.description,
     basePrice: item.price,
     img: item.image_url ?? "https://images.unsplash.com/photo-1546069901-ba9599a7e63c?w=400&h=400&fit=crop",
+    offerPrice: item.offer_price ?? undefined,
+    offerStartsAt: item.offer_starts_at ?? undefined,
+    offerEndsAt: item.offer_ends_at ?? undefined,
+    offerImageUrl: item.offer_image_url ?? undefined,
     extras: extras.length > 0 ? extras : undefined,
     extraGroups: extraGroups.length > 0 ? extraGroups : undefined,
     sizes: sizes && sizes.length > 0 ? sizes : undefined,
@@ -156,6 +161,37 @@ function RestaurantPageContent() {
   const [error,       setError]       = useState<string | null>(null);
   const [activeTab,   setActiveTab]   = useState<string>("");
   const [sheetMeal,   setSheetMeal]   = useState<SheetMeal | null>(null);
+  /* ── Back-button handling for MealBottomSheet ── */
+  const hasHistoryEntry    = useRef(false);
+  const ignoreNextPopstate = useRef(false);
+  const isSheetOpen = sheetMeal !== null;
+
+  useEffect(() => {
+    if (!isSheetOpen) return;
+    function handlePopState() {
+      if (ignoreNextPopstate.current) {
+        ignoreNextPopstate.current = false;
+        return;
+      }
+      hasHistoryEntry.current = false;
+      setSheetMeal(null);
+    }
+    window.addEventListener("popstate", handlePopState);
+    return () => {
+      window.removeEventListener("popstate", handlePopState);
+      hasHistoryEntry.current    = false;
+      ignoreNextPopstate.current = false;
+    };
+  }, [isSheetOpen]);
+
+  function closeSheet() {
+    setSheetMeal(null);
+    if (hasHistoryEntry.current) {
+      ignoreNextPopstate.current = true;
+      window.history.back();
+      hasHistoryEntry.current = false;
+    }
+  }
 
   useEffect(() => {
     if (!id) return;
@@ -355,9 +391,10 @@ function RestaurantPageContent() {
                 const hasExtras = meal.extra_groups.length > 0;
                 const isActive  = meal.is_active !== false;
                 const FALLBACK  = "https://images.unsplash.com/photo-1546069901-ba9599a7e63c?w=200&h=200&fit=crop";
-                const isOffer = !!(meal.offer_price && meal.offer_starts_at && meal.offer_ends_at);
-                const offerImg = (isOffer && meal.offer_image_url) ? meal.offer_image_url : (meal.image_url ?? FALLBACK);
-                const discount  = isOffer && meal.offer_price
+                const hasOfferFields = !!(meal.offer_price && meal.offer_starts_at && meal.offer_ends_at);
+                const effectivePrice = getEffectiveMealPrice(meal);
+                const offerImg = (hasOfferFields && meal.offer_image_url) ? meal.offer_image_url : (meal.image_url ?? FALLBACK);
+                const discount  = hasOfferFields && meal.offer_price
                   ? Math.round((1 - meal.offer_price / meal.price) * 100) : 0;
 
                 const cardInner = (
@@ -365,7 +402,7 @@ function RestaurantPageContent() {
                     {/* القسم 1 — الصورة (يمين في RTL) */}
                     <div className="relative flex-shrink-0 w-24 h-24 ml-3 rounded-xl overflow-hidden">
                       <Image src={offerImg} alt={meal.name} fill className="object-cover" onError={(e) => { (e.target as HTMLImageElement).src = '/images/placeholder.png'; }} />
-                      {isOffer && discount > 0 && (
+                      {hasOfferFields && discount > 0 && (
                         <div className="absolute top-1 right-1 bg-red-500 text-white text-[9px] font-black px-1.5 py-0.5 rounded-full leading-none">
                           -{discount}%
                         </div>
@@ -387,18 +424,18 @@ function RestaurantPageContent() {
                         {meal.description && (
                           <p className="line-clamp-2 text-sm text-[#6B7280] flex-1">{meal.description}</p>
                         )}
-                        {isOffer && meal.offer_price ? (
+                        {effectivePrice !== meal.price ? (
                           <div className="flex flex-col items-end flex-shrink-0">
-                            <p className="text-base font-black text-[#FF6000]">{meal.offer_price} ج</p>
+                            <p className="text-base font-black text-[#FF6000]">{effectivePrice} ج</p>
                             <p className="text-xs text-gray-400 line-through">{meal.price} ج</p>
                           </div>
                         ) : (
-                          <p className="text-base font-black text-[#FF6000] flex-shrink-0">{meal.price} ج</p>
+                          <p className="text-base font-black text-[#FF6000] flex-shrink-0">{effectivePrice} ج</p>
                         )}
                       </div>
 
                       {/* تواريخ العرض */}
-                      {isOffer && meal.offer_starts_at && meal.offer_ends_at && (
+                      {hasOfferFields && meal.offer_starts_at && meal.offer_ends_at && (
                         <div className="mt-1 pt-1 border-t border-[#F3F4F6]">
                           <div className="flex items-start gap-1">
                             <span className="text-[10px]">📅</span>
@@ -416,7 +453,7 @@ function RestaurantPageContent() {
                           <QuantityCounter
                             itemId={String(meal.id)}
                             name={meal.name}
-                            price={isOffer && meal.offer_price ? meal.offer_price : meal.price}
+                            price={effectivePrice}
                             description={meal.description}
                             imageUrl={meal.image_url}
                             restaurantId={id}
@@ -433,7 +470,14 @@ function RestaurantPageContent() {
                     <div
                       key={meal.id}
                       className={`flex items-center py-3 relative ${isActive ? "cursor-pointer active:opacity-75 transition-opacity" : ""}`}
-                      onClick={isActive ? () => setSheetMeal(toSheetMeal(meal)) : undefined}
+                      onClick={isActive ? () => {
+                        const mealData = toSheetMeal(meal);
+                        if (!hasHistoryEntry.current) {
+                          window.history.pushState({ type: 'meal-sheet' }, '');
+                          hasHistoryEntry.current = true;
+                        }
+                        setSheetMeal(mealData);
+                      } : undefined}
                     >
                       {cardInner}
                     </div>
@@ -464,7 +508,7 @@ function RestaurantPageContent() {
       {sheetMeal && (
         <MealBottomSheet
           meal={sheetMeal}
-          onClose={() => setSheetMeal(null)}
+          onClose={closeSheet}
           restaurantId={id}
           restaurantName={restaurant.name}
         />

@@ -6,6 +6,8 @@ import { useState, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase";
 import { isRestaurantOpen } from "@/lib/utils";
+import { searchMeals } from "@/lib/searchMeals";
+import { getEffectiveMealPrice } from "@/lib/pricing";
 
 /* ── Types ── */
 type Restaurant = {
@@ -15,6 +17,10 @@ type Restaurant = {
 type Meal = {
   id: string; name: string; price: number; image_url: string | null;
   restaurant_id: string;
+  offer_price: number | null;
+  offer_image_url: string | null;
+  offer_starts_at: string | null;
+  offer_ends_at: string | null;
   restaurants: { name: string; is_active: boolean; status: string | null; opens_at: string | null; closes_at: string | null } | null;
   categories: { name: string } | null;
 };
@@ -43,23 +49,8 @@ export default function SearchPage() {
 
     setSearching(true);
     const timer = setTimeout(async () => {
-      const { data: matchedCategories } = await supabase
-        .from("categories")
-        .select("id")
-        .ilike("name", `%${trimmed}%`);
-
-      const categoryIds = (matchedCategories ?? []).map((c) => c.id);
-      const itemsFilter = categoryIds.length > 0
-        ? `name.ilike.%${trimmed}%,description.ilike.%${trimmed}%,category_id.in.(${categoryIds.join(",")})`
-        : `name.ilike.%${trimmed}%,description.ilike.%${trimmed}%`;
-
-      const [itemsRes, restaurantsRes] = await Promise.all([
-        supabase
-          .from("menu_items")
-          .select("id, name, price, image_url, restaurant_id, restaurants(name, is_active, status, opens_at, closes_at), categories(name)")
-          .or(itemsFilter)
-          .eq("is_active", true)
-          .limit(40),
+      const [meals, restaurantsRes] = await Promise.all([
+        searchMeals(trimmed),
         supabase
           .from("restaurants")
           .select("id, name, description, image_url, cover_image_url, is_active, status, opens_at, closes_at")
@@ -72,15 +63,8 @@ export default function SearchPage() {
       const openRestaurants = ((restaurantsRes.data ?? []) as Restaurant[])
         .filter((r) => isRestaurantOpen(r));
 
-      const openMeals = ((itemsRes.data ?? []) as unknown as Meal[])
-        .filter((item) => {
-          const r = item.restaurants;
-          if (!r || !r.is_active || r.status !== "نشط") return false;
-          return isRestaurantOpen({ is_active: r.is_active, opens_at: r.opens_at, closes_at: r.closes_at });
-        });
-
       setRestaurants(openRestaurants);
-      setMeals(openMeals);
+      setMeals(meals as unknown as Meal[]);
       setSearching(false);
     }, 400);
 
@@ -210,7 +194,7 @@ export default function SearchPage() {
                             {m.restaurants?.name ?? ""}
                           </p>
                         </div>
-                        <p className="text-sm font-bold text-[var(--color-primary)] flex-shrink-0">{m.price} ج.م</p>
+                        <p className="text-sm font-bold text-[var(--color-primary)] flex-shrink-0">{getEffectiveMealPrice(m)} ج.م</p>
                       </button>
                     );
                   })}

@@ -4,6 +4,7 @@ import Image from "next/image";
 import { useState, useEffect, useRef } from "react";
 import { addToCart, clearCart, CartItem } from "@/lib/cart";
 import ConfirmModal from "@/components/customer/ConfirmModal";
+import { isOfferActive, getEffectiveMealPrice } from "@/lib/pricing";
 
 /* ── Types ── */
 interface Extra  { id: number; name: string; price: number }
@@ -15,6 +16,10 @@ interface Meal   {
   description?: string | null;
   basePrice: number;
   img: string;
+  offerPrice?: number;
+  offerStartsAt?: string;
+  offerEndsAt?: string;
+  offerImageUrl?: string;
   extras?: Extra[];
   extraGroups?: ExtraGroupSheet[];
   sizes?: Size[];
@@ -83,7 +88,16 @@ export default function MealBottomSheet({ meal, onClose, restaurantId, restauran
     ? Math.min(...meal.sizes!.map((s) => s.price ?? meal.basePrice))
     : meal.basePrice;
 
-  const total = (activePrice + extrasTotal) * qty;
+  /* ── Effective price: use offer price when the offer is active ── */
+  const effectivePrice = getEffectiveMealPrice({
+    price: meal.basePrice,
+    offerPrice: meal.offerPrice,
+    offerStartsAt: meal.offerStartsAt,
+    offerEndsAt: meal.offerEndsAt,
+  });
+  const displayPrice = hasSizes ? activePrice : effectivePrice;
+
+  const total = (displayPrice + extrasTotal) * qty;
 
   function toggleExtra(id: number, groupId?: number) {
     setSelectedExtras((prev) => {
@@ -104,7 +118,7 @@ export default function MealBottomSheet({ meal, onClose, restaurantId, restauran
     const cartItem = {
       id: String(meal.id),
       name: meal.name,
-      price: hasSizes ? 0 : meal.basePrice,
+      price: hasSizes ? 0 : effectivePrice,
       qty,
       image_url: meal.img,
       description: null,
@@ -180,14 +194,20 @@ export default function MealBottomSheet({ meal, onClose, restaurantId, restauran
             <div className="flex items-start justify-between gap-3">
               {/* الاسم والسعر — يمين */}
               <div>
-                <h2 className="font-bold text-lg">
+                <h2 className="font-bold text-lg text-[var(--color-secondary)]">
                   {meal.name}
                 </h2>
                 <p className="font-bold text-[#FF6000]">
-                  {hasSizes && selectedSize === null
-                    ? `يبدأ من ${minSizePrice} ج.م`
-                    : `${activePrice} ج.م`
-                  }
+                  {effectivePrice !== meal.basePrice && !hasSizes ? (
+                    <>
+                      {effectivePrice} ج.م
+                      <span className="text-xs text-gray-400 line-through mr-2">{meal.basePrice} ج.م</span>
+                    </>
+                  ) : hasSizes && selectedSize === null ? (
+                    `يبدأ من ${minSizePrice} ج.م`
+                  ) : (
+                    `${displayPrice} ج.م`
+                  )}
                 </p>
                 {meal.description && (
                   <p className="text-sm text-gray-500 mt-1">{meal.description}</p>

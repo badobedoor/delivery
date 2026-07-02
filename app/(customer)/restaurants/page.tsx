@@ -7,6 +7,9 @@ import { useRouter } from "next/navigation";
 
 import { supabase } from "@/lib/supabase";
 import { isRestaurantOpen } from "@/lib/utils";
+import { searchMeals } from "@/lib/searchMeals";
+import { getEffectiveMealPrice } from "@/lib/pricing";
+import { normalizeAdLink } from "@/lib/adLink";
 import CartBar from "@/components/customer/CartBar";
 import BottomNav from "@/components/customer/BottomNav";
 
@@ -46,6 +49,10 @@ type MenuItem = {
   price: number;
   image_url: string | null;
   restaurant_id: string;
+  offer_price: number | null;
+  offer_image_url: string | null;
+  offer_starts_at: string | null;
+  offer_ends_at: string | null;
   restaurants: { name: string; is_active: boolean; status: string | null; opens_at: string | null; closes_at: string | null } | null;
   categories: { name: string } | null;
 };
@@ -142,23 +149,8 @@ export default function RestaurantsPage() {
 
     setSearching(true);
 
-    const { data: matchedCategories } = await supabase
-      .from("categories")
-      .select("id")
-      .ilike("name", `%${q}%`);
-
-    const categoryIds = (matchedCategories ?? []).map((c) => c.id);
-    const itemsFilter = categoryIds.length > 0
-      ? `name.ilike.%${q}%,description.ilike.%${q}%,category_id.in.(${categoryIds.join(",")})`
-      : `name.ilike.%${q}%,description.ilike.%${q}%`;
-
-    const [itemsRes, restaurantsRes] = await Promise.all([
-      supabase
-        .from("menu_items")
-        .select("id, name, price, image_url, restaurant_id, restaurants(name, is_active, status, opens_at, closes_at), categories(name)")
-        .or(itemsFilter)
-        .eq("is_active", true)
-        .limit(40),
+    const [meals, restaurantsRes] = await Promise.all([
+      searchMeals(q),
       supabase
         .from("restaurants")
         .select("id, name, description, image_url, cover_image_url, is_active, status, opens_at, closes_at")
@@ -171,14 +163,7 @@ export default function RestaurantsPage() {
     const openRestaurants = ((restaurantsRes.data ?? []) as Restaurant[])
       .filter((r) => isRestaurantOpen(r));
 
-    const openItems = ((itemsRes.data ?? []) as unknown as MenuItem[])
-      .filter((item) => {
-        const r = item.restaurants;
-        if (!r || !r.is_active || r.status !== "نشط") return false;
-        return isRestaurantOpen({ is_active: r.is_active, opens_at: r.opens_at, closes_at: r.closes_at });
-      });
-
-    setItemResults(openItems);
+    setItemResults(meals as unknown as MenuItem[]);
     setRestaurantResults(openRestaurants);
     setSearching(false);
   }, []);
@@ -325,7 +310,7 @@ export default function RestaurantsPage() {
                           <p className="text-xs text-[#6B7280] mt-0.5">
                             {(item.restaurants as { name: string } | null)?.name ?? ""}
                           </p>
-                          <p className="text-sm font-black text-[#FF6000] mt-1">{item.price} ج.م</p>
+                          <p className="text-sm font-black text-[#FF6000] mt-1">{getEffectiveMealPrice(item)} ج.م</p>
                         </div>
                       </button>
                     );
@@ -368,21 +353,38 @@ export default function RestaurantsPage() {
               {ads.length > 0 && (
                 <section className="pt-4">
                   <div className="relative w-full overflow-hidden rounded-2xl" style={{ height: 140 }}>
-                    {ads.map((ad, i) => (
-                      ad.link ? (
-                        <Link key={ad.id} href={ad.link}
-                          className={`absolute inset-0 transition-opacity duration-500 ${i === adIndex ? "opacity-100" : "opacity-0 pointer-events-none"}`}>
-                          {/* eslint-disable-next-line @next/next/no-img-element */}
-                          <img src={ad.image_url ?? ""} alt="إعلان" className="w-full h-full object-cover" loading="lazy" onError={(e) => { e.currentTarget.src = '/images/placeholder.png'; }} />
-                        </Link>
-                      ) : (
+                    {ads.map((ad, i) => {
+                      const normalized = ad.link ? normalizeAdLink(ad.link) : null;
+                      return (
                         <div key={ad.id}
-                          className={`absolute inset-0 transition-opacity duration-500 ${i === adIndex ? "opacity-100" : "opacity-0"}`}>
+                          onClick={() => {
+                            if (!normalized) return;
+                            if (normalized.isExternal) {
+                              window.location.href = normalized.href;
+                            } else {
+                              router.push(normalized.href);
+                            }
+                          }}
+                          className={`absolute inset-0 transition-opacity duration-500 cursor-pointer ${
+                            i === adIndex ? "opacity-100" : "opacity-0 pointer-events-none"
+                          }`}
+                          role={normalized ? "button" : undefined}
+                          tabIndex={normalized ? 0 : undefined}
+                          onKeyDown={(e) => {
+                            if (!normalized) return;
+                            if (e.key === "Enter" || e.key === " ") {
+                              e.preventDefault();
+                              normalized.isExternal
+                                ? window.location.href = normalized.href
+                                : router.push(normalized.href);
+                            }
+                          }}
+                        >
                           {/* eslint-disable-next-line @next/next/no-img-element */}
                           <img src={ad.image_url ?? ""} alt="إعلان" className="w-full h-full object-cover" loading="lazy" onError={(e) => { e.currentTarget.src = '/images/placeholder.png'; }} />
                         </div>
-                      )
-                    ))}
+                      );
+                    })}
                     {ads.length > 1 && (
                       <div className="absolute bottom-2 left-1/2 -translate-x-1/2 flex gap-1.5">
                         {ads.map((_, i) => (

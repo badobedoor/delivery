@@ -25,7 +25,14 @@
       "mcp__ide__getDiagnostics",
       "Bash(git commit *)",
       "Bash(powershell *)",
-      "Bash(npx eslint *)"
+      "Bash(npx eslint *)",
+      "Bash(kill 27968)",
+      "Bash(node *)",
+      "Bash(cd /d D:\\\\coding Project\\\\delivery-deepseek)",
+      "Bash(findstr /snip /d:node_modules /d:.next \"addToCart\" **/*.tsx **/*.ts)",
+      "Bash(findstr -v node_modules)",
+      "Bash(findstr -v .next)",
+      "Bash(dir /s /b \"lib\\\\cart*\" \"lib\\\\cart*.*\")"
     ]
   }
 }

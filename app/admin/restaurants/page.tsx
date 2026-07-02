@@ -69,6 +69,10 @@ type MenuItem = {
   image_url: string | null;
   is_active: boolean;
   is_best_seller: boolean;
+  offer_price: number | null;
+  offer_image_url: string | null;
+  offer_starts_at: string | null;
+  offer_ends_at: string | null;
   extra_groups: { type: string; item_extras: { price: number }[] }[];
 };
 
@@ -482,7 +486,7 @@ export default function AdminRestaurantsPage() {
   const [toastMsg,         setToastMsg]         = useState<string | null>(null);
   const [restAddress, setRestAddress] = useState("");
 
-  /* ── Offer fields (يظهروا بس لو القسم = "العروض" والوضع = "offer") ── */
+  /* ── Offer fields (يظهروا بس لو القسم = "عروض" والوضع = "offer") ── */
   const [itemMode,          setItemMode]          = useState<"item" | "offer">("item");
   const [offerPrice,        setOfferPrice]        = useState("");
   const [offerImageFile,    setOfferImageFile]    = useState<File | null>(null);
@@ -698,11 +702,11 @@ export default function AdminRestaurantsPage() {
       }
       console.log("Inserted:", data);
 
-      /* إنشاء قسم "العروض" تلقائياً مع كل مطعم جديد */
+      /* إنشاء قسم "عروض" تلقائياً مع كل مطعم جديد */
       if (data?.id) {
         await supabase.from("categories").insert({
           restaurant_id: data.id,
-          name:          "العروض",
+          name:          "عروض",
           is_active:     true,
         });
       }
@@ -732,7 +736,7 @@ export default function AdminRestaurantsPage() {
   async function fetchMenuItems(restaurantId: string) {
     const { data, error } = await supabase
       .from("menu_items")
-      .select("id, name, description, price, category_id, restaurant_id, image_url, is_active, is_best_seller, extra_groups(type, item_extras(price))")
+      .select("id, name, description, price, category_id, restaurant_id, image_url, is_active, is_best_seller, offer_price, offer_image_url, offer_starts_at, offer_ends_at, extra_groups(type, item_extras(price))")
       .eq("restaurant_id", restaurantId)
       .order("sort_order", { ascending: true });
     if (error) { console.error("Fetch menu items error:", error.message, error); return; }
@@ -749,6 +753,10 @@ export default function AdminRestaurantsPage() {
           image_url:     item.image_url ?? null,
           is_active:      item.is_active      ?? true,
           is_best_seller: (item as any).is_best_seller ?? false,
+          offer_price:       item.offer_price      ?? null,
+          offer_image_url:   item.offer_image_url  ?? null,
+          offer_starts_at:   item.offer_starts_at  ?? null,
+          offer_ends_at:     item.offer_ends_at    ?? null,
           extra_groups:   item.extra_groups ?? [],
         })),
       );
@@ -1091,6 +1099,23 @@ export default function AdminRestaurantsPage() {
     setItemImageError(null);
     setExtraGroups([]);
     setCollapsedGroups(new Set()); setGroupNameErrors(new Set());
+
+    /* ── Populate offer fields when editing ── */
+    {
+      const isOfferCat = restCats.find((c) => c.id === item.category_id)?.name === "عروض";
+      if (isOfferCat && item.offer_price != null) {
+        setItemMode("offer");
+        setOfferPrice(String(item.offer_price));
+        setOfferImagePreview(item.offer_image_url ?? null);
+        setOfferStartsAt(item.offer_starts_at ?? "");
+        setOfferEndsAt(item.offer_ends_at ?? "");
+      } else {
+        setItemMode("item");
+        setOfferPrice(""); setOfferStartsAt(""); setOfferEndsAt("");
+        setOfferImageFile(null); setOfferImagePreview(null); setOfferImageError(null);
+      }
+    }
+
     setShowItemModal(true);
 
     /* Fetch extra groups + their extras in one query */
@@ -1155,7 +1180,7 @@ export default function AdminRestaurantsPage() {
       image_url = uploaded;
     }
 
-    const isOfferCat = restCats.find((c) => c.id === itemForm.category_id)?.name === "العروض";
+    const isOfferCat = restCats.find((c) => c.id === itemForm.category_id)?.name === "عروض";
     const isOffer    = isOfferCat && itemMode === "offer";
 
     /* رفع صورة العرض لو موجودة */
@@ -2102,8 +2127,8 @@ export default function AdminRestaurantsPage() {
                 </span>
               </label>
 
-              {/* تبديل وجبة/عرض — يظهر بس في قسم "العروض" */}
-              {restCats.find((c) => c.id === itemForm.category_id)?.name === "العروض" && (
+              {/* تبديل وجبة/عرض — يظهر بس في قسم "عروض" */}
+              {restCats.find((c) => c.id === itemForm.category_id)?.name === "عروض" && (
                 <div className="flex items-center justify-between">
                   <span className="text-xs font-semibold" style={{ color: C.muted }}>نوع العنصر</span>
                   <div className="flex gap-2">
@@ -2141,7 +2166,7 @@ export default function AdminRestaurantsPage() {
               />
 
               {/* ── حقول العرض — تظهر بس لو الوضع = "offer" ── */}
-              {restCats.find((c) => c.id === itemForm.category_id)?.name === "العروض" && itemMode === "offer" && (
+              {restCats.find((c) => c.id === itemForm.category_id)?.name === "عروض" && itemMode === "offer" && (
                 <>
                   <div className="flex flex-col gap-1.5">
                     <label className="text-xs font-semibold" style={{ color: C.muted }}>

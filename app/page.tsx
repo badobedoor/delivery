@@ -6,6 +6,8 @@ import { useRouter } from "next/navigation";
 import BottomNav from "@/components/customer/BottomNav";
 import ClosedScreen from "@/components/customer/ClosedScreen";
 import { supabase } from "@/lib/supabase";
+import { normalizeAdLink } from "@/lib/adLink";
+import InstallCard from "@/components/customer/InstallCard";
 
 const categories = [
   { emoji: "🍔", name: "مطاعم" },
@@ -111,7 +113,7 @@ export default function HomePage() {
         {/* ── Hero Card (replaces Header + Banner) ── */}
         <section className="px-4 pt-10">
           <div
-            className="w-full rounded-3xl px-5 pt-5 pb-4 flex flex-col gap-3"
+            className="w-full rounded-3xl px-5 pt-3 pb-3 flex flex-col gap-2"
             style={{ background: "#F5EDE6" }}
           >
             {/* Address row — top */}
@@ -155,8 +157,8 @@ export default function HomePage() {
                 <Image
                   src="/customerHomePage.png"
                   alt="حالا دلفري"
-                  width={130}
-                  height={130}
+                  width={100}
+                  height={100}
                   className="object-contain"
                   priority
                 />
@@ -170,21 +172,38 @@ export default function HomePage() {
           <section className="px-4 pt-4">
             <div className="relative w-full overflow-hidden rounded-2xl"
               style={{ height: 140 }}>
-              {ads.map((ad, i) => (
-                ad.link ? (
-                  <Link key={ad.id} href={ad.link}
-                    className={`absolute inset-0 transition-opacity duration-500 ${i === adIndex ? "opacity-100" : "opacity-0 pointer-events-none"}`}>
-                    {/* eslint-disable-next-line @next/next/no-img-element */}
-                    <img src={ad.image_url} alt="إعلان" className="w-full h-full object-cover" loading="lazy" onError={(e) => { e.currentTarget.src = '/images/placeholder.png'; }} />
-                  </Link>
-                ) : (
+              {ads.map((ad, i) => {
+                const normalized = ad.link ? normalizeAdLink(ad.link) : null;
+                return (
                   <div key={ad.id}
-                    className={`absolute inset-0 transition-opacity duration-500 ${i === adIndex ? "opacity-100" : "opacity-0"}`}>
+                    onClick={() => {
+                      if (!normalized) return;
+                      if (normalized.isExternal) {
+                        window.location.href = normalized.href;
+                      } else {
+                        router.push(normalized.href);
+                      }
+                    }}
+                    className={`absolute inset-0 transition-opacity duration-500 cursor-pointer ${
+                      i === adIndex ? "opacity-100" : "opacity-0 pointer-events-none"
+                    }`}
+                    role={normalized ? "button" : undefined}
+                    tabIndex={normalized ? 0 : undefined}
+                    onKeyDown={(e) => {
+                      if (!normalized) return;
+                      if (e.key === "Enter" || e.key === " ") {
+                        e.preventDefault();
+                        normalized.isExternal
+                          ? window.location.href = normalized.href
+                          : router.push(normalized.href);
+                      }
+                    }}
+                  >
                     {/* eslint-disable-next-line @next/next/no-img-element */}
                     <img src={ad.image_url} alt="إعلان" className="w-full h-full object-cover" loading="lazy" onError={(e) => { e.currentTarget.src = '/images/placeholder.png'; }} />
                   </div>
-                )
-              ))}
+                );
+              })}
               {/* Dots */}
               {ads.length > 1 && (
                 <div className="absolute bottom-2 left-1/2 -translate-x-1/2 flex gap-1.5">
@@ -198,6 +217,9 @@ export default function HomePage() {
             </div>
           </section>
         )}
+
+        {/* ── Install App Card ── */}
+        <InstallCard />
 
         {/* ── Service Cards ── */}
         <section className="px-4 pt-4">
