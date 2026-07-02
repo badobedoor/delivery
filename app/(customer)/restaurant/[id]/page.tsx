@@ -8,6 +8,7 @@ import { supabase } from "@/lib/supabase";
 import { isRestaurantOpen } from "@/lib/utils";
 import { getEffectiveMealPrice } from "@/lib/pricing";
 import { addToCart, clearCart, getCart, updateQty, CartItem } from "@/lib/cart";
+import { formatCairoDate, formatCairoTime } from "@/lib/dateTime";
 import ConfirmModal from "@/components/customer/ConfirmModal";
 import MealBottomSheet from "@/components/customer/MealBottomSheet";
 import CartBar from "@/components/customer/CartBar";
@@ -307,7 +308,7 @@ function RestaurantPageContent() {
 
           {/* زرار الرجوع */}
           <Link
-            href="/restaurants"
+            href={searchParams.get("returnTo") || "/restaurants"}
             className="absolute top-4 right-4 w-11 h-11 rounded-full flex items-center justify-center"
             style={{ background: "rgba(0,0,0,0.8)", backdropFilter: "blur(8px)" }}
           >
@@ -440,8 +441,8 @@ function RestaurantPageContent() {
                           <div className="flex items-start gap-1">
                             <span className="text-[10px]">📅</span>
                             <div className="text-[10px] text-[#9CA3AF]">
-                              <div>من: {new Date(meal.offer_starts_at).toLocaleDateString("ar-EG", { day: "numeric", month: "long" })} - {new Date(meal.offer_starts_at).toLocaleTimeString("ar-EG", { hour: "2-digit", minute: "2-digit" })}</div>
-                              <div>إلى: {new Date(meal.offer_ends_at).toLocaleDateString("ar-EG", { day: "numeric", month: "long" })} - {new Date(meal.offer_ends_at).toLocaleTimeString("ar-EG", { hour: "2-digit", minute: "2-digit" })}</div>
+                              <div>من: {formatCairoDate(meal.offer_starts_at, { year: false })} - {formatCairoTime(meal.offer_starts_at)}</div>
+                              <div>إلى: {formatCairoDate(meal.offer_ends_at, { year: false })} - {formatCairoTime(meal.offer_ends_at)}</div>
                             </div>
                           </div>
                         </div>

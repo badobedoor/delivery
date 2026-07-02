@@ -3,6 +3,7 @@
 import { useState, useEffect } from "react";
 import { supabase } from "@/lib/supabase";
 import { useAutoRefresh } from "@/hooks/useAutoRefresh";
+import { formatCairoDate, formatCairoTime } from "@/lib/dateTime";
 
 const C = {
   bg:     "#0F172A",
@@ -31,15 +32,11 @@ type DeliveryRequest = {
 type Driver = { id: string; name: string | null; phone: string | null };
 
 function formatTime(iso: string) {
-  return new Date(iso + "Z").toLocaleTimeString("ar-EG", {
-    hour: "2-digit", minute: "2-digit", timeZone: "Africa/Cairo",
-  });
+  return formatCairoTime(iso);
 }
 
 function formatDate(iso: string) {
-  return new Date(iso + "Z").toLocaleDateString("ar-EG", {
-    day: "numeric", month: "long", timeZone: "Africa/Cairo",
-  });
+  return formatCairoDate(iso, { year: false });
 }
 
 export default function DeliveryRequestsPage() {

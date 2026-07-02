@@ -2,6 +2,7 @@
 
 import { useState, useId, useRef, useEffect } from "react";
 import { supabase } from "@/lib/supabase";
+import { formatCairoDate } from "@/lib/dateTime";
 
 /* ── Colors (unchanged) ── */
 const C = {
@@ -42,7 +43,7 @@ function groupByDay(rows: RevenueRow[]): ChartPoint[] {
   return [...map.entries()]
     .sort(([a], [b]) => a.localeCompare(b))
     .map(([date, value]) => ({
-      label: new Date(date).toLocaleDateString("ar-EG", { weekday: "short", day: "numeric" }),
+      label: formatCairoDate(date, { year: false, weekday: "short" }),
       value,
     }));
 }
@@ -64,7 +65,7 @@ function groupForAllTime(rows: RevenueRow[]): ChartPoint[] {
     return [...map.entries()]
       .sort(([a], [b]) => a.localeCompare(b))
       .map(([date, value]) => ({
-        label: new Date(date).toLocaleDateString("ar-EG", { month: "short", day: "numeric" }),
+        label: formatCairoDate(date, { year: false, month: "short" }),
         value,
       }));
   }
@@ -76,7 +77,7 @@ function groupForAllTime(rows: RevenueRow[]): ChartPoint[] {
   return [...map.entries()]
     .sort(([a], [b]) => a.localeCompare(b))
     .map(([ym, value]) => ({
-      label: new Date(`${ym}-01`).toLocaleDateString("ar-EG", { year: "2-digit", month: "short" }),
+      label: formatCairoDate(`${ym}-01`, { year: "2-digit", month: "short", day: false }),
       value,
     }));
 }

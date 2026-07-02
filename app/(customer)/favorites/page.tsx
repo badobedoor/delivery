@@ -5,6 +5,7 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase";
 import { clearCart, addToCart } from "@/lib/cart";
+import { formatCairoDate } from "@/lib/dateTime";
 import BottomNav from "@/components/customer/BottomNav";
 
 type FavItem = {
@@ -125,7 +126,7 @@ export default function FavoritesPage() {
                   {/* التاريخ + حذف */}
                   <div className="flex items-center justify-between mt-3">
                     <span className="text-xs text-[#6B7280]">
-                      {new Date(fav.created_at).toLocaleDateString("ar-EG", { day: "numeric", month: "long" })}
+                      {formatCairoDate(fav.created_at, { year: false })}
                     </span>
                     <button
                       onClick={(e) => { e.stopPropagation(); handleDelete(fav.id); }}

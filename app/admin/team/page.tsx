@@ -3,6 +3,7 @@
 import { useState, useEffect } from "react";
 import { useAutoRefresh } from "@/hooks/useAutoRefresh";
 import { supabasePublic } from "@/lib/supabasePublic";
+import { formatCairoDate } from "@/lib/dateTime";
 
 const C = {
   bg:     "#0F172A",
@@ -451,7 +452,7 @@ function AdminsTab({
                       </span>
                     </td>
                     <td className="hidden md:table-cell px-4 py-3 text-xs whitespace-nowrap" style={{ color: C.muted }}>
-                      {new Date(r.created_at).toLocaleDateString("ar-EG")}
+                      {formatCairoDate(r.created_at)}
                     </td>
                     <td className="px-4 py-3">
                       <button onClick={() => setDeleteId(r.id)}
@@ -667,7 +668,7 @@ function StaffTab({
                       </span>
                     </td>
                     <td className="hidden lg:table-cell px-4 py-3 text-xs whitespace-nowrap" style={{ color: C.muted }}>
-                      {new Date(r.created_at).toLocaleDateString("ar-EG")}
+                      {formatCairoDate(r.created_at)}
                     </td>
                     <td className="px-4 py-3">
                       <div className="flex items-center gap-2">

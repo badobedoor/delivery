@@ -29,7 +29,6 @@ export default function RootLayout({
       className={`${cairo.variable} h-full antialiased`}
     >
       <head>
-        <link rel="manifest" href="/manifest.json" />
         <meta name="theme-color" content="#FF6000" />
         <meta name="apple-mobile-web-app-capable" content="yes" />
         <meta name="apple-mobile-web-app-status-bar-style" content="default" />

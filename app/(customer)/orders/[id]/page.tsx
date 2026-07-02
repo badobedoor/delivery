@@ -6,6 +6,7 @@ import { useState, useEffect } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase";
 import { addToCart, clearCart } from "@/lib/cart";
+import { formatCairoDateTime } from "@/lib/dateTime";
 import InfoModal from "@/components/customer/InfoModal";
 
 
@@ -54,10 +55,7 @@ function getCustomerStatus(status: string): { label: string; color: string; gif:
 }
 
 function formatDate(iso: string) {
-  return new Date(iso).toLocaleDateString("ar-EG", {
-    year: "numeric", month: "long", day: "numeric",
-    hour: "2-digit", minute: "2-digit",
-  });
+  return formatCairoDateTime(iso);
 }
 
 const FALLBACK_IMG = "https://images.unsplash.com/photo-1546069901-ba9599a7e63c?w=200&h=200&fit=crop";
@@ -562,7 +560,7 @@ export default function OrderDetailPage() {
               value={comment}
               onChange={(e) => setComment(e.target.value)}
               rows={3}
-              className="w-full rounded-xl p-3 text-sm resize-none outline-none"
+              className="w-full rounded-xl p-3 text-sm resize-none outline-none text-[var(--color-secondary)] placeholder:text-[var(--color-muted)]"
               style={{ border: "1px solid #E5E7EB", background: "#F9FAFB" }}
             />
 

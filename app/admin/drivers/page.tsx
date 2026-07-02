@@ -504,7 +504,7 @@ function DriversTab({ staffList, motos, shifts }: {
             className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-bold flex-shrink-0 hover:opacity-90 transition-opacity"
             style={{ background: C.orange, color: "#fff" }}>
             <span className="text-base leading-none">+</span>
-            <span className="hidden sm:inline">تشغيل سائق</span>
+            <span className="hidden sm:inline">تعيين سائق</span>
           </button>
         </div>
 
@@ -564,7 +564,7 @@ function DriversTab({ staffList, motos, shifts }: {
         </div>
       </div>
 
-      <Modal open={modal} title="تشغيل سائق" onClose={close} onSave={save} saving={saving}>
+      <Modal open={modal} title="تعيين سائق" onClose={close} onSave={save} saving={saving}>
         {saveErr && (
           <div className="px-4 py-2.5 rounded-xl text-xs font-semibold text-center"
             style={{ background: `${C.red}22`, color: C.red }}>
@@ -835,7 +835,7 @@ export default function AdminDriversPage() {
       const [staffRes, motosRes, shiftsRes] = await Promise.all([
         supabase.from("delivery_staff").select("id, name").eq("is_active", true).order("name"),
         supabase.from("motorcycles").select("id, name, is_active").order("name"),
-        supabase.from("shifts").select("id, num").eq("is_active", true).order("num"),
+        supabase.from("shifts").select("id, num").order("num"),
       ]);
       if (staffRes.error)  console.error("fetchStaff:",  staffRes.error);
       if (motosRes.error)  console.error("fetchMotos:",  motosRes.error);

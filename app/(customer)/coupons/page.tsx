@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import { supabase } from "@/lib/supabase";
+import { formatCairoDate } from "@/lib/dateTime";
 
 type Coupon = {
   id:                   string;
@@ -35,9 +36,7 @@ function formatDiscount(coupon: Coupon): string {
 
 function formatArabicDate(iso: string | null): string {
   if (!iso) return "";
-  return new Date(iso).toLocaleDateString("ar-EG", {
-    day: "numeric", month: "long", year: "numeric",
-  });
+  return formatCairoDate(iso);
 }
 
 function EmptyState() {

@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useState, useEffect } from "react";
 import { useParams } from "next/navigation";
 import { supabase } from "@/lib/supabase";
+import { formatCairoDate } from "@/lib/dateTime";
 
 type Rating = {
   id: string;
@@ -150,7 +151,7 @@ export default function RestaurantReviewsPage() {
                       <p className="text-sm text-[#1A1A1A] mt-1 leading-relaxed">{r.comment}</p>
                     )}
                     <p className="text-xs text-[#9CA3AF] mt-1">
-                      {new Date(r.created_at).toLocaleDateString("ar-EG", { day: "numeric", month: "long", year: "numeric" })}
+                      {formatCairoDate(r.created_at)}
                     </p>
                   </div>
                 );

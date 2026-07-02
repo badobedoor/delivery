@@ -10,6 +10,15 @@ export default function CustomerLayout({ children }: { children: React.ReactNode
   const router = useRouter();
   const [checking, setChecking] = useState(true);
 
+  /* ── PWA manifest for the customer portal ── */
+  useEffect(() => {
+    const link = document.createElement("link");
+    link.rel  = "manifest";
+    link.href = "/manifest.json";
+    document.head.appendChild(link);
+    return () => { document.head.removeChild(link); };
+  }, []);
+
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
       if (!session) router.replace("/login");

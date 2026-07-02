@@ -5,6 +5,7 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase";
 import { getEffectiveMealPrice } from "@/lib/pricing";
+import { formatCairoDate, formatCairoTime } from "@/lib/dateTime";
 import BottomNav from "@/components/customer/BottomNav";
 
 type OfferItem = {
@@ -24,11 +25,7 @@ type OfferItem = {
 
 function fmtDate(iso: string | null) {
   if (!iso) return "";
-  return new Date(iso).toLocaleDateString("ar-EG", {
-    day: "numeric", month: "long",
-  }) + " - " + new Date(iso).toLocaleTimeString("ar-EG", {
-    hour: "2-digit", minute: "2-digit",
-  });
+  return formatCairoDate(iso, { year: false }) + " - " + formatCairoTime(iso);
 }
 
 export default function OffersPage() {
@@ -111,7 +108,7 @@ export default function OffersPage() {
 
                 return (
                   <div key={offer.id}
-                    onClick={() => offer.restaurant_id && router.push(`/restaurant/${offer.restaurant_id}?category=عروض`)}
+                    onClick={() => offer.restaurant_id && router.push(`/restaurant/${offer.restaurant_id}?category=عروض&returnTo=/offers`)}
                     className={`bg-white rounded-2xl overflow-hidden shadow-sm border border-[var(--color-border)] ${offer.restaurant_id ? "cursor-pointer active:scale-[0.99] transition-transform" : ""}`}>
 
                     {/* الصورة */}

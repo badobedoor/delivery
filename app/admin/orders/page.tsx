@@ -4,6 +4,7 @@ import { useState, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase";
 import { useAutoRefresh } from "@/hooks/useAutoRefresh";
+import { formatCairoDate, formatCairoTime } from "@/lib/dateTime";
 
 const C = {
   card:   "#1E293B",
@@ -77,11 +78,11 @@ function statusColor(s: string) {
 }
 
 function formatTime(iso: string) {
-  return new Date(iso + "Z").toLocaleTimeString("ar-EG", { hour: "2-digit", minute: "2-digit", timeZone: "Africa/Cairo" });
+  return formatCairoTime(iso);
 }
 
 function formatDate(iso: string) {
-  return new Date(iso + "Z").toLocaleDateString("ar-EG", { day: "numeric", month: "long" });
+  return formatCairoDate(iso, { year: false });
 }
 
 /* ── Tabs ── */

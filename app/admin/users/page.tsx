@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useRef } from "react";
 import { supabasePublic } from "@/lib/supabasePublic";
+import { formatCairoDate } from "@/lib/dateTime";
 
 const C = {
   bg:     "#0F172A",
@@ -26,11 +27,7 @@ type User = {
 
 function formatDate(iso: string | null): string {
   if (!iso) return "—";
-  return new Date(iso).toLocaleDateString("ar-EG", {
-    day:   "numeric",
-    month: "long",
-    year:  "numeric",
-  });
+  return formatCairoDate(iso);
 }
 
 export default function AdminUsersPage() {

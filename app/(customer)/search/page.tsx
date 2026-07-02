@@ -177,8 +177,8 @@ export default function SearchPage() {
                   ) : meals.map((m) => {
                     const categoryName = m.categories?.name;
                     const dest = categoryName
-                      ? `/restaurant/${m.restaurant_id}?category=${encodeURIComponent(categoryName)}`
-                      : `/restaurant/${m.restaurant_id}`;
+                      ? `/restaurant/${m.restaurant_id}?category=${encodeURIComponent(categoryName)}&returnTo=/search`
+                      : `/restaurant/${m.restaurant_id}?returnTo=/search`;
                     return (
                       <button
                         key={m.id}
@@ -209,7 +209,7 @@ export default function SearchPage() {
                   ) : restaurants.map((r) => (
                     <button
                       key={r.id}
-                      onClick={() => router.push(`/restaurant/${r.id}`)}
+                      onClick={() => router.push(`/restaurant/${r.id}?returnTo=/search`)}
                       className="bg-white rounded-2xl p-3 flex items-center gap-3 text-right w-full"
                     >
                       <div className="relative w-12 h-12 flex-shrink-0 rounded-xl overflow-hidden">

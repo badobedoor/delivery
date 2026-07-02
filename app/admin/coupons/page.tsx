@@ -3,6 +3,7 @@
 import { useState, useEffect } from "react";
 import { supabase } from "@/lib/supabase";
 import { useAutoRefresh } from "@/hooks/useAutoRefresh";
+import { formatCairoDate } from "@/lib/dateTime";
 
 const C = {
   bg:     "#0F172A",
@@ -81,7 +82,7 @@ const emptyForm = {
 
 function formatExpiry(d: string) {
   if (!d) return "—";
-  return new Date(d).toLocaleDateString("ar-EG", { day: "numeric", month: "long", year: "numeric" });
+  return formatCairoDate(d);
 }
 
 export default function AdminCouponsPage() {

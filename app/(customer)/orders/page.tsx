@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase";
+import { formatCairoDate } from "@/lib/dateTime";
 
 /* ── Types ── */
 type Order = {
@@ -33,9 +34,7 @@ function getCustomerStatus(status: string): { label: string; color: string } {
 }
 
 function formatDate(iso: string) {
-  return new Date(iso).toLocaleDateString("ar-EG", {
-    year: "numeric", month: "long", day: "numeric",
-  });
+  return formatCairoDate(iso);
 }
 
 const ORDER_SELECT = `
@@ -335,7 +334,7 @@ export default function OrdersPage() {
               value={comment}
               onChange={(e) => setComment(e.target.value)}
               rows={3}
-              className="w-full rounded-xl p-3 text-sm resize-none outline-none"
+              className="w-full rounded-xl p-3 text-sm resize-none outline-none text-[var(--color-secondary)] placeholder:text-[var(--color-muted)]"
               style={{ border: "1px solid #E5E7EB", background: "#F9FAFB" }}
             />
 
