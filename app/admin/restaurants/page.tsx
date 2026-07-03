@@ -1643,6 +1643,8 @@ export default function AdminRestaurantsPage() {
           </div>
 
           {/* ── Table card ── */}
+          <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleRestDragEnd}>
+          <SortableContext items={filtered.map((r) => r.id)} strategy={verticalListSortingStrategy}>
           <div className="rounded-2xl overflow-hidden"
             style={{ background: C.card, border: `1px solid ${C.border}` }}>
             <div className="overflow-x-auto">
@@ -1666,8 +1668,6 @@ export default function AdminRestaurantsPage() {
                   </tr>
                 </thead>
                 <tbody>
-                  <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleRestDragEnd}>
-                  <SortableContext items={filtered.map((r) => r.id)} strategy={verticalListSortingStrategy}>
                   {filtered.length === 0 ? (
                     <tr>
                       <td colSpan={6} className="px-4 py-12 text-center text-sm" style={{ color: C.muted }}>
@@ -1784,8 +1784,6 @@ export default function AdminRestaurantsPage() {
                       </SortableRestRow>
                     ))
                   )}
-                  </SortableContext>
-                  </DndContext>
                 </tbody>
               </table>
             </div>
@@ -1795,6 +1793,8 @@ export default function AdminRestaurantsPage() {
               {filtered.length} مطعم
             </div>
           </div>
+          </SortableContext>
+          </DndContext>
         </>
         )}
       </div>

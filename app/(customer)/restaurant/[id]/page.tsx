@@ -4,6 +4,7 @@ import Image from "next/image";
 import Link from "next/link";
 import { useState, useEffect, useRef, Suspense } from "react";
 import { useParams, useSearchParams, useRouter } from "next/navigation";
+import { useScrollSpy } from "@/hooks/useScrollSpy";
 import { supabase } from "@/lib/supabase";
 import { isRestaurantOpen } from "@/lib/utils";
 import { getEffectiveMealPrice } from "@/lib/pricing";
@@ -160,8 +161,11 @@ function RestaurantPageContent() {
   const [categories,  setCategories]  = useState<Category[]>([]);
   const [loading,     setLoading]     = useState(true);
   const [error,       setError]       = useState<string | null>(null);
-  const [activeTab,   setActiveTab]   = useState<string>("");
   const [sheetMeal,   setSheetMeal]   = useState<SheetMeal | null>(null);
+  /* ── Section refs for scroll-spy and scroll-to navigation ── */
+  const sectionRefs = useRef<Map<string, HTMLElement>>(new Map());
+  const STICKY_BAR_HEIGHT = 56;
+  const activeCategory = useScrollSpy(sectionRefs, STICKY_BAR_HEIGHT, [categories]);
   /* ── Back-button handling for MealBottomSheet ── */
   const hasHistoryEntry    = useRef(false);
   const ignoreNextPopstate = useRef(false);
@@ -240,12 +244,6 @@ function RestaurantPageContent() {
           : cats;
 
         setCategories(displayCats);
-        if (displayCats.length > 0) {
-          const target = categoryParam
-            ? displayCats.find((c) => c.name === categoryParam)
-            : null;
-          setActiveTab(target ? target.name : displayCats[0].name);
-        }
       }
 
       setLoading(false);
@@ -254,23 +252,17 @@ function RestaurantPageContent() {
     fetchData();
   }, [id]);
 
-  /* scroll التاب المطلوب إلى المنتصف عند الوصول من البحث */
+  /* ── Deep-link: scroll to the requested category on initial load ── */
   useEffect(() => {
-    if (!categoryParam || !activeTab) return;
-    const btn = document.getElementById(`cat-tab-${activeTab}`);
-    btn?.scrollIntoView({ behavior: "smooth", block: "nearest", inline: "center" });
-  }, [activeTab, categoryParam]);
+    if (!categoryParam || categories.length === 0) return;
+    const target = categories.find((c) => c.name === categoryParam);
+    if (!target) return;
+    const el = sectionRefs.current.get(String(target.id));
+    if (el) el.scrollIntoView({ behavior: "instant", block: "start" });
+  }, [categoryParam, categories]);
 
   const coverSrc = restaurant?.cover_image_url ?? restaurant?.image_url
     ?? "https://images.unsplash.com/photo-1552566626-52f8b828add9?w=800&h=300&fit=crop";
-
-  const activeMeals = categories.find((c) => c.name === activeTab)?.menu_items ?? [];
-
-  /* Debug — تأكد إن بيانات العروض واصلة */
-  if (activeMeals.length > 0) {
-    console.log("Active meals:", activeMeals.length, "tab:", activeTab);
-    console.log("First item offer data:", activeMeals[0]?.offer_price, activeMeals[0]?.offer_starts_at, activeMeals[0]?.offer_ends_at);
-  }
 
   /* ── Loading ── */
   if (loading) {
@@ -363,17 +355,19 @@ function RestaurantPageContent() {
             </div>
           </section>
 
-          {/* ── تابات الأقسام ── */}
+          {/* ── تابات الأقسام (navigation shortcuts) ── */}
           {categories.length > 0 && (
             <div className="bg-white sticky top-0 z-10 border-b border-[var(--color-border)]">
               <div className="flex gap-1 overflow-x-auto px-4 py-2 scrollbar-hide">
                 {categories.map((cat) => (
                   <button
                     key={cat.id}
-                    id={`cat-tab-${cat.name}`}
-                    onClick={() => setActiveTab(cat.name)}
+                    onClick={() => {
+                      const el = sectionRefs.current.get(String(cat.id));
+                      if (el) el.scrollIntoView({ behavior: "smooth", block: "start" });
+                    }}
                     className={`flex-shrink-0 px-4 py-1.5 rounded-full text-sm font-medium transition-colors ${
-                      activeTab === cat.name
+                      activeCategory === String(cat.id)
                         ? "bg-[var(--color-primary)] text-white"
                         : "bg-[var(--color-surface)] text-[var(--color-secondary)]"
                     }`}
@@ -385,117 +379,127 @@ function RestaurantPageContent() {
             </div>
           )}
 
-          {/* ── قائمة الوجبات ── */}
+          {/* ── قائمة الوجبات (all categories, continuously) ── */}
           <section className="px-4 pt-3 bg-white">
-            <div className="flex flex-col divide-y divide-[var(--color-border)]">
-              {activeMeals.map((meal) => {
-                const hasExtras = meal.extra_groups.length > 0;
-                const isActive  = meal.is_active !== false;
-                const FALLBACK  = "https://images.unsplash.com/photo-1546069901-ba9599a7e63c?w=200&h=200&fit=crop";
-                const hasOfferFields = !!(meal.offer_price && meal.offer_starts_at && meal.offer_ends_at);
-                const effectivePrice = getEffectiveMealPrice(meal);
-                const offerImg = (hasOfferFields && meal.offer_image_url) ? meal.offer_image_url : (meal.image_url ?? FALLBACK);
-                const discount  = hasOfferFields && meal.offer_price
-                  ? Math.round((1 - meal.offer_price / meal.price) * 100) : 0;
+            {categories.map((cat) => (
+              <div
+                key={cat.id}
+                data-category-id={cat.id}
+                ref={(el) => { if (el) sectionRefs.current.set(String(cat.id), el); }}
+                style={{ scrollMarginTop: STICKY_BAR_HEIGHT + 8 }}
+              >
+                {/* عنوان القسم */}
+                <h2 className="text-base font-bold text-[var(--color-secondary)] pt-2 pb-3">
+                  {cat.name}
+                </h2>
 
-                const cardInner = (
-                  <>
-                    {/* القسم 1 — الصورة (يمين في RTL) */}
-                    <div className="relative flex-shrink-0 w-24 h-24 ml-3 rounded-xl overflow-hidden">
-                      <Image src={offerImg} alt={meal.name} fill className="object-cover" onError={(e) => { (e.target as HTMLImageElement).src = '/images/placeholder.png'; }} />
-                      {hasOfferFields && discount > 0 && (
-                        <div className="absolute top-1 right-1 bg-red-500 text-white text-[9px] font-black px-1.5 py-0.5 rounded-full leading-none">
-                          -{discount}%
-                        </div>
-                      )}
-                      {!isActive && (
-                        <div className="absolute inset-0 bg-black/60 flex items-center justify-center">
-                          <span className="text-white text-xs font-bold">غير متوفر</span>
-                        </div>
-                      )}
-                    </div>
+                <div className="flex flex-col divide-y divide-[var(--color-border)]">
+                  {cat.menu_items.map((meal) => {
+                    const hasExtras = meal.extra_groups.length > 0;
+                    const isActive  = meal.is_active !== false;
+                    const FALLBACK  = "https://images.unsplash.com/photo-1546069901-ba9599a7e63c?w=200&h=200&fit=crop";
+                    const hasOfferFields = !!(meal.offer_price && meal.offer_starts_at && meal.offer_ends_at);
+                    const effectivePrice = getEffectiveMealPrice(meal);
+                    const offerImg = (hasOfferFields && meal.offer_image_url) ? meal.offer_image_url : (meal.image_url ?? FALLBACK);
+                    const discount  = hasOfferFields && meal.offer_price
+                      ? Math.round((1 - meal.offer_price / meal.price) * 100) : 0;
 
-                    {/* القسم 2 — الاسم والوصف والسعر والزرار */}
-                    <div className="flex flex-col flex-1 min-w-0 px-1">
-                      {/* السطر 1 — الاسم */}
-                      <p className="truncate font-bold text-base text-[#1A1A1A] leading-snug">{meal.name}</p>
-
-                      {/* المنتصف — الوصف + السعر */}
-                      <div className="flex items-center gap-2 flex-1 mt-0.5">
-                        {meal.description && (
-                          <p className="line-clamp-2 text-sm text-[#6B7280] flex-1">{meal.description}</p>
-                        )}
-                        {effectivePrice !== meal.price ? (
-                          <div className="flex flex-col items-end flex-shrink-0">
-                            <p className="text-base font-black text-[#FF6000]">{effectivePrice} ج</p>
-                            <p className="text-xs text-gray-400 line-through">{meal.price} ج</p>
-                          </div>
-                        ) : (
-                          <p className="text-base font-black text-[#FF6000] flex-shrink-0">{effectivePrice} ج</p>
-                        )}
-                      </div>
-
-                      {/* تواريخ العرض */}
-                      {hasOfferFields && meal.offer_starts_at && meal.offer_ends_at && (
-                        <div className="mt-1 pt-1 border-t border-[#F3F4F6]">
-                          <div className="flex items-start gap-1">
-                            <span className="text-[10px]">📅</span>
-                            <div className="text-[10px] text-[#9CA3AF]">
-                              <div>من: {formatCairoDate(meal.offer_starts_at, { year: false })} - {formatCairoTime(meal.offer_starts_at)}</div>
-                              <div>إلى: {formatCairoDate(meal.offer_ends_at, { year: false })} - {formatCairoTime(meal.offer_ends_at)}</div>
+                    const cardInner = (
+                      <>
+                        {/* القسم 1 — الصورة (يمين في RTL) */}
+                        <div className="relative flex-shrink-0 w-24 h-24 ml-3 rounded-xl overflow-hidden">
+                          <Image src={offerImg} alt={meal.name} fill className="object-cover" onError={(e) => { (e.target as HTMLImageElement).src = '/images/placeholder.png'; }} />
+                          {hasOfferFields && discount > 0 && (
+                            <div className="absolute top-1 right-1 bg-red-500 text-white text-[9px] font-black px-1.5 py-0.5 rounded-full leading-none">
+                              -{discount}%
                             </div>
+                          )}
+                          {!isActive && (
+                            <div className="absolute inset-0 bg-black/60 flex items-center justify-center">
+                              <span className="text-white text-xs font-bold">غير متوفر</span>
+                            </div>
+                          )}
+                        </div>
+
+                        {/* القسم 2 — الاسم والوصف والسعر والزرار */}
+                        <div className="flex flex-col flex-1 min-w-0 px-1">
+                          {/* السطر 1 — الاسم */}
+                          <p className="truncate font-bold text-base text-[#1A1A1A] leading-snug">{meal.name}</p>
+
+                          {/* المنتصف — الوصف + السعر */}
+                          <div className="flex items-center gap-2 flex-1 mt-0.5">
+                            {meal.description && (
+                              <p className="line-clamp-2 text-sm text-[#6B7280] flex-1">{meal.description}</p>
+                            )}
+                            {effectivePrice !== meal.price ? (
+                              <div className="flex flex-col items-end flex-shrink-0">
+                                <p className="text-base font-black text-[#FF6000]">{effectivePrice} ج</p>
+                                <p className="text-xs text-gray-400 line-through">{meal.price} ج</p>
+                              </div>
+                            ) : (
+                              <p className="text-base font-black text-[#FF6000] flex-shrink-0">{effectivePrice} ج</p>
+                            )}
                           </div>
+
+                          {/* تواريخ العرض */}
+                          {hasOfferFields && meal.offer_starts_at && meal.offer_ends_at && (
+                            <div className="mt-1 pt-1 border-t border-[#F3F4F6]">
+                              <div className="flex items-start gap-1">
+                                <span className="text-[10px]">📅</span>
+                                <div className="text-[10px] text-[#9CA3AF]">
+                                  <div>من: {formatCairoDate(meal.offer_starts_at, { year: false })} - {formatCairoTime(meal.offer_starts_at)}</div>
+                                  <div>إلى: {formatCairoDate(meal.offer_ends_at, { year: false })} - {formatCairoTime(meal.offer_ends_at)}</div>
+                                </div>
+                              </div>
+                            </div>
+                          )}
+
+                          {/* الأخير — الزرار */}
+                          {!hasExtras && isActive && (
+                            <div className="mt-auto pt-1">
+                              <QuantityCounter
+                                itemId={String(meal.id)}
+                                name={meal.name}
+                                price={effectivePrice}
+                                description={meal.description}
+                                imageUrl={meal.image_url}
+                                restaurantId={id}
+                                restaurantName={restaurant.name}
+                              />
+                            </div>
+                          )}
                         </div>
-                      )}
+                      </>
+                    );
 
-                      {/* الأخير — الزرار */}
-                      {!hasExtras && isActive && (
-                        <div className="mt-auto pt-1">
-                          <QuantityCounter
-                            itemId={String(meal.id)}
-                            name={meal.name}
-                            price={effectivePrice}
-                            description={meal.description}
-                            imageUrl={meal.image_url}
-                            restaurantId={id}
-                            restaurantName={restaurant.name}
-                          />
+                    if (hasExtras) {
+                      return (
+                        <div
+                          key={meal.id}
+                          className={`flex items-center py-3 relative ${isActive ? "cursor-pointer active:opacity-75 transition-opacity" : ""}`}
+                          onClick={isActive ? () => {
+                            const mealData = toSheetMeal(meal);
+                            if (!hasHistoryEntry.current) {
+                              window.history.pushState({ type: 'meal-sheet' }, '');
+                              hasHistoryEntry.current = true;
+                            }
+                            setSheetMeal(mealData);
+                          } : undefined}
+                        >
+                          {cardInner}
                         </div>
-                      )}
-                    </div>
-                  </>
-                );
+                      );
+                    }
 
-                if (hasExtras) {
-                  return (
-                    <div
-                      key={meal.id}
-                      className={`flex items-center py-3 relative ${isActive ? "cursor-pointer active:opacity-75 transition-opacity" : ""}`}
-                      onClick={isActive ? () => {
-                        const mealData = toSheetMeal(meal);
-                        if (!hasHistoryEntry.current) {
-                          window.history.pushState({ type: 'meal-sheet' }, '');
-                          hasHistoryEntry.current = true;
-                        }
-                        setSheetMeal(mealData);
-                      } : undefined}
-                    >
-                      {cardInner}
-                    </div>
-                  );
-                }
-
-                return (
-                  <div key={meal.id} className="flex items-center py-3 relative">
-                    {cardInner}
-                  </div>
-                );
-              })}
-
-              {activeMeals.length === 0 && (
-                <p className="py-6 text-center text-sm text-[var(--color-muted)]">لا توجد وجبات في هذا القسم</p>
-              )}
-            </div>
+                    return (
+                      <div key={meal.id} className="flex items-center py-3 relative">
+                        {cardInner}
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            ))}
           </section>
 
 
