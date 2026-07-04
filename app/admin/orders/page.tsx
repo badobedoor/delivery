@@ -79,6 +79,8 @@ type OrderEditSession = {
   originalSubtotal: number | null;
   deliveryFee: number | null;
   discountAmount: number | null;
+  editedSubtotal: number;
+  editedTotal: number;
 };
 
 /* ── Status helpers ── */
@@ -178,6 +180,13 @@ export default function AdminOrdersPage() {
       notes:       item.notes,
     }));
 
+    const deliveryFee = selectedOrderModal.delivery_fee ?? 0;
+    const discount    = selectedOrderModal.discount_amount ?? 0;
+    const initialSubtotal = items.reduce((sum, item) => {
+      const extrasSum = (item.extras ?? []).reduce((s, e) => s + (e.price ?? 0), 0);
+      return sum + (item.price + extrasSum) * item.quantity;
+    }, 0);
+
     setEditingSession({
       id:               selectedOrderModal.id,
       items,
@@ -187,6 +196,8 @@ export default function AdminOrdersPage() {
       originalSubtotal: selectedOrderModal.subtotal,
       deliveryFee:      selectedOrderModal.delivery_fee,
       discountAmount:   selectedOrderModal.discount_amount,
+      editedSubtotal:   initialSubtotal,
+      editedTotal:      Math.max(0, initialSubtotal + deliveryFee - discount),
     });
     setEditMode(true);
   }
@@ -194,6 +205,26 @@ export default function AdminOrdersPage() {
   function cancelEdit() {
     setEditMode(false);
     setEditingSession(null);
+  }
+
+  /** Recalculate subtotal and total from the current editing session items. */
+  function calculateEditingTotals(session: OrderEditSession) {
+    const subtotal = session.items.reduce((sum, item) => {
+      const extrasSum = (item.extras ?? []).reduce((s, e) => s + (e.price ?? 0), 0);
+      return sum + (item.price + extrasSum) * item.quantity;
+    }, 0);
+    const deliveryFee = session.deliveryFee ?? 0;
+    const discount    = session.discountAmount ?? 0;
+    return { subtotal, total: Math.max(0, subtotal + deliveryFee - discount) };
+  }
+
+  function handleDeleteItem(tempId: string) {
+    setEditingSession((prev) => {
+      if (!prev) return prev;
+      const items = prev.items.filter((item) => item.tempId !== tempId);
+      const { subtotal, total } = calculateEditingTotals({ ...prev, items });
+      return { ...prev, items, editedSubtotal: subtotal, editedTotal: total };
+    });
   }
 
   /* ── Shift time validation (handles overnight shifts) ── */
@@ -1211,6 +1242,70 @@ export default function AdminOrdersPage() {
                 </div>
               ) : modalError ? (
                 <p className="text-sm text-center py-6" style={{ color: C.red }}>{modalError}</p>
+              ) : editMode && editingSession ? (
+                editingSession.items.length === 0 ? (
+                  <div className="rounded-xl py-8 flex flex-col items-center gap-3" style={{ background: C.bg }}>
+                    <p className="text-sm" style={{ color: C.muted }}>لا توجد أصناف في الطلب</p>
+                    <button
+                      className="px-4 py-2 rounded-xl text-xs font-bold transition-opacity hover:opacity-80"
+                      style={{ background: C.teal, color: "#fff" }}
+                    >
+                      + إضافة وجبات
+                    </button>
+                  </div>
+                ) : (
+                  <div className="rounded-xl overflow-hidden" style={{ background: C.bg }}>
+                    {editingSession.items.map((item, i) => {
+                      const extrasSum = (item.extras ?? []).reduce((s, e) => s + (e.price ?? 0), 0);
+                      return (
+                        <div
+                          key={item.tempId}
+                          className="flex flex-col px-3 py-2.5 gap-1.5"
+                          style={{ borderBottom: i < editingSession.items.length - 1 ? `1px solid ${C.border}` : "none" }}
+                        >
+                          <div className="flex items-center justify-between text-sm">
+                            <div className="flex items-center gap-2">
+                              <span
+                                className="text-xs font-bold px-1.5 py-0.5 rounded"
+                                style={{ background: `${C.teal}22`, color: C.teal }}
+                              >
+                                ×{item.quantity}
+                              </span>
+                              <span style={{ color: C.text }}>{item.name}</span>
+                            </div>
+                            <div className="flex items-center gap-2">
+                              <span style={{ color: C.muted }}>
+                                {item.price + extrasSum} ج.م
+                              </span>
+                              <button
+                                onClick={() => handleDeleteItem(item.tempId)}
+                                className="w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold transition-opacity hover:opacity-80"
+                                style={{ background: `${C.red}22`, color: C.red }}
+                                title="حذف الصنف"
+                              >
+                                ✕
+                              </button>
+                            </div>
+                          </div>
+                          {item.extras.length > 0 && (
+                            <div className="flex flex-col gap-0.5 pr-8">
+                              {item.extras.map((e, j) => (
+                                <span key={j} className="text-[11px]" style={{ color: C.muted }}>
+                                  + {e.name} <span style={{ color: C.yellow }}>(+{e.price}ج)</span>
+                                </span>
+                              ))}
+                            </div>
+                          )}
+                          {item.notes && (
+                            <div className="pr-8">
+                              <span className="text-[11px]" style={{ color: C.yellow }}>📝 {item.notes}</span>
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                )
               ) : modalItems.length === 0 ? (
                 <p className="text-sm text-center py-6" style={{ color: C.muted }}>لا توجد أصناف</p>
               ) : (
@@ -1319,9 +1414,13 @@ export default function AdminOrdersPage() {
                 {editMode ? (
                   <div className="flex gap-2 flex-wrap">
                     <button
-                      disabled
-                      className="flex-1 flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold opacity-50 cursor-not-allowed"
-                      style={{ background: `${C.teal}22`, color: C.teal, border: `1px solid ${C.teal}55` }}
+                      disabled={!editingSession || editingSession.items.length === 0}
+                      className="flex-1 flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold min-w-[100px] transition-opacity"
+                      style={{
+                        background: `${C.teal}22`, color: C.teal, border: `1px solid ${C.teal}55`,
+                        opacity: !editingSession || editingSession.items.length === 0 ? 0.5 : 1,
+                        cursor:  !editingSession || editingSession.items.length === 0 ? "not-allowed" : "pointer",
+                      }}
                     >
                       <span>✓</span> تطبيق التعديلات
                     </button>
