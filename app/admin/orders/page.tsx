@@ -59,6 +59,28 @@ type DBOrder = {
   delivery_staff: { name: string | null } | null;
 };
 
+/* ── Edit mode types ── */
+type OrderEditItem = {
+  tempId: string;
+  menuItemId: string | null;
+  name: string;
+  quantity: number;
+  price: number;
+  extras: { name: string; price: number }[];
+  notes: string | null;
+};
+
+type OrderEditSession = {
+  id: string;
+  items: OrderEditItem[];
+  notes: string | null;
+  restaurantId: string | null;
+  originalTotal: number;
+  originalSubtotal: number | null;
+  deliveryFee: number | null;
+  discountAmount: number | null;
+};
+
 /* ── Status helpers ── */
 const STATUS_AR: Record<string, string> = {
   new:        "جديد",
@@ -137,23 +159,41 @@ export default function AdminOrdersPage() {
 
   /* ── Edit mode state (infrastructure only — no editing logic) ── */
   const [editMode, setEditMode] = useState(false);
-  const [editSession, setEditSession] = useState<{
-    modal: typeof selectedOrderModal;
-    items: typeof modalItems;
-  } | null>(null);
+  const [editingSession, setEditingSession] = useState<OrderEditSession | null>(null);
 
   function enterEditMode() {
     if (!selectedOrderModal) return;
-    setEditSession({
-      modal: JSON.parse(JSON.stringify(selectedOrderModal)),
-      items: JSON.parse(JSON.stringify(modalItems)),
+
+    const currentOrder = [...newOrdersList, ...allOrdersList].find(
+      (o) => o.id === selectedOrderModal.id,
+    );
+
+    const items: OrderEditItem[] = modalItems.map((item, idx) => ({
+      tempId:      `item-${idx}`,
+      menuItemId:  null,
+      name:        item.name,
+      quantity:    item.quantity,
+      price:       item.price,
+      extras:      item.extras,
+      notes:       item.notes,
+    }));
+
+    setEditingSession({
+      id:               selectedOrderModal.id,
+      items,
+      notes:            selectedOrderModal.notes,
+      restaurantId:     (currentOrder as any)?.restaurant_id ?? null,
+      originalTotal:    selectedOrderModal.total,
+      originalSubtotal: selectedOrderModal.subtotal,
+      deliveryFee:      selectedOrderModal.delivery_fee,
+      discountAmount:   selectedOrderModal.discount_amount,
     });
     setEditMode(true);
   }
 
   function cancelEdit() {
     setEditMode(false);
-    setEditSession(null);
+    setEditingSession(null);
   }
 
   /* ── Shift time validation (handles overnight shifts) ── */
