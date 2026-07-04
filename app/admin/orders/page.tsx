@@ -135,6 +135,27 @@ export default function AdminOrdersPage() {
   const [notifBlocked,    setNotifBlocked]    = useState(false);
   const pendingSoundRef = useRef<string | null>(null);
 
+  /* ── Edit mode state (infrastructure only — no editing logic) ── */
+  const [editMode, setEditMode] = useState(false);
+  const [editSession, setEditSession] = useState<{
+    modal: typeof selectedOrderModal;
+    items: typeof modalItems;
+  } | null>(null);
+
+  function enterEditMode() {
+    if (!selectedOrderModal) return;
+    setEditSession({
+      modal: JSON.parse(JSON.stringify(selectedOrderModal)),
+      items: JSON.parse(JSON.stringify(modalItems)),
+    });
+    setEditMode(true);
+  }
+
+  function cancelEdit() {
+    setEditMode(false);
+    setEditSession(null);
+  }
+
   /* ── Shift time validation (handles overnight shifts) ── */
   function isShiftActiveNow(shift: { start_time: string; end_time: string }): boolean {
     const now            = new Date();
@@ -627,6 +648,7 @@ export default function AdminOrdersPage() {
     setSelectedOrderModal(null);
     setModalItems([]);
     setModalError(null);
+    cancelEdit();
   }
 
   const countByStatus = (s: string) => {
@@ -1097,15 +1119,24 @@ export default function AdminOrdersPage() {
             <div className="rounded-xl p-3 flex flex-col gap-2.5" style={{ background: C.bg }}>
               <div className="flex items-center justify-between">
                 <span className="text-xs" style={{ color: C.muted }}>الحالة</span>
-                <span
-                  className="px-2.5 py-0.5 rounded-full text-xs font-bold"
-                  style={{
-                    background: statusColor(selectedOrderModal.status).bg,
-                    color:      statusColor(selectedOrderModal.status).color,
-                  }}
-                >
-                  {STATUS_AR[selectedOrderModal.status] ?? selectedOrderModal.status}
-                </span>
+                {editMode ? (
+                  <span
+                    className="px-2.5 py-0.5 rounded-full text-xs font-bold"
+                    style={{ background: `${C.blue}33`, color: C.blue }}
+                  >
+                    🔧 قيد التعديل
+                  </span>
+                ) : (
+                  <span
+                    className="px-2.5 py-0.5 rounded-full text-xs font-bold"
+                    style={{
+                      background: statusColor(selectedOrderModal.status).bg,
+                      color:      statusColor(selectedOrderModal.status).color,
+                    }}
+                  >
+                    {STATUS_AR[selectedOrderModal.status] ?? selectedOrderModal.status}
+                  </span>
+                )}
               </div>
               {selectedOrderModal.restaurant && (
                 <div className="flex items-center justify-between">
@@ -1245,34 +1276,60 @@ export default function AdminOrdersPage() {
               newOrdersList.some((o) => o.id === selectedOrderModal.id) && (
               <>
                 <div style={{ height: 1, background: C.border }} />
-                <div className="flex gap-2 flex-wrap">
-                  <button
-                    onClick={() => {
-                      const o = newOrdersList.find((ord) => ord.id === selectedOrderModal.id);
-                      if (o) sendToRestaurant(o);
-                    }}
-                    className="flex-1 flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold"
-                    style={{ background: `${C.orange}22`, color: C.orange, border: `1px solid ${C.orange}55` }}
-                  >
-                    <span>📲</span> إرسال للمطعم
-                  </button>
-                  <button
-                    onClick={() => { confirmOrder(selectedOrderModal.id); closeModal(); }}
-                    disabled={confirmingId === selectedOrderModal.id}
-                    className="flex-1 flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold min-w-[100px] disabled:opacity-60 transition-opacity"
-                    style={{ background: `${C.teal}22`, color: C.teal, border: `1px solid ${C.teal}55` }}
-                  >
-                    <span>✅</span>
-                    {confirmingId === selectedOrderModal.id ? "جارٍ التأكيد..." : "تأكيد الطلب"}
-                  </button>
-                  <button
-                    onClick={() => { cancelOrder(selectedOrderModal.id); closeModal(); }}
-                    className="flex-1 flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold min-w-[80px]"
-                    style={{ background: `${C.red}22`, color: C.red, border: `1px solid ${C.red}55` }}
-                  >
-                    <span>✕</span> إلغاء
-                  </button>
-                </div>
+                {editMode ? (
+                  <div className="flex gap-2 flex-wrap">
+                    <button
+                      disabled
+                      className="flex-1 flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold opacity-50 cursor-not-allowed"
+                      style={{ background: `${C.teal}22`, color: C.teal, border: `1px solid ${C.teal}55` }}
+                    >
+                      <span>✓</span> تطبيق التعديلات
+                    </button>
+                    <button
+                      onClick={cancelEdit}
+                      className="flex-1 flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold min-w-[80px] transition-opacity hover:opacity-80"
+                      style={{ background: `${C.red}22`, color: C.red, border: `1px solid ${C.red}55` }}
+                    >
+                      <span>✕</span> إلغاء التعديل
+                    </button>
+                  </div>
+                ) : (
+                  <div className="flex gap-2 flex-wrap">
+                    <button
+                      onClick={() => {
+                        const o = newOrdersList.find((ord) => ord.id === selectedOrderModal.id);
+                        if (o) sendToRestaurant(o);
+                      }}
+                      className="flex-1 flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold"
+                      style={{ background: `${C.orange}22`, color: C.orange, border: `1px solid ${C.orange}55` }}
+                    >
+                      <span>📲</span> إرسال للمطعم
+                    </button>
+                    <button
+                      onClick={() => { confirmOrder(selectedOrderModal.id); closeModal(); }}
+                      disabled={confirmingId === selectedOrderModal.id}
+                      className="flex-1 flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold min-w-[100px] disabled:opacity-60 transition-opacity"
+                      style={{ background: `${C.teal}22`, color: C.teal, border: `1px solid ${C.teal}55` }}
+                    >
+                      <span>✅</span>
+                      {confirmingId === selectedOrderModal.id ? "جارٍ التأكيد..." : "تأكيد الطلب"}
+                    </button>
+                    <button
+                      onClick={() => { cancelOrder(selectedOrderModal.id); closeModal(); }}
+                      className="flex-1 flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold min-w-[80px]"
+                      style={{ background: `${C.red}22`, color: C.red, border: `1px solid ${C.red}55` }}
+                    >
+                      <span>✕</span> إلغاء
+                    </button>
+                    <button
+                      onClick={enterEditMode}
+                      className="flex-1 flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold min-w-[80px] transition-opacity hover:opacity-80"
+                      style={{ background: `${C.blue}22`, color: C.blue, border: `1px solid ${C.blue}55` }}
+                    >
+                      <span>✏️</span> تعديل الطلب
+                    </button>
+                  </div>
+                )}
               </>
             )}
           </div>
