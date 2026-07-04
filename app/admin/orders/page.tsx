@@ -158,6 +158,7 @@ export default function AdminOrdersPage() {
   const [soundBlocked,    setSoundBlocked]    = useState(false);
   const [notifBlocked,    setNotifBlocked]    = useState(false);
   const pendingSoundRef = useRef<string | null>(null);
+  const prevValidQtyRef = useRef<Map<string, number>>(new Map());
 
   /* ── Edit mode state (infrastructure only — no editing logic) ── */
   const [editMode, setEditMode] = useState(false);
@@ -205,6 +206,7 @@ export default function AdminOrdersPage() {
   function cancelEdit() {
     setEditMode(false);
     setEditingSession(null);
+    prevValidQtyRef.current.clear();
   }
 
   /** Recalculate subtotal and total from the current editing session items. */
@@ -222,6 +224,38 @@ export default function AdminOrdersPage() {
     setEditingSession((prev) => {
       if (!prev) return prev;
       const items = prev.items.filter((item) => item.tempId !== tempId);
+      const { subtotal, total } = calculateEditingTotals({ ...prev, items });
+      return { ...prev, items, editedSubtotal: subtotal, editedTotal: total };
+    });
+  }
+
+  /** Adjust item quantity by a delta (e.g. +1 or -1). Never goes below 1. */
+  function handleQtyChange(tempId: string, delta: number) {
+    setEditingSession((prev) => {
+      if (!prev) return prev;
+      const items = prev.items.map((item) =>
+        item.tempId === tempId
+          ? { ...item, quantity: Math.max(1, item.quantity + delta) }
+          : item,
+      );
+      const { subtotal, total } = calculateEditingTotals({ ...prev, items });
+      return { ...prev, items, editedSubtotal: subtotal, editedTotal: total };
+    });
+  }
+
+  /** Handle direct numeric input for quantity. Invalid/empty values revert
+   *  to the previous valid quantity (never silently resets to 1). */
+  function handleQtyInput(tempId: string, rawValue: string) {
+    setEditingSession((prev) => {
+      if (!prev) return prev;
+      const parsed = parseInt(rawValue, 10);
+      const isValid = Number.isFinite(parsed) && parsed >= 1;
+      const prevValid = prevValidQtyRef.current.get(tempId) ?? 1;
+      const newQty = isValid ? parsed : prevValid;
+      if (isValid) prevValidQtyRef.current.set(tempId, newQty);
+      const items = prev.items.map((item) =>
+        item.tempId === tempId ? { ...item, quantity: newQty } : item,
+      );
       const { subtotal, total } = calculateEditingTotals({ ...prev, items });
       return { ...prev, items, editedSubtotal: subtotal, editedTotal: total };
     });
@@ -1264,13 +1298,36 @@ export default function AdminOrdersPage() {
                           style={{ borderBottom: i < editingSession.items.length - 1 ? `1px solid ${C.border}` : "none" }}
                         >
                           <div className="flex items-center justify-between text-sm">
-                            <div className="flex items-center gap-2">
-                              <span
-                                className="text-xs font-bold px-1.5 py-0.5 rounded"
-                                style={{ background: `${C.teal}22`, color: C.teal }}
+                            <div className="flex items-center gap-1.5">
+                              <button
+                                onClick={() => handleQtyChange(item.tempId, -1)}
+                                className="w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold transition-opacity hover:opacity-80"
+                                style={{ background: `${C.teal}22`, color: C.teal, border: `1px solid ${C.teal}44` }}
+                                title="إنقاص الكمية"
                               >
-                                ×{item.quantity}
-                              </span>
+                                −
+                              </button>
+                              <input
+                                type="number"
+                                inputMode="numeric"
+                                min={1}
+                                value={item.quantity}
+                                onChange={(e) => handleQtyInput(item.tempId, e.target.value)}
+                                onBlur={(e) => handleQtyInput(item.tempId, e.target.value)}
+                                onKeyDown={(e) => {
+                                  if (e.key === "Enter") handleQtyInput(item.tempId, (e.target as HTMLInputElement).value);
+                                }}
+                                className="w-10 text-center text-xs font-bold rounded outline-none"
+                                style={{ background: C.bg, color: C.teal, padding: "2px 0" }}
+                              />
+                              <button
+                                onClick={() => handleQtyChange(item.tempId, 1)}
+                                className="w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold transition-opacity hover:opacity-80"
+                                style={{ background: C.teal, color: "#fff" }}
+                                title="زيادة الكمية"
+                              >
+                                +
+                              </button>
                               <span style={{ color: C.text }}>{item.name}</span>
                             </div>
                             <div className="flex items-center gap-2">
