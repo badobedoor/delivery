@@ -161,10 +161,12 @@ export default function AdminOrdersPage() {
   const pendingSoundRef = useRef<string | null>(null);
   const prevValidQtyRef = useRef<Map<string, number>>(new Map());
 
-  /* ── Edit mode state (infrastructure only — no editing logic) ── */
+  /* ── Edit mode state ── */
   const [editMode, setEditMode] = useState(false);
   const [editingSession, setEditingSession] = useState<OrderEditSession | null>(null);
   const [showAddItemPanel, setShowAddItemPanel] = useState(false);
+  const [savingEdit,   setSavingEdit]   = useState(false);
+  const [saveEditError, setSaveEditError] = useState<string | null>(null);
 
   /** Append a new item (from the menu browser) to the current editing session. */
   function handleAddItemToSession(item: {
@@ -191,6 +193,49 @@ export default function AdminOrdersPage() {
       return { ...prev, items, editedSubtotal: subtotal, editedTotal: total };
     });
     setShowAddItemPanel(false);
+  }
+
+  /** Persist the edited session to the database atomically. */
+  async function handleApplyEdit() {
+    const session = editingSession;
+    if (!session || session.items.length === 0) return;
+
+    setSavingEdit(true);
+    setSaveEditError(null);
+
+    try {
+      /* Build the items payload as a plain JSON array (extras is either a
+         non-empty array or null — matching the existing DB format). */
+      const itemsPayload = session.items.map((item) => ({
+        menu_item_id:   item.menuItemId,
+        name:           item.name,
+        quantity:       item.quantity,
+        price_at_order: item.price,
+        extras:         item.extras.length > 0 ? item.extras : null,
+        notes:          item.notes,
+      }));
+
+      /* Single RPC call — all three DB operations run inside a PostgreSQL
+         transaction (BEGIN / COMMIT implicitly via the function body). */
+      const { error } = await supabase.rpc("apply_order_edit", {
+        p_order_id: session.id,
+        p_items:    itemsPayload,
+        p_subtotal: session.editedSubtotal,
+        p_total:    session.editedTotal,
+        p_notes:    session.notes,
+      });
+
+      if (error) throw new Error(error.message);
+
+      /* Success — reload data and close modal. */
+      await loadData();
+      closeModal();
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : "فشل حفظ التعديلات";
+      setSaveEditError(msg);
+    } finally {
+      setSavingEdit(false);
+    }
   }
 
   function enterEditMode() {
@@ -235,6 +280,8 @@ export default function AdminOrdersPage() {
   function cancelEdit() {
     setEditMode(false);
     setEditingSession(null);
+    setShowAddItemPanel(false);
+    setSaveEditError(null);
     prevValidQtyRef.current.clear();
   }
 
@@ -1470,6 +1517,40 @@ export default function AdminOrdersPage() {
               <>
                 <div style={{ height: 1, background: C.border }} />
                 <div className="flex flex-col gap-2">
+                  {editMode && editingSession ? (
+                    <>
+                      <div className="flex items-center justify-between text-xs">
+                        <span style={{ color: C.muted }}>قيمة الطلب للمطعم</span>
+                        <span style={{ color: C.text }}>{editingSession.editedSubtotal} ج.م</span>
+                      </div>
+                      {(editingSession.deliveryFee ?? 0) > 0 && (
+                        <div className="flex items-center justify-between text-xs">
+                          <span style={{ color: C.muted }}>رسوم التوصيل</span>
+                          <span style={{ color: C.text }}>{editingSession.deliveryFee} ج.م</span>
+                        </div>
+                      )}
+                      {(editingSession.discountAmount ?? 0) > 0 && (
+                        <div className="flex items-center justify-between text-xs">
+                          <span className="font-bold" style={{ color: C.green }}>خصم الكوبون</span>
+                          <span className="font-bold" style={{ color: C.green }}>- {editingSession.discountAmount} ج.م</span>
+                        </div>
+                      )}
+                      <div className="flex items-center justify-between pt-2 mt-0.5"
+                        style={{ borderTop: `1px solid ${C.border}` }}>
+                        <span className="text-sm font-bold" style={{ color: C.text }}>الإجمالي (بعد التعديل)</span>
+                        <span className="text-lg font-black" style={{ color: C.teal }}>
+                          {editingSession.editedTotal} ج.م
+                        </span>
+                      </div>
+                      {editingSession.editedTotal !== editingSession.originalTotal && (
+                        <div className="flex items-center justify-between text-[10px] -mt-1">
+                          <span style={{ color: C.muted }}>المبلغ الأصلي</span>
+                          <span className="line-through" style={{ color: C.muted }}>{editingSession.originalTotal} ج.م</span>
+                        </div>
+                      )}
+                    </>
+                  ) : (
+                    <>
                   {selectedOrderModal.subtotal != null && (
                     <div className="flex items-center justify-between text-xs">
                       <span style={{ color: C.muted }}>قيمة الطلب للمطعم</span>
@@ -1497,6 +1578,8 @@ export default function AdminOrdersPage() {
                       {selectedOrderModal.total} ج.م
                     </span>
                   </div>
+                    </>
+                  )}
                 </div>
               </>
             )}
@@ -1508,26 +1591,37 @@ export default function AdminOrdersPage() {
               <>
                 <div style={{ height: 1, background: C.border }} />
                 {editMode ? (
-                  <div className="flex gap-2 flex-wrap">
+                  <>
+                    {saveEditError && (
+                      <p className="text-xs text-center py-1" style={{ color: C.red }}>{saveEditError}</p>
+                    )}
+                    <div className="flex gap-2 flex-wrap">
                     <button
-                      disabled={!editingSession || editingSession.items.length === 0}
+                      disabled={!editingSession || editingSession.items.length === 0 || savingEdit}
+                      onClick={handleApplyEdit}
                       className="flex-1 flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold min-w-[100px] transition-opacity"
                       style={{
                         background: `${C.teal}22`, color: C.teal, border: `1px solid ${C.teal}55`,
-                        opacity: !editingSession || editingSession.items.length === 0 ? 0.5 : 1,
-                        cursor:  !editingSession || editingSession.items.length === 0 ? "not-allowed" : "pointer",
+                        opacity: !editingSession || editingSession.items.length === 0 || savingEdit ? 0.5 : 1,
+                        cursor:  !editingSession || editingSession.items.length === 0 || savingEdit ? "not-allowed" : "pointer",
                       }}
                     >
-                      <span>✓</span> تطبيق التعديلات
+                      <span>✓</span> {savingEdit ? "جارٍ الحفظ..." : "تطبيق التعديلات"}
                     </button>
                     <button
                       onClick={cancelEdit}
+                      disabled={savingEdit}
                       className="flex-1 flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold min-w-[80px] transition-opacity hover:opacity-80"
-                      style={{ background: `${C.red}22`, color: C.red, border: `1px solid ${C.red}55` }}
+                      style={{
+                        background: `${C.red}22`, color: C.red, border: `1px solid ${C.red}55`,
+                        opacity: savingEdit ? 0.5 : 1,
+                        cursor:  savingEdit ? "not-allowed" : "pointer",
+                      }}
                     >
                       <span>✕</span> إلغاء التعديل
                     </button>
                   </div>
+                  </>
                 ) : (
                   <div className="flex gap-2 flex-wrap">
                     <button
