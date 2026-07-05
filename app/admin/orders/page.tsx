@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase";
 import { useAutoRefresh } from "@/hooks/useAutoRefresh";
 import { formatCairoDate, formatCairoTime } from "@/lib/dateTime";
+import OrderItemAddPanel from "@/components/admin/OrderItemAddPanel";
 
 const C = {
   card:   "#1E293B",
@@ -163,6 +164,34 @@ export default function AdminOrdersPage() {
   /* ── Edit mode state (infrastructure only — no editing logic) ── */
   const [editMode, setEditMode] = useState(false);
   const [editingSession, setEditingSession] = useState<OrderEditSession | null>(null);
+  const [showAddItemPanel, setShowAddItemPanel] = useState(false);
+
+  /** Append a new item (from the menu browser) to the current editing session. */
+  function handleAddItemToSession(item: {
+    menuItemId: string | null;
+    name: string;
+    quantity: number;
+    price: number;
+    extras: { name: string; price: number }[];
+    notes: string | null;
+  }) {
+    setEditingSession((prev) => {
+      if (!prev) return prev;
+      const newItem: OrderEditItem = {
+        tempId:      `item-${Date.now()}`,
+        menuItemId:  item.menuItemId,
+        name:        item.name,
+        quantity:    item.quantity,
+        price:       item.price,
+        extras:      item.extras,
+        notes:       item.notes,
+      };
+      const items = [...prev.items, newItem];
+      const { subtotal, total } = calculateEditingTotals({ ...prev, items });
+      return { ...prev, items, editedSubtotal: subtotal, editedTotal: total };
+    });
+    setShowAddItemPanel(false);
+  }
 
   function enterEditMode() {
     if (!selectedOrderModal) return;
@@ -1281,6 +1310,7 @@ export default function AdminOrdersPage() {
                   <div className="rounded-xl py-8 flex flex-col items-center gap-3" style={{ background: C.bg }}>
                     <p className="text-sm" style={{ color: C.muted }}>لا توجد أصناف في الطلب</p>
                     <button
+                      onClick={() => setShowAddItemPanel(true)}
                       className="px-4 py-2 rounded-xl text-xs font-bold transition-opacity hover:opacity-80"
                       style={{ background: C.teal, color: "#fff" }}
                     >
@@ -1288,7 +1318,8 @@ export default function AdminOrdersPage() {
                     </button>
                   </div>
                 ) : (
-                  <div className="rounded-xl overflow-hidden" style={{ background: C.bg }}>
+                  <>
+                    <div className="rounded-xl overflow-hidden" style={{ background: C.bg }}>
                     {editingSession.items.map((item, i) => {
                       const extrasSum = (item.extras ?? []).reduce((s, e) => s + (e.price ?? 0), 0);
                       return (
@@ -1362,6 +1393,14 @@ export default function AdminOrdersPage() {
                       );
                     })}
                   </div>
+                  <button
+                    onClick={() => setShowAddItemPanel(true)}
+                    className="w-full mt-2 py-2 rounded-xl text-xs font-bold transition-opacity hover:opacity-80"
+                    style={{ background: `${C.teal}22`, color: C.teal, border: `1px solid ${C.teal}44` }}
+                  >
+                    + إضافة وجبة أخرى
+                  </button>
+                  </>
                 )
               ) : modalItems.length === 0 ? (
                 <p className="text-sm text-center py-6" style={{ color: C.muted }}>لا توجد أصناف</p>
@@ -1632,6 +1671,27 @@ export default function AdminOrdersPage() {
                 إغلاق
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Add Item Panel (inside edit mode ordering modal) ── */}
+      {showAddItemPanel && editingSession && editingSession.restaurantId && (
+        <div
+          className="fixed inset-0 z-50 flex items-end sm:items-center justify-center"
+          style={{ background: "rgba(0,0,0,0.75)" }}
+          onClick={() => setShowAddItemPanel(false)}
+        >
+          <div
+            className="w-full sm:max-w-md rounded-t-2xl sm:rounded-2xl p-5 flex flex-col gap-4"
+            style={{ background: C.card, border: `1px solid ${C.border}`, maxHeight: "85vh", overflowY: "auto" }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <OrderItemAddPanel
+              restaurantId={editingSession.restaurantId}
+              onAdd={handleAddItemToSession}
+              onClose={() => setShowAddItemPanel(false)}
+            />
           </div>
         </div>
       )}
