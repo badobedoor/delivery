@@ -5,26 +5,9 @@ import { useState, useEffect, useRef } from "react";
 import { addToCart, clearCart, CartItem } from "@/lib/cart";
 import ConfirmModal from "@/components/customer/ConfirmModal";
 import { isOfferActive, getEffectiveMealPrice } from "@/lib/pricing";
+import { ItemExtra as Extra, Size, ExtraGroupSheet, SheetMeal as Meal } from "@/lib/restaurant/types";
 
-/* ── Types ── */
-interface Extra  { id: number; name: string; price: number }
-interface Size   { id: string; name: string; price?: number }
-interface ExtraGroupSheet { id: number; name: string; maxSelect: number; extras: Extra[] }
-interface Meal   {
-  id: number;
-  name: string;
-  description?: string | null;
-  basePrice: number;
-  img: string;
-  offerPrice?: number;
-  offerStartsAt?: string;
-  offerEndsAt?: string;
-  offerImageUrl?: string;
-  extras?: Extra[];
-  extraGroups?: ExtraGroupSheet[];
-  sizes?: Size[];
-}
-
+/* ── Props ── */
 interface Props {
   meal: Meal;
   onClose: () => void;

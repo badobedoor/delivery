@@ -8,22 +8,15 @@ import { useScrollSpy } from "@/hooks/useScrollSpy";
 import { supabase } from "@/lib/supabase";
 import { isRestaurantOpen } from "@/lib/utils";
 import { getEffectiveMealPrice } from "@/lib/pricing";
+import { ItemExtra, ExtraGroup, MenuItem, Category, ExtraGroupSheet, SheetMeal } from "@/lib/restaurant/types";
 import { addToCart, clearCart, getCart, updateQty, CartItem } from "@/lib/cart";
 import { formatCairoDate, formatCairoTime } from "@/lib/dateTime";
 import ConfirmModal from "@/components/customer/ConfirmModal";
 import MealBottomSheet from "@/components/customer/MealBottomSheet";
 import CartBar from "@/components/customer/CartBar";
 
-/* ── DB types ── */
-type ItemExtra  = { id: number; name: string; price: number };
-type ExtraGroup = { id: number; name: string; type: string; required: boolean; max_select: number; item_extras: ItemExtra[] };
-type MenuItem   = { id: number; name: string; description: string | null; price: number; category_id: number; image_url: string | null; extra_groups: ExtraGroup[]; offer_price?: number | null; offer_starts_at?: string | null; offer_ends_at?: string | null; offer_image_url?: string | null; sort_order?: number; is_active?: boolean; is_best_seller?: boolean };
-type Category   = { id: number; name: string; restaurant_id: string; sort_order?: number; menu_items: MenuItem[] };
+/* ── Local (file-specific) types ── */
 type Restaurant = { id: string; name: string; description: string | null; cover_image_url: string | null; image_url: string | null; is_active: boolean; opens_at: string | null; closes_at: string | null; status: string | null; rating_avg: number | null; rating_count: number | null };
-
-/* ── MealBottomSheet meal shape ── */
-type ExtraGroupSheet = { id: number; name: string; maxSelect: number; extras: { id: number; name: string; price: number }[] };
-type SheetMeal = { id: number; name: string; description?: string | null; basePrice: number; img: string; offerPrice?: number; offerStartsAt?: string; offerEndsAt?: string; offerImageUrl?: string; extras?: { id: number; name: string; price: number }[]; extraGroups?: ExtraGroupSheet[]; sizes?: { id: string; name: string; price?: number }[] };
 
 function toSheetMeal(item: MenuItem): SheetMeal {
   const nonVariantGroups = item.extra_groups.filter((g) => g.type !== "variant");
