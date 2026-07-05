@@ -1,11 +1,11 @@
 "use client";
 
 import Image from "next/image";
-import { useState, useEffect, useRef } from "react";
+import { useState, useRef } from "react";
 import { addToCart, clearCart, CartItem } from "@/lib/cart";
 import ConfirmModal from "@/components/customer/ConfirmModal";
-import { isOfferActive, getEffectiveMealPrice } from "@/lib/pricing";
 import { ItemExtra as Extra, Size, ExtraGroupSheet, SheetMeal as Meal } from "@/lib/restaurant/types";
+import { useMealConfigurator } from "@/hooks/useMealConfigurator";
 
 /* ── Props ── */
 interface Props {
@@ -36,79 +36,26 @@ export const sampleMeal: Meal = {
 
 /* ── Component ── */
 export default function MealBottomSheet({ meal, onClose, restaurantId, restaurantName }: Props) {
-  const [qty,            setQty]            = useState(1);
-  const [selectedExtras, setSelectedExtras] = useState<number[]>([]);
-  const [selectedSize,   setSelectedSize]   = useState<string | null>(null);
+  const config = useMealConfigurator(meal);
+
   const [showNote,       setShowNote]       = useState(false);
-  const [note,           setNote]           = useState("");
   const [conflictMsg,    setConflictMsg]    = useState<string | null>(null);
   const pendingItem = useRef<CartItem | null>(null);
 
-  useEffect(() => {
-    if (meal.sizes && meal.sizes.length > 0) {
-      setSelectedSize(meal.sizes[0].id);
-    }
-  }, []);
-
-  const extrasTotal = selectedExtras.reduce((sum, id) => {
-    let price = 0;
-    if (meal.extraGroups) {
-      for (const g of meal.extraGroups) {
-        const e = g.extras.find((e) => e.id === id);
-        if (e) { price = e.price; break; }
-      }
-    } else {
-      price = meal.extras?.find((e) => e.id === id)?.price ?? 0;
-    }
-    return sum + price;
-  }, 0);
-
-  const hasSizes    = !!(meal.sizes && meal.sizes.length > 0);
-  const activePrice = hasSizes
-    ? (selectedSize !== null ? (meal.sizes!.find((s) => s.id === selectedSize)?.price ?? 0) : 0)
-    : meal.basePrice;
-  const minSizePrice = hasSizes
-    ? Math.min(...meal.sizes!.map((s) => s.price ?? meal.basePrice))
-    : meal.basePrice;
-
-  /* ── Effective price: use offer price when the offer is active ── */
-  const effectivePrice = getEffectiveMealPrice({
-    price: meal.basePrice,
-    offerPrice: meal.offerPrice,
-    offerStartsAt: meal.offerStartsAt,
-    offerEndsAt: meal.offerEndsAt,
-  });
-  const displayPrice = hasSizes ? activePrice : effectivePrice;
-
-  const total = (displayPrice + extrasTotal) * qty;
-
-  function toggleExtra(id: number, groupId?: number) {
-    setSelectedExtras((prev) => {
-      if (prev.includes(id)) return prev.filter((e) => e !== id);
-      if (meal.extraGroups && groupId !== undefined) {
-        const group = meal.extraGroups.find((g) => g.id === groupId);
-        if (group && group.maxSelect > 0) {
-          const selectedInGroup = prev.filter((eid) => group.extras.some((e) => e.id === eid)).length;
-          if (selectedInGroup >= group.maxSelect) return prev;
-        }
-      }
-      return [...prev, id];
-    });
-  }
-
+  /* ── Add-to-cart (couples the config to the customer cart system) ── */
   function handleAddToCart() {
-    const sizeObj = meal.sizes?.find((s) => s.id === selectedSize);
+    const sizeObj = meal.sizes?.find((s) => s.id === config.selectedSize);
     const cartItem = {
       id: String(meal.id),
       name: meal.name,
-      price: hasSizes ? 0 : effectivePrice,
-      qty,
+      price: config.hasSizes ? 0 : config.effectivePrice,
+      qty: config.qty,
       image_url: meal.img,
       description: null,
-      size: selectedSize && sizeObj
+      size: config.selectedSize && sizeObj
         ? { name: sizeObj.name, price: sizeObj.price ?? 0 }
         : undefined,
-      extras: selectedExtras.map((id) => {
+      extras: config.selectedExtras.map((id) => {
         if (meal.extraGroups) {
           for (const g of meal.extraGroups) {
             const e = g.extras.find((e) => e.id === id);
@@ -119,7 +66,7 @@ export default function MealBottomSheet({ meal, onClose, restaurantId, restauran
         const extra = meal.extras!.find((e) => e.id === id)!;
         return { name: extra.name, price: extra.price };
       }),
-      notes: note.trim() || undefined,
+      notes: config.note.trim() || undefined,
     };
     const result = addToCart(restaurantId, restaurantName, cartItem);
     if (result.conflict) {
@@ -181,15 +128,15 @@ export default function MealBottomSheet({ meal, onClose, restaurantId, restauran
                   {meal.name}
                 </h2>
                 <p className="font-bold text-[#FF6000]">
-                  {effectivePrice !== meal.basePrice && !hasSizes ? (
+                  {config.effectivePrice !== meal.basePrice && !config.hasSizes ? (
                     <>
-                      {effectivePrice} ج.م
+                      {config.effectivePrice} ج.م
                       <span className="text-xs text-gray-400 line-through mr-2">{meal.basePrice} ج.م</span>
                     </>
-                  ) : hasSizes && selectedSize === null ? (
-                    `يبدأ من ${minSizePrice} ج.م`
+                  ) : config.hasSizes && config.selectedSize === null ? (
+                    `يبدأ من ${config.minSizePrice} ج.م`
                   ) : (
-                    `${displayPrice} ج.م`
+                    `${config.displayPrice} ج.م`
                   )}
                 </p>
                 {meal.description && (
@@ -201,7 +148,7 @@ export default function MealBottomSheet({ meal, onClose, restaurantId, restauran
               <div className="flex items-center gap-2 mt-1">
                 {/* + — أول عنصر → يمين في RTL */}
                 <button
-                  onClick={() => setQty((q) => q + 1)}
+                  onClick={config.incrementQty}
                   className="w-8 h-8 rounded-full bg-[var(--color-primary)] flex items-center justify-center"
                 >
                   <svg width="14" height="14" viewBox="0 0 24 24" fill="none"
@@ -210,11 +157,11 @@ export default function MealBottomSheet({ meal, onClose, restaurantId, restauran
                   </svg>
                 </button>
                 <span className="text-base font-bold text-[var(--color-secondary)] w-5 text-center">
-                  {qty}
+                  {config.qty}
                 </span>
                 {/* - — آخر عنصر → يسار في RTL */}
                 <button
-                  onClick={() => setQty((q) => Math.max(1, q - 1))}
+                  onClick={config.decrementQty}
                   className="w-8 h-8 rounded-full border border-[var(--color-border)] bg-[var(--color-surface)] flex items-center justify-center"
                 >
                   <svg width="14" height="14" viewBox="0 0 24 24" fill="none"
@@ -235,12 +182,12 @@ export default function MealBottomSheet({ meal, onClose, restaurantId, restauran
               </h3>
               <div className="flex flex-col">
                 {meal.sizes.map((size) => {
-                  const selected = selectedSize === size.id;
+                  const selected = config.selectedSize === size.id;
                   return (
                     <label
                       key={size.id}
                       className="flex items-center justify-between cursor-pointer py-3"
-                      onClick={() => setSelectedSize(size.id)}
+                      onClick={() => config.setSelectedSize(size.id)}
                     >
                       <span className={`text-base transition-colors ${selected ? "font-bold text-[var(--color-primary)]" : "text-[var(--color-secondary)]"}`}>
                         {size.name}
@@ -267,7 +214,7 @@ export default function MealBottomSheet({ meal, onClose, restaurantId, restauran
           {/* ── 4. الإضافات ── */}
           {meal.extraGroups && meal.extraGroups.length > 0
             ? meal.extraGroups.map((group) => {
-                const selectedInGroup = selectedExtras.filter((eid) => group.extras.some((e) => e.id === eid)).length;
+                const selectedInGroup = config.selectedExtras.filter((eid) => group.extras.some((e) => e.id === eid)).length;
                 const atMax = group.maxSelect > 0 && selectedInGroup >= group.maxSelect;
                 return (
                   <div key={group.id} className="px-4 pt-4 pb-3 border-b border-[var(--color-border)]">
@@ -282,7 +229,7 @@ export default function MealBottomSheet({ meal, onClose, restaurantId, restauran
                     )}
                     <div className="flex flex-col">
                       {group.extras.map((extra) => {
-                        const checked = selectedExtras.includes(extra.id);
+                        const checked = config.selectedExtras.includes(extra.id);
                         const disabled = !checked && atMax;
                         return (
                           <label
@@ -290,7 +237,7 @@ export default function MealBottomSheet({ meal, onClose, restaurantId, restauran
                             className={`flex items-center justify-between py-3 rounded-lg px-1 -mx-1 transition-colors ${
                               disabled ? "opacity-40 cursor-not-allowed" : "cursor-pointer active:bg-[var(--color-surface)]"
                             }`}
-                            onClick={disabled ? undefined : () => toggleExtra(extra.id, group.id)}
+                            onClick={disabled ? undefined : () => config.toggleExtra(extra.id, group.id)}
                           >
                             <span className="text-base text-[var(--color-secondary)]">{extra.name}</span>
                             <div className="flex items-center gap-2 pointer-events-none">
@@ -321,12 +268,12 @@ export default function MealBottomSheet({ meal, onClose, restaurantId, restauran
                   </h3>
                   <div className="flex flex-col">
                     {meal.extras.map((extra) => {
-                      const checked = selectedExtras.includes(extra.id);
+                      const checked = config.selectedExtras.includes(extra.id);
                       return (
                         <label
                           key={extra.id}
                           className="flex items-center justify-between cursor-pointer py-3 active:bg-[var(--color-surface)] rounded-lg px-1 -mx-1 transition-colors"
-                          onClick={() => toggleExtra(extra.id)}
+                          onClick={() => config.toggleExtra(extra.id)}
                         >
                           <span className="text-base text-[var(--color-secondary)]">{extra.name}</span>
                           <div className="flex items-center gap-2 pointer-events-none">
@@ -364,8 +311,8 @@ export default function MealBottomSheet({ meal, onClose, restaurantId, restauran
             </button>
             {showNote && (
               <textarea
-                value={note}
-                onChange={(e) => setNote(e.target.value)}
+                value={config.note}
+                onChange={(e) => config.setNote(e.target.value)}
                 placeholder="مثال: بدون بصل، إضافة صوص..."
                 rows={2}
                 className="mt-2 w-full text-sm rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 resize-none outline-none focus:border-[var(--color-primary)] text-[var(--color-secondary)] placeholder:text-[var(--color-muted)]"
@@ -381,7 +328,7 @@ export default function MealBottomSheet({ meal, onClose, restaurantId, restauran
             {/* يمين: النص */}
             <span className="text-white text-base font-bold">إضافة للسلة</span>
             {/* يسار: السعر */}
-            <span className="text-white text-base font-black">{total} ج.م</span>
+            <span className="text-white text-base font-black">{config.total} ج.م</span>
           </button>
         </div>
 
