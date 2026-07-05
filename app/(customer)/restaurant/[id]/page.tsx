@@ -9,6 +9,8 @@ import { supabase } from "@/lib/supabase";
 import { isRestaurantOpen } from "@/lib/utils";
 import { getEffectiveMealPrice } from "@/lib/pricing";
 import { ItemExtra, ExtraGroup, MenuItem, Category, ExtraGroupSheet, SheetMeal } from "@/lib/restaurant/types";
+import { toSheetMeal } from "@/lib/restaurant/mappers";
+import MealCard from "@/components/shared/restaurant/MealCard";
 import { addToCart, clearCart, getCart, updateQty, CartItem } from "@/lib/cart";
 import { formatCairoDate, formatCairoTime } from "@/lib/dateTime";
 import ConfirmModal from "@/components/customer/ConfirmModal";
@@ -17,33 +19,6 @@ import CartBar from "@/components/customer/CartBar";
 
 /* ── Local (file-specific) types ── */
 type Restaurant = { id: string; name: string; description: string | null; cover_image_url: string | null; image_url: string | null; is_active: boolean; opens_at: string | null; closes_at: string | null; status: string | null; rating_avg: number | null; rating_count: number | null };
-
-function toSheetMeal(item: MenuItem): SheetMeal {
-  const nonVariantGroups = item.extra_groups.filter((g) => g.type !== "variant");
-  const extras = nonVariantGroups.flatMap((g) => g.item_extras.map((e) => ({ id: e.id, name: e.name, price: e.price })));
-  const extraGroups = nonVariantGroups.map((g) => ({
-    id: g.id,
-    name: g.name,
-    maxSelect: g.max_select,
-    extras: g.item_extras.map((e) => ({ id: e.id, name: e.name, price: e.price })),
-  }));
-  const variantGroup = item.extra_groups.find((g) => g.type === "variant");
-  const sizes = variantGroup?.item_extras.map((e) => ({ id: String(e.id), name: e.name, price: e.price }));
-  return {
-    id: item.id,
-    name: item.name,
-    description: item.description,
-    basePrice: item.price,
-    img: item.image_url ?? "https://images.unsplash.com/photo-1546069901-ba9599a7e63c?w=400&h=400&fit=crop",
-    offerPrice: item.offer_price ?? undefined,
-    offerStartsAt: item.offer_starts_at ?? undefined,
-    offerEndsAt: item.offer_ends_at ?? undefined,
-    offerImageUrl: item.offer_image_url ?? undefined,
-    extras: extras.length > 0 ? extras : undefined,
-    extraGroups: extraGroups.length > 0 ? extraGroups : undefined,
-    sizes: sizes && sizes.length > 0 ? sizes : undefined,
-  };
-}
 
 function formatPrice(p: number) {
   return `${p} ج`;
@@ -390,104 +365,56 @@ function RestaurantPageContent() {
                   {cat.menu_items.map((meal) => {
                     const hasExtras = meal.extra_groups.length > 0;
                     const isActive  = meal.is_active !== false;
-                    const FALLBACK  = "https://images.unsplash.com/photo-1546069901-ba9599a7e63c?w=200&h=200&fit=crop";
                     const hasOfferFields = !!(meal.offer_price && meal.offer_starts_at && meal.offer_ends_at);
                     const effectivePrice = getEffectiveMealPrice(meal);
-                    const offerImg = (hasOfferFields && meal.offer_image_url) ? meal.offer_image_url : (meal.image_url ?? FALLBACK);
                     const discount  = hasOfferFields && meal.offer_price
                       ? Math.round((1 - meal.offer_price / meal.price) * 100) : 0;
 
-                    const cardInner = (
-                      <>
-                        {/* القسم 1 — الصورة (يمين في RTL) */}
-                        <div className="relative flex-shrink-0 w-24 h-24 ml-3 rounded-xl overflow-hidden">
-                          <Image src={offerImg} alt={meal.name} fill className="object-cover" onError={(e) => { (e.target as HTMLImageElement).src = '/images/placeholder.png'; }} />
-                          {hasOfferFields && discount > 0 && (
-                            <div className="absolute top-1 right-1 bg-red-500 text-white text-[9px] font-black px-1.5 py-0.5 rounded-full leading-none">
-                              -{discount}%
-                            </div>
-                          )}
-                          {!isActive && (
-                            <div className="absolute inset-0 bg-black/60 flex items-center justify-center">
-                              <span className="text-white text-xs font-bold">غير متوفر</span>
-                            </div>
-                          )}
+                    const footer = !hasExtras && isActive ? (
+                      <QuantityCounter
+                        itemId={String(meal.id)}
+                        name={meal.name}
+                        price={effectivePrice}
+                        description={meal.description}
+                        imageUrl={meal.image_url}
+                        restaurantId={id}
+                        restaurantName={restaurant.name}
+                      />
+                    ) : undefined;
+
+                    const offerDateRange = hasOfferFields && meal.offer_starts_at && meal.offer_ends_at ? (
+                      <div className="flex items-start gap-1">
+                        <span className="text-[10px]">📅</span>
+                        <div className="text-[10px] text-[#9CA3AF]">
+                          <div>من: {formatCairoDate(meal.offer_starts_at, { year: false })} - {formatCairoTime(meal.offer_starts_at)}</div>
+                          <div>إلى: {formatCairoDate(meal.offer_ends_at, { year: false })} - {formatCairoTime(meal.offer_ends_at)}</div>
                         </div>
-
-                        {/* القسم 2 — الاسم والوصف والسعر والزرار */}
-                        <div className="flex flex-col flex-1 min-w-0 px-1">
-                          {/* السطر 1 — الاسم */}
-                          <p className="truncate font-bold text-base text-[#1A1A1A] leading-snug">{meal.name}</p>
-
-                          {/* المنتصف — الوصف + السعر */}
-                          <div className="flex items-center gap-2 flex-1 mt-0.5">
-                            {meal.description && (
-                              <p className="line-clamp-2 text-sm text-[#6B7280] flex-1">{meal.description}</p>
-                            )}
-                            {effectivePrice !== meal.price ? (
-                              <div className="flex flex-col items-end flex-shrink-0">
-                                <p className="text-base font-black text-[#FF6000]">{effectivePrice} ج</p>
-                                <p className="text-xs text-gray-400 line-through">{meal.price} ج</p>
-                              </div>
-                            ) : (
-                              <p className="text-base font-black text-[#FF6000] flex-shrink-0">{effectivePrice} ج</p>
-                            )}
-                          </div>
-
-                          {/* تواريخ العرض */}
-                          {hasOfferFields && meal.offer_starts_at && meal.offer_ends_at && (
-                            <div className="mt-1 pt-1 border-t border-[#F3F4F6]">
-                              <div className="flex items-start gap-1">
-                                <span className="text-[10px]">📅</span>
-                                <div className="text-[10px] text-[#9CA3AF]">
-                                  <div>من: {formatCairoDate(meal.offer_starts_at, { year: false })} - {formatCairoTime(meal.offer_starts_at)}</div>
-                                  <div>إلى: {formatCairoDate(meal.offer_ends_at, { year: false })} - {formatCairoTime(meal.offer_ends_at)}</div>
-                                </div>
-                              </div>
-                            </div>
-                          )}
-
-                          {/* الأخير — الزرار */}
-                          {!hasExtras && isActive && (
-                            <div className="mt-auto pt-1">
-                              <QuantityCounter
-                                itemId={String(meal.id)}
-                                name={meal.name}
-                                price={effectivePrice}
-                                description={meal.description}
-                                imageUrl={meal.image_url}
-                                restaurantId={id}
-                                restaurantName={restaurant.name}
-                              />
-                            </div>
-                          )}
-                        </div>
-                      </>
-                    );
-
-                    if (hasExtras) {
-                      return (
-                        <div
-                          key={meal.id}
-                          className={`flex items-center py-3 relative ${isActive ? "cursor-pointer active:opacity-75 transition-opacity" : ""}`}
-                          onClick={isActive ? () => {
-                            const mealData = toSheetMeal(meal);
-                            if (!hasHistoryEntry.current) {
-                              window.history.pushState({ type: 'meal-sheet' }, '');
-                              hasHistoryEntry.current = true;
-                            }
-                            setSheetMeal(mealData);
-                          } : undefined}
-                        >
-                          {cardInner}
-                        </div>
-                      );
-                    }
+                      </div>
+                    ) : undefined;
 
                     return (
-                      <div key={meal.id} className="flex items-center py-3 relative">
-                        {cardInner}
-                      </div>
+                      <MealCard
+                        key={meal.id}
+                        name={meal.name}
+                        description={meal.description}
+                        imageUrl={hasOfferFields && meal.offer_image_url
+                          ? meal.offer_image_url
+                          : (meal.image_url ?? "https://images.unsplash.com/photo-1546069901-ba9599a7e63c?w=200&h=200&fit=crop")}
+                        effectivePrice={effectivePrice}
+                        originalPrice={meal.price}
+                        discountPercent={discount}
+                        isAvailable={isActive}
+                        offerDateRange={offerDateRange}
+                        footer={footer}
+                        onClick={hasExtras && isActive ? () => {
+                          const mealData = toSheetMeal(meal);
+                          if (!hasHistoryEntry.current) {
+                            window.history.pushState({ type: 'meal-sheet' }, '');
+                            hasHistoryEntry.current = true;
+                          }
+                          setSheetMeal(mealData);
+                        } : undefined}
+                      />
                     );
                   })}
                 </div>
