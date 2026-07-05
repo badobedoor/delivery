@@ -69,6 +69,7 @@ type OrderEditItem = {
   price: number;
   extras: { name: string; price: number }[];
   notes: string | null;
+  size_name: string | null;
 };
 
 type OrderEditSession = {
@@ -152,6 +153,9 @@ export default function AdminOrdersPage() {
     price:    number;
     extras:   { name: string; price: number }[];
     notes:    string | null;
+    size_name: string | null;
+    menu_item_id: string | null;
+    category_name: string | null;
   }[]>([]);
   const [modalLoading,    setModalLoading]    = useState(false);
   const [modalError,      setModalError]      = useState<string | null>(null);
@@ -176,6 +180,7 @@ export default function AdminOrdersPage() {
     price: number;
     extras: { name: string; price: number }[];
     notes: string | null;
+    size_name: string | null;
   }) {
     setEditingSession((prev) => {
       if (!prev) return prev;
@@ -187,6 +192,7 @@ export default function AdminOrdersPage() {
         price:       item.price,
         extras:      item.extras,
         notes:       item.notes,
+        size_name:   item.size_name,
       };
       const items = [...prev.items, newItem];
       const { subtotal, total } = calculateEditingTotals({ ...prev, items });
@@ -213,6 +219,7 @@ export default function AdminOrdersPage() {
         price_at_order: item.price,
         extras:         item.extras.length > 0 ? item.extras : null,
         notes:          item.notes,
+        size_name:      item.size_name ?? null,
       }));
 
       /* Single RPC call — all three DB operations run inside a PostgreSQL
@@ -247,12 +254,13 @@ export default function AdminOrdersPage() {
 
     const items: OrderEditItem[] = modalItems.map((item, idx) => ({
       tempId:      `item-${idx}`,
-      menuItemId:  null,
+      menuItemId:  item.menu_item_id ?? null,
       name:        item.name,
       quantity:    item.quantity,
       price:       item.price,
       extras:      item.extras,
       notes:       item.notes,
+      size_name:   item.size_name ?? null,
     }));
 
     const deliveryFee = selectedOrderModal.delivery_fee ?? 0;
@@ -782,7 +790,7 @@ export default function AdminOrdersPage() {
         .single(),
       supabase
         .from("order_items")
-        .select("quantity, price_at_order, extras, notes, menu_items (name)")
+        .select("quantity, price_at_order, extras, notes, size_name, menu_item_id, menu_items (name, categories (name))")
         .eq("order_id", id),
     ]);
 
@@ -813,11 +821,14 @@ export default function AdminOrdersPage() {
     } else {
       setModalItems(
         (itemsRes.data ?? []).map((item: any) => ({
-          name:     item.menu_items?.name          ?? "—",
-          quantity: item.quantity,
-          price:    item.price_at_order            ?? 0,
-          extras:   Array.isArray(item.extras) ? item.extras : [],
-          notes:    item.notes ?? null,
+          name:      item.menu_items?.name          ?? "—",
+          quantity:  item.quantity,
+          price:     item.price_at_order            ?? 0,
+          extras:    Array.isArray(item.extras) ? item.extras : [],
+          notes:     item.notes ?? null,
+          size_name: item.size_name ?? null,
+          menu_item_id: item.menu_item_id ?? null,
+          category_name: item.menu_items?.categories?.name ?? null,
         }))
       );
     }
@@ -1060,6 +1071,9 @@ export default function AdminOrdersPage() {
                       <div key={idx} className="flex justify-between text-xs">
                         {/* order.order_items.map((item, idx) =>  */}
                         <span style={{ color: C.text }}>
+                          {item.category_name && (
+                            <span style={{ color: C.blue }}>{item.category_name} </span>
+                          )}
                           {item.menu_items?.name ?? "—"}{" "}
                           <span style={{ color: C.muted }}>×{item.quantity}</span>
                         </span>
@@ -1422,6 +1436,13 @@ export default function AdminOrdersPage() {
                               </button>
                             </div>
                           </div>
+                          {item.size_name && (
+                            <div className="pr-8">
+                              <span className="text-[11px]" style={{ color: C.blue }}>
+                                🍽️ {item.size_name}
+                              </span>
+                            </div>
+                          )}
                           {item.extras.length > 0 && (
                             <div className="flex flex-col gap-0.5 pr-8">
                               {item.extras.map((e, j) => (
@@ -1467,6 +1488,9 @@ export default function AdminOrdersPage() {
                           >
                             ×{item.quantity}
                           </span>
+                          {item.category_name && (
+                            <span className="text-[11px]" style={{ color: C.blue }}>{item.category_name} </span>
+                          )}
                           <span style={{ color: C.text }}>{item.name}</span>
                         </div>
                         <span style={{ color: C.muted }}>
@@ -1475,6 +1499,13 @@ export default function AdminOrdersPage() {
                             : item.price} ج.م
                         </span>
                       </div>
+                      {item.size_name && (
+                        <div className="pr-8">
+                          <span className="text-[11px]" style={{ color: C.blue }}>
+                            🍽️ {item.size_name}
+                          </span>
+                        </div>
+                      )}
                       {item.extras.length > 0 && (
                         <div className="flex flex-col gap-0.5 pr-8">
                           {item.extras.map((e, j) => (

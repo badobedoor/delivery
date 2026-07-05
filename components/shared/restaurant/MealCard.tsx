@@ -80,28 +80,28 @@ export default function MealCard({
       {/* ── Text content ── */}
       <div className="flex flex-col flex-1 min-w-0 px-1">
         {/* Name */}
-        <p className="truncate font-bold text-base text-[#1A1A1A] leading-snug">
+        <p className="truncate font-bold text-base text-[var(--color-secondary)] leading-snug">
           {name}
         </p>
 
         {/* Description + Price */}
         <div className="flex items-center gap-2 flex-1 mt-0.5">
           {description && (
-            <p className="line-clamp-2 text-sm text-[#6B7280] flex-1">
+            <p className="line-clamp-2 text-sm text-[var(--color-muted)] flex-1">
               {description}
             </p>
           )}
           {effectivePrice !== originalPrice ? (
             <div className="flex flex-col items-end flex-shrink-0">
-              <p className="text-base font-black text-[#FF6000]">
+              <p className="text-base font-black text-[var(--color-primary)]">
                 {effectivePrice} ج
               </p>
-              <p className="text-xs text-gray-400 line-through">
+              <p className="text-xs text-[var(--color-muted)] line-through">
                 {originalPrice} ج
               </p>
             </div>
           ) : (
-            <p className="text-base font-black text-[#FF6000] flex-shrink-0">
+            <p className="text-base font-black text-[var(--color-primary)] flex-shrink-0">
               {effectivePrice} ج
             </p>
           )}
@@ -109,7 +109,7 @@ export default function MealCard({
 
         {/* Offer date range */}
         {offerDateRange && (
-          <div className="mt-1 pt-1 border-t border-[#F3F4F6]">
+          <div className="mt-1 pt-1 border-t border-[var(--color-border)]">
             {offerDateRange}
           </div>
         )}

@@ -17,6 +17,7 @@ export interface OrderItemAddResult {
   price: number;
   extras: { name: string; price: number }[];
   notes: string | null;
+  size_name: string | null;
 }
 
 interface Props {
@@ -91,7 +92,15 @@ export default function OrderItemAddPanel({ restaurantId, onAdd, onClose }: Prop
   const sheetMeal = selectedMeal ? toSheetMeal(selectedMeal) : null;
 
   return (
-    <div className="flex flex-col gap-4">
+    <div
+      className="flex flex-col gap-4"
+      style={{
+        "--color-secondary": "#F1F5F9",
+        "--color-muted":     "#94A3B8",
+        "--color-border":    "#334155",
+        "--color-surface":   "#0F172A",
+      } as React.CSSProperties}
+    >
       {/* ── Header ── */}
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
@@ -206,6 +215,7 @@ export default function OrderItemAddPanel({ restaurantId, onAdd, onClose }: Prop
                                 price: effectivePrice,
                                 extras: [],
                                 notes: null,
+                                size_name: null,
                               });
                               onClose();
                             }}
@@ -242,11 +252,14 @@ function ConfigureMealView({ meal, menuItemId, onAdd }: ConfigureMealViewProps) 
   const hasSizes = !!(meal.sizes && meal.sizes.length > 0);
 
   function handleAdd() {
+    const sizeName = hasSizes && config.selectedSize
+      ? meal.sizes!.find((s) => s.id === config.selectedSize)?.name ?? null
+      : null;
     onAdd({
       menuItemId,
       name: meal.name,
       quantity: config.qty,
-      price: hasSizes ? 0 : config.effectivePrice,
+      price: hasSizes ? config.activePrice : config.effectivePrice,
       extras: config.selectedExtras.map((id) => {
         if (meal.extraGroups) {
           for (const g of meal.extraGroups) {
@@ -258,7 +271,8 @@ function ConfigureMealView({ meal, menuItemId, onAdd }: ConfigureMealViewProps) 
         const extra = meal.extras!.find((e) => e.id === id)!;
         return { name: extra.name, price: extra.price };
       }),
-      notes: config.note.trim() || null,
+      notes:    config.note.trim() || null,
+      size_name: sizeName,
     });
   }
 
