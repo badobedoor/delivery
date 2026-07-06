@@ -1,36 +1,74 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Hala Delivery
 
-## Getting Started
+A complete multi-application delivery ecosystem.
 
-First, run the development server:
+This project is **not** a single application. It is a platform where Customer, Admin, Staff, and Driver applications share the same business logic, domain models, database, and reusable UI components.
+
+---
+
+## Quick Start
 
 ```bash
+npm install
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Open [http://localhost:3000](http://localhost:3000).
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+---
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+## Applications
 
-## Learn More
+- **Customer** — `app/(customer)/` — Restaurant browsing, cart, checkout, orders
+- **Admin** — `app/admin/` — Dashboard, orders management, restaurant tools
+- **Driver** — `app/driver/` — Assigned orders, delivery workflow
+- **Staff** — `app/staff/` — Internal tools, kitchen workflow
 
-To learn more about Next.js, take a look at the following resources:
+---
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+## Engineering Documentation
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+All engineering documentation lives in `docs/`.
 
-## Deploy on Vercel
+**Start here:** [`docs/000_START_HERE_FIRST.md`](docs/000_START_HERE_FIRST.md)
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+| Document | Purpose |
+|---|---|
+| `000_START_HERE_FIRST.md` | Entry point — read first |
+| `001_PROJECT_ARCHITECTURE.md` | System architecture, layers, ownership |
+| `002_ENGINEERING_MANUAL.md` | Engineering rules, workflow, philosophy |
+| `003_DOMAIN_REFERENCE.md` | Business entities, identity rules |
+| `004_ADR.md` | Architecture Decision Records |
+| `005_PROJECT_STATUS.md` | Current state, completed features |
+| `006_PROJECT_MAP.md` | Folder ownership, code placement |
+| `007_AI_PROTOCOL.md` | AI assistant operating procedure |
+| `008_KNOWLEDGE_BASE.md` | Investigation lessons, debugging history |
+| `009_CODING_STANDARDS.md` | TypeScript, naming, file conventions |
+| `010_FEATURE_INDEX.md` | Implemented features by area |
+| `011_ROADMAP.md` | Future direction, planned work |
+| `012_PROMPT_TEMPLATES.md` | Reusable AI prompts |
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+---
+
+## Golden Rule
+
+**Never start implementing before understanding the architecture.**
+
+Understanding comes first. Architecture comes second. Implementation comes last.
+
+---
+
+## Tech Stack
+
+- **Framework:** Next.js 14 (App Router)
+- **Database:** Supabase (PostgreSQL)
+- **Language:** TypeScript
+- **Styling:** Tailwind CSS + CSS custom properties (theming)
+
+---
+
+## AI Assistants
+
+AI contributors should read [`AGENTS.md`](AGENTS.md) first, then the documentation in `docs/`.
+
+This project has strict engineering rules. Read the full engineering manual at [`docs/002_ENGINEERING_MANUAL.md`](docs/002_ENGINEERING_MANUAL.md) before writing any code.
