@@ -40,6 +40,7 @@ function isOpenNow(start: string, end: string): boolean {
 
 export default function HomePage() {
   const router = useRouter();
+  if (typeof window !== "undefined") console.log("[TIMELINE]", performance.now().toFixed(1), "ms - HomePage mount (rendered)");
   const [defaultAddress, setDefaultAddress] = useState<{ full_address: string; label: string } | null>(null);
   const [isOpen,    setIsOpen]    = useState<boolean | null>(null);
   const [workStart, setWorkStart] = useState("");

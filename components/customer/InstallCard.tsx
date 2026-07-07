@@ -8,6 +8,8 @@ export default function InstallCard() {
   const { canInstall, isIOS, promptAvailable, install } = usePWAInstall();
   const [showSheet, setShowSheet] = useState(false);
 
+  if (typeof window !== "undefined") console.log("[TIMELINE]", performance.now().toFixed(1), "ms - InstallCard render, canInstall=", canInstall, "promptAvailable=", promptAvailable, "isIOS=", isIOS);
+
   if (!canInstall) return null;
 
   const isAndroidButtonReady = isIOS || promptAvailable;

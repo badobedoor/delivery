@@ -11,6 +11,7 @@ const cairo = Cairo({
 export const metadata: Metadata = {
   title: "حالا دلفري",
   description: "كل احتياجاتك، توصلك... حالاً",
+  manifest: "/manifest.json",
   icons: {
     icon: '/icon.ico',
     apple: '/icon.ico',

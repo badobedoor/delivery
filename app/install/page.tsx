@@ -4,7 +4,7 @@ import { useState } from "react";
 import Image from "next/image";
 import Link from "next/link";
 import { usePWAInstall } from "@/hooks/usePWAInstall";
-import { isInstalled } from "@/lib/pwa";
+import { isInstalled, isMobile } from "@/lib/pwa";
 import InstallBottomSheet from "@/components/customer/InstallBottomSheet";
 
 /* ── Shared CTA button used throughout the page ── */
@@ -39,7 +39,7 @@ function InstallCta({
           : "bg-[var(--color-primary)]/50 text-white cursor-not-allowed"
       }`}
     >
-      {ready ? label : "جارٍ تجهيز التثبيت..."}
+      {label}
     </button>
   );
 }
@@ -53,12 +53,98 @@ function Pill({ children }: { children: React.ReactNode }) {
   );
 }
 
+/* ── Desktop install info card (replaces InstallCta on desktop) ── */
+function DesktopInstallCard() {
+  const [copied, setCopied] = useState(false);
+  const [qrStatus, setQrStatus] = useState<"loading" | "loaded" | "error">("loading");
+  const url = typeof window !== "undefined" ? window.location.href : "";
+  const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent(url)}`;
+
+  const handleCopy = async () => {
+    try {
+      await navigator.clipboard.writeText(url);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch { /* clipboard not available */ }
+  };
+
+  return (
+    <div className="bg-white rounded-2xl border border-[var(--color-border)] shadow-sm p-6 max-w-md mx-auto text-center">
+      <h3 className="text-xl font-black text-[var(--color-secondary)] mb-2">
+        ثبت التطبيق من هاتفك
+      </h3>
+      <p className="text-sm text-[var(--color-muted)] leading-relaxed mb-6">
+        لأفضل تجربة، افتح هذا الرابط من متصفح Chrome على هاتفك.
+      </p>
+      <div className="flex flex-col items-center gap-4">
+        {/* QR Code */}
+        <div className="w-40 h-40 rounded-xl bg-white border border-[var(--color-border)] p-2 relative overflow-hidden">
+          {qrStatus !== "error" && url && (
+            <img
+              src={qrUrl}
+              alt="QR Code"
+              className={`w-full h-full object-contain transition-opacity duration-300 ${
+                qrStatus === "loading" ? "opacity-0" : "opacity-100"
+              }`}
+              loading="lazy"
+              onLoad={() => setQrStatus("loaded")}
+              onError={() => setQrStatus("error")}
+            />
+          )}
+
+          {/* Loading skeleton */}
+          {qrStatus === "loading" && (
+            <div className="absolute inset-2 rounded-lg bg-[var(--color-surface)] animate-pulse flex items-center justify-center">
+              <svg width="32" height="32" viewBox="0 0 24 24" fill="none"
+                stroke="var(--color-muted)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"
+                className="opacity-40">
+                <rect x="3" y="3" width="7" height="7" />
+                <rect x="14" y="3" width="7" height="7" />
+                <rect x="14" y="14" width="7" height="7" />
+                <rect x="3" y="14" width="7" height="7" />
+              </svg>
+            </div>
+          )}
+
+          {/* Error fallback */}
+          {qrStatus === "error" && (
+            <div className="absolute inset-2 rounded-lg bg-[var(--color-surface)] flex flex-col items-center justify-center gap-1">
+              <span className="text-2xl">📱</span>
+              <span className="text-xs font-bold text-[var(--color-muted)]">
+                امسح الرابط من هاتفك
+              </span>
+            </div>
+          )}
+        </div>
+        {/* Copy link */}
+        <button
+          onClick={handleCopy}
+          className="flex items-center gap-2 px-6 py-2.5 rounded-xl bg-[var(--color-surface)] text-sm font-bold text-[var(--color-secondary)] hover:bg-[var(--color-border)] transition-colors active:scale-[0.97]"
+        >
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none"
+            stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <rect x="9" y="9" width="13" height="13" rx="2" ry="2" />
+            <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
+          </svg>
+          {copied ? "تم النسخ ✓" : "نسخ الرابط"}
+        </button>
+      </div>
+    </div>
+  );
+}
+
 export default function InstallPage() {
   const { isIOS, promptAvailable, install } = usePWAInstall();
   const [showSheet, setShowSheet] = useState(false);
   const alreadyInstalled = isInstalled();
-  const isAndroidButtonReady = isIOS || promptAvailable;
-  const ctaReady = alreadyInstalled || isAndroidButtonReady;
+  const desktop = !isMobile() && !alreadyInstalled;
+  const androidWaiting = !isIOS && !promptAvailable && !alreadyInstalled && !desktop;
+
+  let ctaLabel = "ثبت الآن";
+  if (alreadyInstalled) ctaLabel = "فتح التطبيق";
+  else if (isIOS) ctaLabel = "طريقة التثبيت";
+
+  const ctaReady = alreadyInstalled || isIOS || promptAvailable;
 
   async function handleInstall() {
     if (alreadyInstalled) {
@@ -80,12 +166,14 @@ export default function InstallPage() {
           <Link href="/" className="text-lg font-black text-[var(--color-secondary)]">
             حالا <span className="text-[var(--color-primary)]">دلفري</span>
           </Link>
-          <InstallCta
-            label={alreadyInstalled ? "فتح التطبيق" : "ثبت الآن"}
-            onInstall={handleInstall}
-            ready={ctaReady}
-            size="sm"
-          />
+          {!desktop && (
+            <InstallCta
+              label={alreadyInstalled ? "فتح التطبيق" : ctaLabel}
+              onInstall={handleInstall}
+              ready={ctaReady}
+              size="sm"
+            />
+          )}
         </div>
       </header>
 
@@ -105,7 +193,19 @@ export default function InstallPage() {
             <br />
             حمّل التطبيق الآن ووفّر وقتك.
           </p>
-          <InstallCta onInstall={handleInstall} ready={ctaReady} size="lg" />
+          {desktop ? (
+            <DesktopInstallCard />
+          ) : (
+            <>
+              <InstallCta label={ctaLabel} onInstall={handleInstall} ready={ctaReady} size="lg" />
+              {androidWaiting && (
+                <p className="text-xs text-[var(--color-muted)] mt-3 leading-relaxed max-w-xs mx-auto">
+                  إذا لم يظهر زر التثبيت، افتح قائمة Chrome ثم اختر
+                  &quot;إضافة إلى الشاشة الرئيسية&quot;.
+                </p>
+              )}
+            </>
+          )}
           <div className="mt-10 md:mt-14 flex justify-center">
             <div className="relative w-full max-w-[900px] aspect-[16/9]">
               <Image
@@ -310,7 +410,19 @@ export default function InstallPage() {
                   حمّل التطبيق الآن واطلب من مطعمك المفضل بضغطة زر.
                   توصيل سريع، تتبع مباشر، وتجربة رائعة.
                 </p>
-                <InstallCta onInstall={handleInstall} ready={ctaReady} size="lg" />
+                {desktop ? (
+                  <DesktopInstallCard />
+                ) : (
+                  <>
+                    <InstallCta label={ctaLabel} onInstall={handleInstall} ready={ctaReady} size="lg" />
+                    {androidWaiting && (
+                      <p className="text-xs text-[var(--color-muted)] mt-3 leading-relaxed max-w-xs">
+                        إذا لم يظهر زر التثبيت، افتح قائمة Chrome ثم اختر
+                        &quot;إضافة إلى الشاشة الرئيسية&quot;.
+                      </p>
+                    )}
+                  </>
+                )}
               </div>
             </div>
           </div>
