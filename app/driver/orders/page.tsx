@@ -24,11 +24,12 @@ type PayMethod = "cash" | "vodafone" | "mixed";
 type Extra  = { name: string; price: number };
 type Meal   = { name: string; qty: number; price: number; extras: Extra[]; notes?: string; category?: string };
 type Order  = {
-  id:          string;
-  num:         string;
-  restaurant:  string;
-  area:        string;
-  address:     string;
+  id:              string;
+  num:             string;
+  restaurant:      string;
+  restaurantArea:  string;
+  area:            string;
+  address:         string;
   userId:         string;
   subtotal:       number;
   deliveryFee:    number;
@@ -57,6 +58,7 @@ function toOrder(o: DBOrder): Order {
     userId:      (o as DBOrder).user_id ?? "",
     num:         `#${o.user_order_number ?? "—"}`,
     restaurant:  o.restaurants?.name ?? "—",
+    restaurantArea: o.restaurants?.address ?? "—",
     area:        o.addresses?.areas?.name ?? "—",
     address:     o.addresses?.full_address ?? "—",
     subtotal:       o.subtotal        ?? 0,
@@ -78,7 +80,7 @@ function toOrder(o: DBOrder): Order {
 const ORDER_SELECT = `
   id, user_id, status, picked_up, total, subtotal, delivery_fee, discount_amount, notes, user_order_number,
   restaurant_paid, restaurant_debt, payment_method, cash_amount, vodafone_amount,
-  restaurants!restaurant_id (name),
+  restaurants!restaurant_id (name, address),
   addresses!address_id (full_address, areas (name)),
   order_items (quantity, price_at_order, extras, notes, menu_items (name, categories (name))),
   users!user_id (phone)
@@ -137,6 +139,7 @@ function AvailableCard({ order, onAccept }: { order: Order; onAccept: () => void
               {order.meals.length} أصناف
             </span>
           </div>
+          <span className="text-[11px] truncate" style={{ color: C.muted }}>📍 {order.restaurantArea}</span>
           <span className="text-xs" style={{ color: C.muted }}>📍 {order.area}</span>
           <span className="text-base font-black" style={{ color: C.green }}>{order.total} ج.م</span>
           <div className="flex items-center gap-1.5 text-xs" style={{ color: C.muted }}>
@@ -457,6 +460,7 @@ function ActiveCard({
               {order.pickedUp ? "✓ تم الاستلام" : "لم يُستلم بعد"}
             </span>
           </div>
+          <span className="text-[11px] truncate" style={{ color: C.muted }}>📍 {order.restaurantArea}</span>
           <span className="text-xs" style={{ color: C.muted }}>📍 {order.area}</span>
           <span className="text-base font-black" style={{ color: C.green }}>{order.total} ج.م</span>
           <div className="flex items-center gap-1.5 text-xs" style={{ color: C.muted }}>
@@ -712,7 +716,7 @@ export default function DriverOrdersPage() {
         .from("orders")
         .select(`
           id, total, subtotal, delivery_fee, discount_amount, notes, user_order_number,
-          restaurants!restaurant_id (name),
+          restaurants!restaurant_id (name, address),
           addresses!address_id (full_address, areas (name)),
           order_items (quantity, price_at_order, extras, notes, menu_items (name, categories (name)))
         `)
@@ -940,7 +944,7 @@ export default function DriverOrdersPage() {
               .from("orders")
               .select(`
                 id, total, subtotal, delivery_fee, discount_amount, notes, user_order_number,
-                restaurants!restaurant_id (name),
+                restaurants!restaurant_id (name, address),
                 addresses!address_id (full_address, areas (name)),
                 order_items (quantity, price_at_order, extras, notes, menu_items (name, categories (name)))
               `)

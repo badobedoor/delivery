@@ -19,7 +19,7 @@ const C = {
 /* ─────────────────────── Types ─────────────────────── */
 
 type Assignment = {
-  id:              number;
+  id:              string;
   driver_id:       number;
   driver_name:     string;
   motorcycle_id:   string;
@@ -375,8 +375,8 @@ function ShiftsSection({ assignments }: { assignments: Assignment[] }) {
 
 /* ─────────────────────── Tab 1: Assignments ────────── */
 
-function DriversTab({ staffList, motos, shifts }: {
-  staffList: StaffMember[]; motos: Moto[]; shifts: Shift[];
+function DriversTab({ staffList, motos, shifts, currentRole }: {
+  staffList: StaffMember[]; motos: Moto[]; shifts: Shift[]; currentRole: string;
 }) {
   const [rows,     setRows]     = useState<Assignment[]>([]);
   const [loading,  setLoading]  = useState(true);
@@ -387,6 +387,8 @@ function DriversTab({ staffList, motos, shifts }: {
   const [saving,   setSaving]   = useState(false);
   const [form,     setForm]     = useState<AssignForm>(emptyAssignForm);
   const [formErrs, setFormErrs] = useState<AssignFormErrs>({});
+  const [removeTarget, setRemoveTarget] = useState<Assignment | null>(null);
+  const [removing,     setRemoving]     = useState(false);
 
   useEffect(() => { fetchAssignments(); }, []);
   useAutoRefresh(fetchAssignments);
@@ -405,6 +407,7 @@ function DriversTab({ staffList, motos, shifts }: {
         `)
         .order("delivery_id");
       if (error) throw error;
+
       setRows((data ?? []).map(fromAssignmentRow));
     } catch (err) {
       console.error("fetchAssignments:", err);
@@ -490,6 +493,31 @@ function DriversTab({ staffList, motos, shifts }: {
     }
   }
 
+  async function handleRemove() {
+    if (!removeTarget) return;
+    setRemoving(true);
+    setOpErr(null);
+    try {
+      const res = await fetch("/api/admin/drivers/remove-assignment", {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ assignmentId: removeTarget.id }),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({ error: "فشل إزالة التعيين" }));
+        throw new Error(err.error || "فشل إزالة التعيين");
+      }
+      setRemoveTarget(null);
+      await fetchAssignments();
+    } catch (err) {
+      console.error("handleRemove:", err);
+      setOpErr(err instanceof Error ? err.message : "فشل إزالة التعيين");
+    } finally {
+      setRemoving(false);
+    }
+  }
+
   return (
     <>
       <div className="flex flex-col gap-4">
@@ -518,6 +546,7 @@ function DriversTab({ staffList, motos, shifts }: {
                     { label: "الموتسكل", hide: " hidden sm:table-cell" },
                     { label: "الوردية",   hide: " hidden md:table-cell" },
                     { label: "الحالة",    hide: ""                      },
+                    { label: "الإجراءات", hide: ""                      },
                   ].map(({ label, hide }) => (
                     <th key={label}
                       className={`px-4 py-3 text-right font-semibold text-xs whitespace-nowrap${hide}`}
@@ -527,9 +556,9 @@ function DriversTab({ staffList, motos, shifts }: {
               </thead>
               <tbody>
                 {loading ? (
-                  <tr><td colSpan={4} className="px-4 py-12 text-center text-sm animate-pulse" style={{ color: C.muted }}>جاري التحميل...</td></tr>
+                  <tr><td colSpan={5} className="px-4 py-12 text-center text-sm animate-pulse" style={{ color: C.muted }}>جاري التحميل...</td></tr>
                 ) : filtered.length === 0 ? (
-                  <tr><td colSpan={4} className="px-4 py-12 text-center text-sm" style={{ color: C.muted }}>لا توجد تعيينات</td></tr>
+                  <tr><td colSpan={5} className="px-4 py-12 text-center text-sm" style={{ color: C.muted }}>لا توجد تعيينات</td></tr>
                 ) : filtered.map((a, i) => (
                   <tr key={a.id} style={{ borderBottom: i < filtered.length - 1 ? `1px solid ${C.border}` : "none" }}>
                     <td className="px-4 py-3">
@@ -552,6 +581,17 @@ function DriversTab({ staffList, motos, shifts }: {
                     </td>
                     <td className="px-4 py-3">
                       <StatusBadge active={a.is_active} onToggle={() => toggleActive(a)} />
+                    </td>
+                    <td className="px-4 py-3">
+                      {(currentRole === "admin" || currentRole === "super_admin") && (
+                        <button
+                          onClick={() => setRemoveTarget(a)}
+                          className="px-3 py-1.5 rounded-lg text-xs font-bold hover:opacity-80 transition-opacity"
+                          style={{ background: `${C.red}22`, color: C.red }}
+                        >
+                          حذف
+                        </button>
+                      )}
                     </td>
                   </tr>
                 ))}
@@ -645,6 +685,44 @@ function DriversTab({ staffList, motos, shifts }: {
 
         <ActiveToggle active={form.is_active} onChange={(v) => setForm({ ...form, is_active: v })} />
       </Modal>
+
+      {/* ── Remove assignment confirmation ── */}
+      {removeTarget && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4"
+          style={{ background: "rgba(0,0,0,0.7)" }}
+          onClick={(e) => { if (!removing && e.target === e.currentTarget) setRemoveTarget(null); }}>
+          <div className="w-full max-w-xs rounded-2xl" style={{ background: C.card, border: `1px solid ${C.border}` }}>
+            <div className="px-5 py-6 flex flex-col items-center gap-3 text-center">
+              <span className="text-4xl">🗑️</span>
+              <p className="text-base font-black" style={{ color: C.text }}>تأكيد إزالة التعيين</p>
+              <p className="text-sm" style={{ color: C.muted }}>
+                هل أنت متأكد من إزالة تعيين <span className="font-bold" style={{ color: C.text }}>{removeTarget.driver_name}</span> من الوردية <span className="font-bold" style={{ color: C.text }}>{removeTarget.shift_num}</span>؟
+              </p>
+              <p className="text-xs" style={{ color: C.muted }}>
+                لن يتم حذف السائق أو الوردية. سيتم إزالة الربط بينهما فقط.
+              </p>
+            </div>
+            <div className="flex gap-3 px-5 py-4 border-t" style={{ borderColor: C.border }}>
+              <button
+                onClick={handleRemove}
+                disabled={removing}
+                className="flex-1 py-2.5 rounded-xl text-sm font-bold transition-opacity disabled:opacity-60"
+                style={{ background: C.red, color: "#fff" }}
+              >
+                {removing ? "جارٍ الإزالة..." : "إزالة التعيين"}
+              </button>
+              <button
+                onClick={() => setRemoveTarget(null)}
+                disabled={removing}
+                className="flex-1 py-2.5 rounded-xl text-sm font-bold transition-opacity disabled:opacity-40"
+                style={{ background: C.bg, color: C.muted, border: `1px solid ${C.border}` }}
+              >
+                إلغاء
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </>
   );
 }
@@ -822,10 +900,18 @@ const TABS = ["الدلفري", "الموتسكلات"] as const;
 type Tab = typeof TABS[number];
 
 export default function AdminDriversPage() {
-  const [tab,       setTab]       = useState<Tab>("الدلفري");
-  const [staffList, setStaffList] = useState<StaffMember[]>([]);
-  const [motos,     setMotos]     = useState<Moto[]>([]);
-  const [shifts,    setShifts]    = useState<Shift[]>([]);
+  const [tab,         setTab]         = useState<Tab>("الدلفري");
+  const [staffList,   setStaffList]   = useState<StaffMember[]>([]);
+  const [motos,       setMotos]       = useState<Moto[]>([]);
+  const [shifts,      setShifts]      = useState<Shift[]>([]);
+  const [currentRole, setCurrentRole] = useState("");
+
+  useEffect(() => {
+    fetch("/api/auth/me", { credentials: "include" })
+      .then((r) => r.json())
+      .then((data) => { if (data.authenticated) setCurrentRole(data.user?.role ?? ""); })
+      .catch(() => {});
+  }, []);
 
   useEffect(() => { fetchShared(); }, []);
   useAutoRefresh(fetchShared);
@@ -862,7 +948,7 @@ export default function AdminDriversPage() {
         ))}
       </div>
 
-      {tab === "الدلفري"     && <DriversTab staffList={staffList} motos={motos} shifts={shifts} />}
+      {tab === "الدلفري"     && <DriversTab staffList={staffList} motos={motos} shifts={shifts} currentRole={currentRole} />}
       {tab === "الموتسكلات"  && <MotosTab   onRefresh={fetchShared} />}
 
     </div>
