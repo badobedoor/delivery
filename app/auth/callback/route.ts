@@ -25,6 +25,13 @@ export async function GET(request: NextRequest) {
       ? requestOrigin
       : publicSiteUrl ?? requestOrigin;
 
+  /* 🔍 DEBUG LOGS — temporary, will be removed after investigation */
+  console.log("[callback] request.url:", request.url);
+  console.log("[callback] requestOrigin:", requestOrigin);
+  console.log("[callback] NEXT_PUBLIC_SITE_URL:", process.env.NEXT_PUBLIC_SITE_URL);
+  console.log("[callback] computed origin:", origin);
+  /* 🔍 END DEBUG LOGS */
+
   const { searchParams } = new URL(request.url);
   const code = searchParams.get("code");
 
@@ -36,6 +43,7 @@ export async function GET(request: NextRequest) {
 
   /* Build the redirect response first so we can attach cookies to it */
   const redirectTo = `${origin}/`;
+  console.log("[callback] redirectTo:", redirectTo);
   const response   = NextResponse.redirect(redirectTo);
 
   /* Build the Supabase client wired to the *response* cookies */
