@@ -10,7 +10,15 @@ import { createServerClient } from "@supabase/ssr";
  * onto the NextResponse redirect, which is the only way to get them to the browser.
  */
 export async function GET(request: NextRequest) {
-  const { searchParams, origin } = new URL(request.url);
+  const publicSiteUrl = process.env.NEXT_PUBLIC_SITE_URL;
+  const proto         = request.headers.get("x-forwarded-proto");
+  const host          = request.headers.get("x-forwarded-host");
+
+  const origin = publicSiteUrl ?? (
+    proto && host ? `${proto}://${host}` : new URL(request.url).origin
+  );
+
+  const { searchParams } = new URL(request.url);
   const code = searchParams.get("code");
 
   console.log("[callback] code received:", !!code);
