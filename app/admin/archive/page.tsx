@@ -99,14 +99,26 @@ export default function AdminArchivePage() {
       .from("shifts").select("id").eq("is_active", true).limit(1).maybeSingle();
     setActiveShiftId(shiftRow?.id ?? null);
 
+    /* Fetch drivers for name resolution */
+    const driverRes = await fetch("/api/admin/drivers", { credentials: "include" })
+      .then(async (res) => {
+        if (!res.ok) { console.error("fetchDrivers:", res.statusText); return { data: [] }; }
+        return { data: await res.json() };
+      })
+      .catch((err) => { console.error("fetchDrivers:", err); return { data: [] }; });
+
+    const driverNameMap = new Map<string, string>();
+    ((driverRes as any).data ?? []).forEach((d: any) => {
+      driverNameMap.set(String(d.id), d.name ?? "");
+    });
+
     let query = supabase
       .from("orders")
       .select(`
-        id, total, status, created_at, user_order_number,
+        id, total, status, created_at, user_order_number, delivery_id,
         restaurants!restaurant_id (name),
         addresses!address_id (areas(name)),
         users (name, phone),
-        delivery_staff (name),
         shifts!shift_id (num)
       `, { count: "exact" })
       .neq("status", "new")
@@ -139,7 +151,7 @@ export default function AdminArchivePage() {
       created_at:        o.created_at,
       restaurant:        (o.restaurants as { name: string } | null)?.name ?? null,
       area:              (o.addresses as { areas: { name: string } | null } | null)?.areas?.name ?? null,
-      driverName:        (o.delivery_staff as { name: string } | null)?.name ?? null,
+      driverName:        o.delivery_id ? (driverNameMap.get(String(o.delivery_id)) ?? null) : null,
       shiftNum:          (o.shifts as { num: number } | null)?.num ?? null,
       customerName:      (o.users as { name: string | null; phone: string | null } | null)?.name ?? null,
       customerPhone:     (o.users as { name: string | null; phone: string | null } | null)?.phone ?? null,

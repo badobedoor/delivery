@@ -26,7 +26,8 @@ type DeliveryRequest = {
   status:           string;
   created_at:       string;
   areas:            { name: string; delivery_fee: number } | null;
-  delivery_staff:   { name: string | null; phone: string | null } | null;
+  driver_name:      string | null;
+  driver_phone:     string | null;
 };
 
 type Driver = { id: string; name: string | null; phone: string | null };
@@ -48,19 +49,39 @@ export default function DeliveryRequestsPage() {
   const [assigning,   setAssigning]   = useState(false);
 
   async function loadData() {
-    const [reqRes, drvRes] = await Promise.all([
+    const [reqRes, driverRes] = await Promise.all([
       supabase
         .from("delivery_requests")
-        .select("id, restaurant_name, areas(name, delivery_fee), delivery_address, notes, status, delivery_staff(name, phone), created_at")
+        .select("id, restaurant_name, areas(name, delivery_fee), delivery_address, notes, status, delivery_id, created_at")
         .order("created_at", { ascending: false }),
-      supabase
-        .from("delivery_staff")
-        .select("id, name, phone")
-        .eq("is_active", true)
-        .order("name"),
+      fetch("/api/admin/drivers", { credentials: "include" })
+        .then(async (res) => {
+          if (!res.ok) { console.error("fetchDrivers:", res.statusText); return { data: [] }; }
+          return { data: await res.json() };
+        })
+        .catch((err) => { console.error("fetchDrivers:", err); return { data: [] }; }),
     ]);
-    setRequests((reqRes.data ?? []) as unknown as DeliveryRequest[]);
-    setDrivers((drvRes.data ?? []) as Driver[]);
+
+    /* Build driver lookup map */
+    const driverMap = new Map<string, { name: string | null; phone: string | null }>();
+    ((driverRes as any).data ?? []).forEach((d: any) => {
+      driverMap.set(String(d.id), { name: d.name ?? null, phone: d.phone ?? null });
+    });
+
+    /* Resolve driver names/phones client-side */
+    setRequests(((reqRes.data ?? []) as any[]).map((r: any) => ({
+      ...r,
+      driver_name:  r.delivery_id ? (driverMap.get(String(r.delivery_id))?.name ?? null) : null,
+      driver_phone: r.delivery_id ? (driverMap.get(String(r.delivery_id))?.phone ?? null) : null,
+    })) as DeliveryRequest[]);
+
+    /* Populate driver dropdown from API response */
+    setDrivers(((driverRes as any).data ?? []).map((d: any) => ({
+      id:    String(d.id),
+      name:  d.name ?? null,
+      phone: d.phone ?? null,
+    })));
+
     setLoading(false);
   }
 
@@ -153,7 +174,7 @@ export default function DeliveryRequestsPage() {
                       {r.notes && <p className="text-[10px] mt-0.5 opacity-70 truncate">📝 {r.notes}</p>}
                     </td>
                     <td className="px-3 py-3 text-xs whitespace-nowrap" style={{ color: C.muted }}>
-                      {r.delivery_staff?.name ?? "—"}
+                      {r.driver_name ?? "—"}
                     </td>
                     <td className="px-3 py-3">
                       <span className="px-2.5 py-1 rounded-full text-[10px] font-bold whitespace-nowrap"

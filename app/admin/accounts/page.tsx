@@ -159,6 +159,9 @@ const TX_META: Record<TxType, { icon: string; color: string; label: (t: Transact
 
 /* ── Row mappers ── */
 
+/* Driver name lookup map — built in loadData(), consumed by mappers */
+const driverNameMap = new Map<number, string>();
+
 /*
   Semantic conventions for display:
   - صرف  (payment to person):     fromWallet = source,          toWallet = "خزنة الدلفري"
@@ -187,7 +190,7 @@ function mapDeliveryTx(row: any): Transaction {
     id:          `d-${row.id}`,
     createdAt:   row.created_at,
     type:        row.type as TxType,
-    personName:  (row.delivery_staff as any)?.name,
+    personName:  driverNameMap.get(row.delivery_id),
     fromWallet,
     toWallet,
     amount:      row.amount,
@@ -1849,17 +1852,22 @@ export default function AdminAccountsPage() {
         .from("main_wallet")
         .select("id, type, amount, reason, created_at, balance")
         .order("created_at", { ascending: false }),
-      supabase
-        .from("delivery_staff")
-        .select("id, name, phone, wallet_balance")
-        .eq("is_active", true),
+      fetch("/api/admin/drivers", { credentials: "include" })
+        .then(async (res) => {
+          if (!res.ok) { console.error("fetchDrivers:", res.statusText); return { data: null }; }
+          return { data: await res.json() };
+        })
+        .catch((err) => {
+          console.error("fetchDrivers:", err);
+          return { data: null };
+        }),
       supabase
         .from("motorcycles")
         .select("id, name, plate, wallet_balance")
         .eq("is_active", true),
       supabase
         .from("delivery_accounts")
-        .select("id, delivery_id, type, amount, reason, from_wallet, created_at, delivery_staff(name)")
+        .select("id, delivery_id, type, amount, reason, from_wallet, created_at")
         .order("created_at", { ascending: false })
         .limit(50),
       supabase
@@ -1869,7 +1877,7 @@ export default function AdminAccountsPage() {
         .limit(50),
       supabase
         .from("advance_requests")
-        .select("id, delivery_id, amount, created_at, delivery_staff(name)")
+        .select("id, delivery_id, amount, created_at")
         .eq("status", "pending_close")
         .order("created_at", { ascending: false }),
       supabase
@@ -1879,7 +1887,7 @@ export default function AdminAccountsPage() {
         .limit(50),
       supabase
         .from("custody_records")
-        .select("id, delivery_id, amount, status, created_at, delivery_staff(name)")
+        .select("id, delivery_id, amount, status, created_at")
         .order("created_at", { ascending: false }),
       supabase
         .from("delivery_accounts")
@@ -1903,6 +1911,9 @@ export default function AdminAccountsPage() {
         phone:   d.phone,
         balance: roundEGP(d.wallet_balance),
       })));
+      /* Populate driver name map for JOIN-free lookups */
+      driverNameMap.clear();
+      driversData.forEach((d: any) => driverNameMap.set(d.id, d.name));
     }
     if (motosData) {
       setMotoWallets(motosData.map((m: any) => ({
@@ -1965,7 +1976,7 @@ export default function AdminAccountsPage() {
           return {
             id:                r.id,
             deliveryId:        r.delivery_id,
-            driverName:        (r.delivery_staff as any)?.name ?? "—",
+            driverName:        driverNameMap.get(r.delivery_id) ?? "—",
             amount:            r.amount,
             totalAdvance:      totalCustody,
             totalDeliveryFees,
@@ -1997,7 +2008,7 @@ export default function AdminAccountsPage() {
       const records: CustodyRecord[] = (custodyRecordsData as any[]).map((r) => ({
         id:         r.id,
         deliveryId: r.delivery_id,
-        driverName: (r.delivery_staff as any)?.name ?? "—",
+        driverName: driverNameMap.get(r.delivery_id) ?? "—",
         amount:     roundEGP(r.amount ?? 0),
         status:     r.status,
         createdAt:  r.created_at,
@@ -2024,7 +2035,7 @@ export default function AdminAccountsPage() {
           try {
             const { data } = await supabase
               .from("delivery_accounts")
-              .select("id, delivery_id, type, amount, reason, from_wallet, created_at, delivery_staff(name)")
+              .select("id, delivery_id, type, amount, reason, from_wallet, created_at")
               .eq("id", (payload.new as any).id)
               .single();
             if (!data) return;
@@ -2165,10 +2176,15 @@ export default function AdminAccountsPage() {
             balance:     roundEGP(lastDelBal + personDelta),
             ...(op === "صرف" && { settled: false }),
           });
-          await supabase
-            .from("delivery_staff")
-            .update({ wallet_balance: roundEGP(currentBalance + personDelta) })
-            .eq("id", manageTarget.id);
+          await fetch(`/api/admin/drivers/${manageTarget.id}/wallet`, {
+            method: "PATCH",
+            credentials: "include",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              operation: "increment",
+              amount: personDelta,
+            }),
+          });
         } else {
           const { data: lastMoto } = await supabase
             .from("motorcycle_accounts").select("balance")
@@ -2378,12 +2394,15 @@ export default function AdminAccountsPage() {
       });
 
       // Step 2: UPDATE delivery_staff wallet_balance += driverShare
-      const { data: staffRow } = await supabase
-        .from("delivery_staff").select("wallet_balance").eq("id", req.deliveryId).single();
-      await supabase
-        .from("delivery_staff")
-        .update({ wallet_balance: roundEGP(((staffRow as any)?.wallet_balance ?? 0) + driverShare) })
-        .eq("id", req.deliveryId);
+      await fetch(`/api/admin/drivers/${req.deliveryId}/wallet`, {
+        method: "PATCH",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          operation: "increment",
+          amount: driverShare,
+        }),
+      });
 
       // Step 3: إذا فيه موتسكل — INSERT motorcycle_accounts + UPDATE motorcycles
       if (motorcycleId) {
@@ -2498,15 +2517,15 @@ export default function AdminAccountsPage() {
       }
 
       /* 2. UPDATE driver wallet += share */
-      const { data: staff } = await supabase
-        .from("delivery_staff").select("wallet_balance")
-        .eq("id", settleTarget.deliveryId).single();
-      if (staff) {
-        await supabase
-          .from("delivery_staff")
-          .update({ wallet_balance: roundEGP(((staff as any).wallet_balance ?? 0) + share) })
-          .eq("id", settleTarget.deliveryId);
-      }
+      await fetch(`/api/admin/drivers/${settleTarget.deliveryId}/wallet`, {
+        method: "PATCH",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          operation: "increment",
+          amount: share,
+        }),
+      });
 
       /* 3. UPDATE motorcycle wallet += share */
       if (motoId) {
@@ -2552,7 +2571,7 @@ export default function AdminAccountsPage() {
     await supabase.from("custody_wallet").delete().neq("id", "00000000-0000-0000-0000-000000000000");
     await supabase.from("custody_records").delete().neq("id", "00000000-0000-0000-0000-000000000000");
     await supabase.from("advance_requests").delete().neq("id", "00000000-0000-0000-0000-000000000000");
-    await supabase.from("delivery_staff").update({ wallet_balance: 0 }).gt("wallet_balance", 0);
+    await fetch("/api/admin/dev/reset-wallets", { method: "POST", credentials: "include" });
     await supabase.from("motorcycles").update({ wallet_balance: 0 }).gt("wallet_balance", 0);
     await supabase.from("orders").update({
       settled: false,

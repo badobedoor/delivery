@@ -769,53 +769,78 @@ function DriversTab({
     setGeneralError("");
 
     if (!isEdit) {
-      const { error } = await supabasePublic
-        .from("delivery_staff")
-        .insert([{
-          name:      form.name.trim(),
-          phone:     form.phone.trim(),
-          password:  form.password,
-          is_active: form.active,
-        }]);
+      try {
+        const res = await fetch("/api/admin/drivers", {
+          method: "POST",
+          credentials: "include",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            name:      form.name.trim(),
+            phone:     form.phone.trim(),
+            password:  form.password,
+            is_active: form.active,
+          }),
+        });
 
-      if (error) {
-        console.log("[delivery/handleSave] Supabase insert error:", error.message);
-        setGeneralError(dbError(error));
+        if (res.ok) {
+          console.log("[delivery/handleSave] insert success → modal closed");
+          setSubmitting(false);
+          closeModal();
+          onRefresh();
+        } else {
+          const body = await res.json().catch(() => ({}));
+          console.log("[delivery/handleSave] API error:", body.error ?? res.statusText);
+          setGeneralError(body.error ?? "حدث خطأ، حاول مرة أخرى");
+          setSubmitting(false);
+        }
+      } catch (err) {
+        console.log("[delivery/handleSave] fetch error:", err);
+        setGeneralError("حدث خطأ، حاول مرة أخرى");
         setSubmitting(false);
-      } else {
-        console.log("[delivery/handleSave] insert success → modal closed");
-        setSubmitting(false);
-        closeModal();
-        onRefresh();
       }
     } else {
-      const update: Record<string, unknown> = {
-        name:      form.name.trim(),
-        phone:     form.phone.trim(),
-        is_active: form.active,
-      };
-      if (form.password.trim()) update.password = form.password;
+      try {
+        const res = await fetch(`/api/admin/drivers/${modal.id}`, {
+          method: "PATCH",
+          credentials: "include",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            name:      form.name.trim(),
+            phone:     form.phone.trim(),
+            is_active: form.active,
+            ...(form.password.trim() ? { password: form.password } : {}),
+          }),
+        });
 
-      const { error } = await supabasePublic
-        .from("delivery_staff")
-        .update(update)
-        .eq("id", modal.id!);
-
-      if (error) {
-        console.log("[delivery/handleSave] Supabase update error:", error.message);
-        setGeneralError(dbError(error));
+        if (res.ok) {
+          console.log("[delivery/handleSave] update success → modal closed");
+          setSubmitting(false);
+          closeModal();
+          onRefresh();
+        } else {
+          const body = await res.json().catch(() => ({}));
+          console.log("[delivery/handleSave] API error:", body.error ?? res.statusText);
+          setGeneralError(body.error ?? "حدث خطأ، حاول مرة أخرى");
+          setSubmitting(false);
+        }
+      } catch (err) {
+        console.log("[delivery/handleSave] fetch error:", err);
+        setGeneralError("حدث خطأ، حاول مرة أخرى");
         setSubmitting(false);
-      } else {
-        console.log("[delivery/handleSave] update success → modal closed");
-        setSubmitting(false);
-        closeModal();
-        onRefresh();
       }
     }
   }
 
   async function handleDelete(id: number) {
-    await supabasePublic.from("delivery_staff").delete().eq("id", id);
+    const res = await fetch(`/api/admin/drivers/${id}`, {
+      method: "DELETE",
+      credentials: "include",
+    });
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({}));
+      console.error("[handleDelete] failed:", body.error ?? res.statusText);
+      return;
+    }
     setDeleteId(null);
     onRefresh();
   }
@@ -961,16 +986,18 @@ export default function AdminTeamPage() {
   }
 
   async function fetchDrivers() {
-    const { data, error } = await supabasePublic
-      .from("delivery_staff")
-      .select("id, name, phone, password, is_active")
-      .order("name");
-
-    if (error) {
-      console.error("fetchDrivers:", error);
+    try {
+      const res = await fetch("/api/admin/drivers", { credentials: "include" });
+      if (res.ok) {
+        const data = await res.json();
+        setDrivers(data ?? []);
+      } else {
+        const body = await res.json().catch(() => ({}));
+        console.error("fetchDrivers:", body.error ?? res.statusText);
+      }
+    } catch (err) {
+      console.error("fetchDrivers:", err);
     }
-
-    setDrivers(data ?? []);
   }
 
   useEffect(() => {

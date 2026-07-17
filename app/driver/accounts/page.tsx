@@ -396,11 +396,16 @@ export default function DriverAccountsPage() {
         .in("status", ["accepted", "on_the_way", "delivered"])
         .eq("settled", false)
         .order("created_at", { ascending: true }),
-      supabase
-        .from("delivery_staff")
-        .select("wallet_balance")
-        .eq("id", did)
-        .single(),
+      fetch("/api/driver/me/wallet", { credentials: "include" })
+        .then(async (res) => {
+          if (!res.ok) { const body = await res.json().catch(() => ({})); throw new Error(body.error ?? res.statusText); }
+          const data = await res.json();
+          return { data };
+        })
+        .catch((err) => {
+          console.error("driver-wallet fetch:", err);
+          return { data: null };
+        }),
       supabase
         .from("delivery_accounts")
         .select("id, type, amount, reason, created_at")

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { supabase } from "@/lib/supabase";
 import { useAutoRefresh } from "@/hooks/useAutoRefresh";
 
@@ -46,11 +46,11 @@ const emptyAssignForm: AssignForm = { driver_id: "", motorcycle_id: "", shift_id
 /* ─────────────────────── Row mappers ───────────────── */
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-function fromAssignmentRow(r: any): Assignment {
+function fromAssignmentRow(r: any, driverNameMap: Map<number, string>): Assignment {
   return {
     id:              r.id,
     driver_id:       r.delivery_id,
-    driver_name:     r.delivery_staff?.name || "—",
+    driver_name:     driverNameMap.get(r.delivery_id) || "—",
     motorcycle_id:   r.motorcycle_id ?? "",
     motorcycle_name: (r.motorcycles   as { name: string } | null)?.name ?? "—",
     shift_id:        r.shift_id,
@@ -390,6 +390,13 @@ function DriversTab({ staffList, motos, shifts, currentRole }: {
   const [removeTarget, setRemoveTarget] = useState<Assignment | null>(null);
   const [removing,     setRemoving]     = useState(false);
 
+  /* Build driver name map from the already-loaded staffList */
+  const driverNameMap = useMemo(() => {
+    const map = new Map<number, string>();
+    staffList.forEach((s) => map.set(s.id, s.name));
+    return map;
+  }, [staffList]);
+
   useEffect(() => { fetchAssignments(); }, []);
   useAutoRefresh(fetchAssignments);
 
@@ -401,14 +408,13 @@ function DriversTab({ staffList, motos, shifts, currentRole }: {
         .from("delivery_shifts")
         .select(`
           id, delivery_id, motorcycle_id, shift_id, is_active,
-          delivery_staff ( name ),
           motorcycles ( name ),
           shifts ( num )
         `)
         .order("delivery_id");
       if (error) throw error;
 
-      setRows((data ?? []).map(fromAssignmentRow));
+      setRows((data ?? []).map((r) => fromAssignmentRow(r, driverNameMap)));
     } catch (err) {
       console.error("fetchAssignments:", err);
       setOpErr("تعذّر تحميل التعيينات");
@@ -919,14 +925,21 @@ export default function AdminDriversPage() {
   async function fetchShared() {
     try {
       const [staffRes, motosRes, shiftsRes] = await Promise.all([
-        supabase.from("delivery_staff").select("id, name").eq("is_active", true).order("name"),
+        fetch("/api/admin/drivers", { credentials: "include" })
+          .then(async (res) => {
+            if (!res.ok) { console.error("fetchStaff:", res.statusText); return { data: null }; }
+            return { data: await res.json() };
+          })
+          .catch((err) => { console.error("fetchStaff:", err); return { data: null }; }),
         supabase.from("motorcycles").select("id, name, is_active").order("name"),
         supabase.from("shifts").select("id, num").order("num"),
       ]);
-      if (staffRes.error)  console.error("fetchStaff:",  staffRes.error);
       if (motosRes.error)  console.error("fetchMotos:",  motosRes.error);
       if (shiftsRes.error) console.error("fetchShifts:", shiftsRes.error);
-      setStaffList((staffRes.data  ?? []).map((r) => ({ id: r.id, name: r.name ?? "" })));
+      /* API returns all drivers with is_active field — filter to active for the dropdown */
+      setStaffList(((staffRes.data ?? []) as any[])
+        .filter((d) => d.is_active)
+        .map((r) => ({ id: r.id, name: r.name ?? "" })));
       setMotos((motosRes.data  ?? []).map(fromMotoRow));
       setShifts((shiftsRes.data ?? []).map((r) => ({ id: r.id, num: r.num })));
     } catch (err) {

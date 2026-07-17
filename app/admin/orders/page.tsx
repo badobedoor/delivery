@@ -57,7 +57,7 @@ type DBOrder = {
   restaurants: { name: string } | null;
   addresses: { areas: { name: string } | null } | null;
   users: { name: string | null; phone: string | null } | null;
-  delivery_staff: { name: string | null } | null;
+  driver_name: string | null;
 };
 
 /* ── Edit mode types ── */
@@ -366,12 +366,26 @@ export default function AdminOrdersPage() {
   async function loadData() {
     const today = new Date().toISOString().slice(0, 10);
 
-    // 0. جلب الورديات النشطة لليوم
-    const { data: shiftsData } = await supabase
-      .from("shifts")
-      .select("id, num, start_time, end_time")
-      .eq("is_active", true)
-      .eq("started_date", today);
+    // 0. جلب الورديات النشطة لليوم وقائمة السائقين
+    const [{ data: shiftsData }, driversApiRes] = await Promise.all([
+      supabase
+        .from("shifts")
+        .select("id, num, start_time, end_time")
+        .eq("is_active", true)
+        .eq("started_date", today),
+      fetch("/api/admin/drivers", { credentials: "include" })
+        .then(async (res) => {
+          if (!res.ok) { console.error("fetchDrivers:", res.statusText); return { data: [] }; }
+          return { data: await res.json() };
+        })
+        .catch((err) => { console.error("fetchDrivers:", err); return { data: [] }; }),
+    ]);
+
+    /* Build driver name map */
+    const driverNameMap = new Map<string, string>();
+    ((driversApiRes as any)?.data ?? []).forEach((d: any) => {
+      driverNameMap.set(String(d.id), d.name ?? "");
+    });
 
     const activeShiftIds: number[] = (shiftsData ?? []).map((s: any) => s.id);
 
@@ -454,7 +468,6 @@ export default function AdminOrdersPage() {
         restaurants!restaurant_id (name),
         addresses!address_id (areas(name)),
         users (name, phone),
-        delivery_staff (name)
       `)
       .neq("status", "new")
       .order("created_at", { ascending: false });
@@ -476,7 +489,10 @@ export default function AdminOrdersPage() {
     console.log("All Orders:", allOrdersData);
 
     setNewOrdersList(finalOrders);
-    setAllOrdersList((allOrdersData as unknown as DBOrder[]) ?? []);
+    setAllOrdersList(((allOrdersData ?? []) as any[]).map((r: any) => ({
+      ...r,
+      driver_name: r.delivery_id ? (driverNameMap.get(String(r.delivery_id)) ?? null) : null,
+    })) as unknown as DBOrder[]);
   }
 
   useEffect(() => {
@@ -735,7 +751,7 @@ export default function AdminOrdersPage() {
       restaurants:       order.restaurants,
       addresses:         order.addresses as any,
       users:             order.users,
-      delivery_staff:    null,
+      driver_name:    null,
     }, ...prev]);
 
     setConfirmingId(null);
@@ -756,7 +772,7 @@ export default function AdminOrdersPage() {
         restaurants: order.restaurants,
         addresses: order.addresses as any,
         users: null,
-        delivery_staff: null,
+        driver_name: null,
       }, ...prev]);
     }
     const { error } = await supabase
@@ -1232,7 +1248,7 @@ export default function AdminOrdersPage() {
                         {order.addresses?.areas?.name ?? "—"}
                       </td>
                       <td className="hidden lg:table-cell px-3 py-2.5 text-xs whitespace-nowrap" style={{ color: C.muted }}>
-                        {order.delivery_staff?.name ?? "—"}
+                        {order.driver_name ?? "—"}
                       </td>
                       <td className="px-3 py-2.5 text-xs font-semibold whitespace-nowrap" style={{ color: C.text }}>
                         {order.total} ج.م

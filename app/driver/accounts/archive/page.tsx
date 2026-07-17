@@ -98,11 +98,16 @@ export default function DriverArchivePage() {
       { data: settlementData },
       { data: allTxs },
     ] = await Promise.all([
-      supabase
-        .from("delivery_staff")
-        .select("wallet_balance")
-        .eq("id", did)
-        .maybeSingle(),
+      fetch("/api/driver/me/wallet", { credentials: "include" })
+        .then(async (res) => {
+          if (!res.ok) { const body = await res.json().catch(() => ({})); throw new Error(body.error ?? res.statusText); }
+          const data = await res.json();
+          return { data };
+        })
+        .catch((err) => {
+          console.error("driver-wallet fetch:", err);
+          return { data: null };
+        }),
       supabase
         .from("delivery_accounts")
         .select("id, type, amount, reason, from_wallet, created_at")

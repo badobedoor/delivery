@@ -364,11 +364,14 @@ export default function AdminShell({ children }: { children: React.ReactNode }) 
   const SUPER_ADMIN_ONLY = ["/admin/advertisements"];
 
   /* ── Nav links: staff → restricted, admin → no super_admin_only, super_admin → all ── */
-  const navLinks = user.role === "staff"
-    ? allNavLinks.filter((l) => STAFF_ALLOWED.includes(l.href))
+const navLinks =
+  user.role === "super_admin"
+    ? allNavLinks
     : user.role === "admin"
     ? allNavLinks.filter((l) => !SUPER_ADMIN_ONLY.includes(l.href))
-    : allNavLinks;
+    : user.role === "staff"
+    ? allNavLinks.filter((l) => STAFF_ALLOWED.includes(l.href))
+    : [];
 
   const orderedNavLinks = savedOrder.length > 0
     ? [

@@ -126,11 +126,11 @@ function groupTopCustomers(rows: any[]): RankItem[] {
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-function groupTopDrivers(rows: any[]): RankItem[] {
+function groupTopDrivers(rows: any[], driverNameMap: Map<string, string>): RankItem[] {
   const map = new Map<string, { name: string; count: number }>();
   for (const r of rows) {
     if (!r.delivery_id) continue;
-    const name = (r.delivery_staff as { name: string | null } | null)?.name || "غير معروف";
+    const name = driverNameMap.get(r.delivery_id) || "غير معروف";
     const cur  = map.get(r.delivery_id);
     if (cur) cur.count++;
     else map.set(r.delivery_id, { name, count: 1 });
@@ -390,7 +390,7 @@ export default function AdminDashboardPage() {
         const [
           ordersRes, inProgressRes, revenueRes, newUsersRes,
           chartRes,  allTimeRes,
-          restsRes,  areasRes, custRes, drvRes,
+          restsRes,  areasRes, custRes, drvRes, driversApiRes,
         ] = await Promise.all([
           supabase.from("orders").select("*", { count: "exact", head: true })
             .gte("created_at", statsFrom).lte("created_at", statsTo),
@@ -427,12 +427,25 @@ export default function AdminDashboardPage() {
             .eq("status", "delivered")
             .gte("created_at", chartFrom).lte("created_at", chartTo),
 
-          supabase.from("orders").select("delivery_id, delivery_staff(name)")
+          supabase.from("orders").select("delivery_id")
             .eq("status", "delivered")
             .gte("created_at", chartFrom).lte("created_at", chartTo),
+
+          fetch("/api/admin/drivers", { credentials: "include" })
+            .then(async (res) => {
+              if (!res.ok) { console.error("fetchDrivers:", res.statusText); return { data: [] }; }
+              return { data: await res.json() };
+            })
+            .catch((err) => { console.error("fetchDrivers:", err); return { data: [] }; }),
         ]);
 
         if (cancelled) return;
+
+        /* Build driver name map from API response */
+        const driverNameMap = new Map<string, string>();
+        ((driversApiRes as any)?.data ?? []).forEach((d: any) => {
+          driverNameMap.set(String(d.id), d.name ?? "");
+        });
 
         setOrdersCount(ordersRes.count ?? 0);
         setInProgressCount(inProgressRes.count ?? 0);
@@ -447,7 +460,7 @@ export default function AdminDashboardPage() {
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         setTopCustomers(groupTopCustomers((custRes.data ?? []) as any[]));
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        setTopDrivers(groupTopDrivers((drvRes.data ?? []) as any[]));
+        setTopDrivers(groupTopDrivers((drvRes.data ?? []) as any[], driverNameMap));
       } catch (e) {
         console.error("Dashboard fetch error:", e);
       } finally {
