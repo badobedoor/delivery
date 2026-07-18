@@ -3,6 +3,7 @@
 import { useState, useEffect, useRef } from "react";
 import { supabasePublic } from "@/lib/supabasePublic";
 import { formatCairoDate } from "@/lib/dateTime";
+import { startOfCairoDate, endOfCairoDate } from "@/lib/cairoTime";
 
 const C = {
   bg:     "#0F172A",
@@ -43,8 +44,8 @@ export default function AdminUsersPage() {
 
   async function fetchOrderCounts(from: string, to: string): Promise<Record<string, number>> {
     let q = supabasePublic.from("orders").select("user_id");
-    if (from) q = q.gte("created_at", from);
-    if (to)   q = q.lte("created_at", `${to}T23:59:59`);
+    if (from) q = q.gte("created_at", startOfCairoDate(from));
+    if (to)   q = q.lte("created_at", endOfCairoDate(to));
     const { data } = await q;
     const map: Record<string, number> = {};
     for (const r of data ?? []) if (r.user_id) map[r.user_id] = (map[r.user_id] ?? 0) + 1;

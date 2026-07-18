@@ -5,6 +5,8 @@
  * call `getEffectiveMealPrice()`.  No inline price calculations are allowed.
  */
 
+import { parseTimestamp } from "@/lib/cairoTime";
+
 /* ── The minimal shape a meal object must provide ── */
 export type MealPricingData = {
   price: number;
@@ -21,6 +23,11 @@ export type MealPricingData = {
 /**
  * Returns `true` when the meal has a non‑null offer_price AND the current
  * Cairo time falls within the offer's start/end window.
+ *
+ * Both `offer_starts_at` and `offer_ends_at` from Supabase are timestamptz
+ * stored in UTC.  We parse them as UTC via `parseTimestamp()` and compare
+ * against `Date.now()` (also UTC epoch), so the comparison is correct
+ * regardless of the browser's local timezone.
  */
 export function isOfferActive(meal: MealPricingData): boolean {
   const offerPrice = meal.offer_price ?? meal.offerPrice;
@@ -29,11 +36,12 @@ export function isOfferActive(meal: MealPricingData): boolean {
 
   if (offerPrice == null || !startsAt || !endsAt) return false;
 
-  const now  = new Date();
-  const cairo = new Date(now.toLocaleString("en-US", { timeZone: "Africa/Cairo" }));
-  const start = new Date(startsAt);
-  const end   = new Date(endsAt);
-  return cairo >= start && cairo <= end;
+  const start = parseTimestamp(startsAt);
+  const end   = parseTimestamp(endsAt);
+  if (!start || !end) return false;
+
+  const nowMs = Date.now();
+  return nowMs >= start.getTime() && nowMs <= end.getTime();
 }
 
 /**

@@ -1,6 +1,6 @@
 import { createClient }  from "@supabase/supabase-js";
 import { NextResponse }   from "next/server";
-import { requireAdmin }   from "@/lib/server/requireAuth";
+import { requireAdmin, requireStaff }   from "@/lib/server/requireAuth";
 import { hashPassword }  from "@/lib/server/auth";
 
 function admin() {
@@ -11,7 +11,7 @@ function admin() {
 }
 
 export async function GET() {
-  const auth = await requireAdmin();
+  const auth = await requireStaff();
   if (!auth.ok) return auth.response;
 
   const { data, error } = await admin()

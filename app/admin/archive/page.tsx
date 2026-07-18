@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback } from "react";
 import { supabase } from "@/lib/supabase";
 import { useAutoRefresh } from "@/hooks/useAutoRefresh";
 import { formatCairoDate, formatCairoTime } from "@/lib/dateTime";
+import { startOfCairoDate, endOfCairoDate } from "@/lib/cairoTime";
 
 const C = {
   card:   "#1E293B",
@@ -132,8 +133,8 @@ export default function AdminArchivePage() {
     /* Date filter */
     if (dateFilter) {
       query = query
-        .gte("created_at", `${dateFilter}T00:00:00`)
-        .lte("created_at", `${dateFilter}T23:59:59`);
+        .gte("created_at", startOfCairoDate(dateFilter))
+        .lte("created_at", endOfCairoDate(dateFilter));
     }
 
     /* Pagination */

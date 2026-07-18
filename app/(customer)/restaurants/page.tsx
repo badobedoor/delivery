@@ -9,6 +9,7 @@ import { supabase } from "@/lib/supabase";
 import { isRestaurantOpen } from "@/lib/utils";
 import { searchMeals } from "@/lib/searchMeals";
 import { getEffectiveMealPrice } from "@/lib/pricing";
+import { todayCairoDate } from "@/lib/cairoTime";
 import { normalizeAdLink } from "@/lib/adLink";
 import CartBar from "@/components/customer/CartBar";
 import BottomNav from "@/components/customer/BottomNav";
@@ -94,7 +95,7 @@ export default function RestaurantsPage() {
         setCurrentAddress(addr ?? null);
       }
 
-      const now = new Date().toISOString();
+      const now = todayCairoDate();
       const [restaurantsRes, adsRes, featuredRes] = await Promise.all([
         supabase
           .from("restaurants")

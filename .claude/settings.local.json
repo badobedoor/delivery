@@ -35,7 +35,11 @@
       "Bash(dir /s /b \"lib\\\\cart*\" \"lib\\\\cart*.*\")",
       "Bash(Get-ChildItem -Path \"D:\\\\coding Project\\\\delivery-deepseek\\\\app\\\\api\" -Recurse -Filter \"route.ts\")",
       "Bash(Select-Object FullName)",
-      "Bash(grep -v '//.*delivery_staff')"
+      "Bash(grep -v '//.*delivery_staff')",
+      "Bash(dir /s /b \"D:\\\\coding Project\\\\delivery-deepseek\\\\app\\\\*order*\")",
+      "Bash(npx next *)",
+      "Bash(xargs grep -l -i \"shift\")",
+      "Bash(xargs grep -l \"today\\\\|daily\\\\|stat\\\\|count\\\\|revenue\\\\|dashboard\" -i)"
     ]
   }
 }

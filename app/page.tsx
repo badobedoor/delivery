@@ -7,6 +7,7 @@ import BottomNav from "@/components/customer/BottomNav";
 import ClosedScreen from "@/components/customer/ClosedScreen";
 import { supabase } from "@/lib/supabase";
 import { normalizeAdLink } from "@/lib/adLink";
+import { todayCairoDate } from "@/lib/cairoTime";
 import InstallCard from "@/components/customer/InstallCard";
 
 const categories = [
@@ -73,7 +74,7 @@ export default function HomePage() {
       }
 
       /* جيب الإعلانات */
-      const now = new Date().toISOString();
+      const now = todayCairoDate();
       const { data: adsData } = await supabase
         .from("advertisements")
         .select("id, image_url, link")

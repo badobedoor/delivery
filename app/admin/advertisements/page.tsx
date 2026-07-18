@@ -4,6 +4,7 @@ import { useState, useEffect, useRef, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import Cropper from "react-easy-crop";
 import type { Area } from "react-easy-crop";
+import { todayCairoDate, nowCairo } from "@/lib/cairoTime";
 import imageCompression from "browser-image-compression";
 import { supabase } from "@/lib/supabase";
 
@@ -57,8 +58,15 @@ const emptyForm: AdForm = {
   is_active:   true,
 };
 
-const todayStr    = ()          => new Date().toISOString().split("T")[0];
-const daysFromNow = (n: number)  => new Date(Date.now() + n * 864e5).toISOString().split("T")[0];
+const todayStr    = ()          => todayCairoDate();
+const daysFromNow = (n: number) => {
+  const c = nowCairo();
+  c.setDate(c.getDate() + n);
+  const y = c.getFullYear();
+  const m = String(c.getMonth() + 1).padStart(2, "0");
+  const d = String(c.getDate()).padStart(2, "0");
+  return `${y}-${m}-${d}`;
+};
 const fmtDate     = (d: string | null) => d ? d.split("T")[0] : "—";
 
 /* ─────────────────────── Image upload ──────────────── */

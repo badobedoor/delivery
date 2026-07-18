@@ -3,6 +3,7 @@
 import { useState, useEffect, useMemo } from "react";
 import { supabase } from "@/lib/supabase";
 import { useAutoRefresh } from "@/hooks/useAutoRefresh";
+import { todayCairoDate } from "@/lib/cairoTime";
 
 const C = {
   bg:     "#0F172A",
@@ -238,7 +239,7 @@ function ShiftsSection({ assignments }: { assignments: Assignment[] }) {
     setOpErr(null);
     setShifts((p) => p.map((x) => x.id === s.id ? { ...x, is_active: next } : x));
     try {
-      const today = new Date().toISOString().slice(0, 10);
+      const today = todayCairoDate();
       const { error } = await supabase.from("shifts").update({
         is_active:    next,
         started_date: next ? today : null,
@@ -378,7 +379,7 @@ function ShiftsSection({ assignments }: { assignments: Assignment[] }) {
 function DriversTab({ staffList, motos, shifts, currentRole }: {
   staffList: StaffMember[]; motos: Moto[]; shifts: Shift[]; currentRole: string;
 }) {
-  const [rows,     setRows]     = useState<Assignment[]>([]);
+  const [rawAssignments, setRawAssignments] = useState<any[]>([]);
   const [loading,  setLoading]  = useState(true);
   const [opErr,    setOpErr]    = useState<string | null>(null);
   const [saveErr,  setSaveErr]  = useState<string | null>(null);
@@ -397,6 +398,12 @@ function DriversTab({ staffList, motos, shifts, currentRole }: {
     return map;
   }, [staffList]);
 
+  /* Derive display rows from raw data + driver name map */
+  const rows = useMemo(
+    () => rawAssignments.map((r) => fromAssignmentRow(r, driverNameMap)),
+    [rawAssignments, driverNameMap],
+  );
+
   useEffect(() => { fetchAssignments(); }, []);
   useAutoRefresh(fetchAssignments);
 
@@ -414,7 +421,7 @@ function DriversTab({ staffList, motos, shifts, currentRole }: {
         .order("delivery_id");
       if (error) throw error;
 
-      setRows((data ?? []).map((r) => fromAssignmentRow(r, driverNameMap)));
+      setRawAssignments(data ?? []);
     } catch (err) {
       console.error("fetchAssignments:", err);
       setOpErr("تعذّر تحميل التعيينات");
@@ -482,10 +489,10 @@ function DriversTab({ staffList, motos, shifts, currentRole }: {
   }
 
   async function toggleActive(a: Assignment) {
-    const snapshot = rows;
+    const snapshot = rawAssignments;
     const next = !a.is_active;
     setOpErr(null);
-    setRows((p) => p.map((r) => r.id === a.id ? { ...r, is_active: next } : r));
+    setRawAssignments((p) => p.map((r) => r.id === a.id ? { ...r, is_active: next } : r));
     try {
       const { error } = await supabase
         .from("delivery_shifts")
@@ -494,7 +501,7 @@ function DriversTab({ staffList, motos, shifts, currentRole }: {
       if (error) throw error;
     } catch (err) {
       console.error("toggleAssign:", err);
-      setRows(snapshot);
+      setRawAssignments(snapshot);
       setOpErr("فشل تغيير الحالة، حاول مرة أخرى");
     }
   }

@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase";
 import { useAutoRefresh } from "@/hooks/useAutoRefresh";
 import { formatCairoDate, formatCairoTime } from "@/lib/dateTime";
+import { todayCairoDate, startOfTodayCairo, endOfTodayCairo } from "@/lib/cairoTime";
 import OrderItemAddPanel from "@/components/admin/OrderItemAddPanel";
 
 const C = {
@@ -364,7 +365,8 @@ export default function AdminOrdersPage() {
   }
 
   async function loadData() {
-    const today = new Date().toISOString().slice(0, 10);
+    const cairoDayStart = startOfTodayCairo();             // Cairo-midnight → UTC ISO — for created_at range
+    const cairoDayEnd   = endOfTodayCairo();               // Cairo-end-of-day → UTC ISO — for created_at range
 
     // 0. جلب الورديات النشطة لليوم وقائمة السائقين
     const [{ data: shiftsData }, driversApiRes] = await Promise.all([
@@ -372,7 +374,7 @@ export default function AdminOrdersPage() {
         .from("shifts")
         .select("id, num, start_time, end_time")
         .eq("is_active", true)
-        .eq("started_date", today),
+        .eq("started_date", todayCairoDate()),
       fetch("/api/admin/drivers", { credentials: "include" })
         .then(async (res) => {
           if (!res.ok) { console.error("fetchDrivers:", res.statusText); return { data: [] }; }
@@ -474,13 +476,13 @@ export default function AdminOrdersPage() {
 
     if (activeShiftIds.length > 0) {
       allOrdersQuery = allOrdersQuery
-        .gte("created_at", `${today}T00:00:00`)
+        .gte("created_at", cairoDayStart)
         .or(`shift_id.in.(${activeShiftIds.join(",")}),shift_id.is.null`);
     } else {
       /* لو مفيش ورديات نشطة — اعرض كل طلبات اليوم */
       allOrdersQuery = allOrdersQuery
-        .gte("created_at", `${today}T00:00:00`)
-        .lte("created_at", `${today}T23:59:59`);
+        .gte("created_at", cairoDayStart)
+        .lte("created_at", cairoDayEnd);
     }
 
     const { data: allOrdersData, error: e2 } = await allOrdersQuery;
@@ -878,6 +880,7 @@ export default function AdminOrdersPage() {
   });
 
   const arabicDate = new Date().toLocaleDateString("ar-EG", {
+    timeZone: "Africa/Cairo",
     weekday: "long", day: "numeric", month: "long", year: "numeric",
   });
 

@@ -3,6 +3,12 @@
 import { useState, useId, useRef, useEffect } from "react";
 import { supabase } from "@/lib/supabase";
 import { formatCairoDate } from "@/lib/dateTime";
+import {
+  startOfTodayCairo,
+  endOfTodayCairo,
+  startOfCairoDate,
+  endOfCairoDate,
+} from "@/lib/cairoTime";
 
 /* ── Colors (unchanged) ── */
 const C = {
@@ -25,10 +31,16 @@ interface RankItem  { name: string; orders: number; sub?: string; }
 interface ChartPoint { label: string; value: number; }
 
 /* ── Date helpers ── */
-function localDateStr(offset = 0) {
-  const d = new Date();
-  d.setDate(d.getDate() + offset);
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+
+/**
+ * Returns the UTC ISO string for Cairo midnight N days ago.
+ * Timezone-independent: uses nowCairo() for Cairo wall-clock components,
+ * then integer arithmetic to avoid local timezone interpretation.
+ */
+function daysAgoCairoStart(n: number): string {
+  // startOfTodayCairo() returns the UTC ISO for Cairo midnight today.
+  // Subtracting n * 86_400_000 ms gives Cairo midnight N days ago.
+  return new Date(Date.parse(startOfTodayCairo()) - n * 86_400_000).toISOString();
 }
 
 /* ── Grouping helpers ── */
@@ -130,7 +142,7 @@ function groupTopDrivers(rows: any[], driverNameMap: Map<string, string>): RankI
   const map = new Map<string, { name: string; count: number }>();
   for (const r of rows) {
     if (!r.delivery_id) continue;
-    const name = driverNameMap.get(r.delivery_id) || "غير معروف";
+    const name = driverNameMap.get(String(r.delivery_id)) || "غير معروف";
     const cur  = map.get(r.delivery_id);
     if (cur) cur.count++;
     else map.set(r.delivery_id, { name, count: 1 });
@@ -374,18 +386,18 @@ export default function AdminDashboardPage() {
     async function load() {
       setLoading(true);
       try {
-        const today    = localDateStr();
-        const sevenAgo = localDateStr(-6);
-        const now      = new Date().toISOString();
-
-        const statsFrom = appliedFrom ? `${appliedFrom}T00:00:00` : `${today}T00:00:00`;
-        const statsTo   = appliedTo   ? `${appliedTo}T23:59:59`   : `${today}T23:59:59`;
-
-        const chartFrom    = appliedFrom ? `${appliedFrom}T00:00:00` : `${sevenAgo}T00:00:00`;
-        const chartTo      = appliedTo   ? `${appliedTo}T23:59:59`   : now;
-
-        const allTimeFrom  = appliedFrom ? `${appliedFrom}T00:00:00` : "2024-01-01T00:00:00";
-        const allTimeTo    = appliedTo   ? `${appliedTo}T23:59:59`   : now;
+        // Cairo‑aware date bounds for Supabase queries.
+        // When a user‑date filter is set, convert the YYYY‑MM‑DD string to
+        // Cairo‑midnight / Cairo‑end‑of‑day in UTC ISO (works correctly in
+        // Egyptian browsers where all admins are).  When no filter, use the
+        // shared Cairo helpers that are timezone‑independent.
+        const now        = new Date().toISOString();   // UTC high‑water mark
+        const statsFrom  = appliedFrom ? startOfCairoDate(appliedFrom) : startOfTodayCairo();
+        const statsTo    = appliedTo   ? endOfCairoDate(appliedTo)     : endOfTodayCairo();
+        const chartFrom  = appliedFrom ? startOfCairoDate(appliedFrom) : daysAgoCairoStart(6);
+        const chartTo    = appliedTo   ? endOfCairoDate(appliedTo)     : now;
+        const allTimeFrom = appliedFrom ? startOfCairoDate(appliedFrom) : "2024-01-01T00:00:00";
+        const allTimeTo   = appliedTo   ? endOfCairoDate(appliedTo)     : now;
 
         const [
           ordersRes, inProgressRes, revenueRes, newUsersRes,

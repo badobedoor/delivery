@@ -3,6 +3,7 @@
 import { useState, useEffect } from "react";
 import { supabase } from "@/lib/supabase";
 import { useAutoRefresh } from "@/hooks/useAutoRefresh";
+import { todayCairoDate } from "@/lib/cairoTime";
 
 const C = {
   bg:     "#0F172A",
@@ -178,7 +179,10 @@ export default function AdminShiftsPage() {
   async function doToggle(s: Shift, next: boolean) {
     setDelId(s.id);
     setRows((p) => p.map((r) => r.id === s.id ? { ...r, isActive: next } : r));
-    const { error } = await supabase.from("shifts").update({ is_active: next }).eq("id", s.id);
+    const { error } = await supabase.from("shifts").update({
+      is_active:    next,
+      started_date: next ? todayCairoDate() : null,
+    }).eq("id", s.id);
     if (error) {
       setRows((p) => p.map((r) => r.id === s.id ? { ...r, isActive: s.isActive } : r));
     } else if (!next) {
