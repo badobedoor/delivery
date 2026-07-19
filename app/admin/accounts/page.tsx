@@ -71,6 +71,7 @@ type SettlementRequest = {
 type CloseRequest = {
   id:                number;
   deliveryId:        string;
+  deliveryShiftId:   string;
   driverName:        string;
   amount:            number;
   totalAdvance:      number;
@@ -1877,7 +1878,7 @@ export default function AdminAccountsPage() {
         .limit(50),
       supabase
         .from("advance_requests")
-        .select("id, delivery_id, amount, created_at")
+        .select("id, delivery_id, delivery_shift_id, amount, created_at")
         .eq("status", "pending_close")
         .order("created_at", { ascending: false }),
       supabase
@@ -1976,6 +1977,7 @@ export default function AdminAccountsPage() {
           return {
             id:                r.id,
             deliveryId:        r.delivery_id,
+            deliveryShiftId:   r.delivery_shift_id,
             driverName:        driverNameMap.get(r.delivery_id) ?? "—",
             amount:            r.amount,
             totalAdvance:      totalCustody,
@@ -2361,7 +2363,7 @@ export default function AdminAccountsPage() {
           .eq("delivery_id", req.deliveryId).eq("status", "active"),
         supabase.from("settings").select("driver_percentage, moto_percentage, office_percentage").single(),
         supabase.from("delivery_shifts").select("motorcycle_id")
-          .eq("delivery_id", req.deliveryId).eq("is_active", true).maybeSingle(),
+          .eq("id", req.deliveryShiftId).maybeSingle(),
         supabase.from("main_wallet").select("balance")
           .order("created_at", { ascending: false }).limit(1).maybeSingle(),
         supabase.from("delivery_accounts").select("balance")
@@ -2457,7 +2459,7 @@ export default function AdminAccountsPage() {
       // Step 9: أغلق طلبات السلفة المعلقة وطلب التقفيل
       await supabase.from("advance_requests")
         .update({ status: "approved" })
-        .eq("delivery_id", req.deliveryId).eq("status", "pending");
+        .eq("delivery_shift_id", req.deliveryShiftId).eq("status", "pending");
       await supabase.from("advance_requests")
         .update({ status: "approved" }).eq("id", req.id);
 

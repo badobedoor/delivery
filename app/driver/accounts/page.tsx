@@ -454,23 +454,25 @@ export default function DriverAccountsPage() {
     setTotalCustody(custodyTotal);
 
 
-    const { data: approvedReq } = await supabase
-      .from("advance_requests")
-      .select("id")
-      .eq("delivery_id", did)
-      .eq("status", "approved")
-      .order("created_at", { ascending: false })
-      .limit(1)
-      .maybeSingle();
-
-    const { data: activeShift } = await supabase
+    /* ── Check if current delivery_shift has approved settlement ── */
+    const { data: currentDS } = await supabase
       .from("delivery_shifts")
       .select("id")
       .eq("delivery_id", did)
-      .eq("is_active", true)
+      .order("id", { ascending: false })
+      .limit(1)
       .maybeSingle();
 
-    if (approvedReq && !activeShift) setShiftClosed(true);
+    if (currentDS) {
+      const { data: approvedReq } = await supabase
+        .from("advance_requests")
+        .select("id")
+        .eq("delivery_shift_id", currentDS.id)
+        .eq("status", "approved")
+        .maybeSingle();
+
+      if (approvedReq) setShiftClosed(true);
+    }
   }, []);
 
   /* ── Load archive (lazy) ── */
@@ -517,23 +519,26 @@ export default function DriverAccountsPage() {
       setDriverInitial((authUser?.name ?? "م")[0] ?? "م");
       setDriverName(authUser?.name ?? "");
 
-      /* Get active shift */
+      /* Get the driver's current delivery_shift PK */
       const { data: shiftData } = await supabase
         .from("delivery_shifts")
-        .select("shift_id")
-        .eq("delivery_id", did)
-        .eq("is_active", true)
-        .maybeSingle();
-      if (shiftData) setShiftId(shiftData.shift_id);
-
-      /* Check if already submitted close request */
-      const { data: existingClose } = await supabase
-        .from("advance_requests")
         .select("id")
         .eq("delivery_id", did)
-        .eq("status", "pending_close")
+        .order("id", { ascending: false })
+        .limit(1)
         .maybeSingle();
-      if (existingClose) setSettlementSent(true);
+      if (shiftData) {
+        setShiftId(shiftData.id);
+
+        /* Check if a close request already exists for this delivery_shift */
+        const { data: existingClose } = await supabase
+          .from("advance_requests")
+          .select("id")
+          .eq("delivery_shift_id", shiftData.id)
+          .eq("status", "pending_close")
+          .maybeSingle();
+        if (existingClose) setSettlementSent(true);
+      }
 
       await loadData(did);
       setLoading(false);
@@ -601,7 +606,7 @@ export default function DriverAccountsPage() {
     const { data: existing } = await supabase
       .from("advance_requests")
       .select("id")
-      .eq("delivery_id", driverId)
+      .eq("delivery_shift_id", shiftId)
       .eq("status", "pending_close")
       .maybeSingle();
 
@@ -610,10 +615,11 @@ export default function DriverAccountsPage() {
     setSettlementSubmitting(true);
     try {
       await supabase.from("advance_requests").insert({
-        delivery_id: driverId,
-        amount:      settlementAmount,
-        note:        "طلب تقفيل وردية",
-        status:      "pending_close",
+        delivery_id:       driverId,
+        delivery_shift_id: shiftId,
+        amount:            settlementAmount,
+        note:              "طلب تقفيل وردية",
+        status:            "pending_close",
       });
       setSettlementSent(true);
       setShowSettlementConfirm(false);
