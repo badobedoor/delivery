@@ -44,13 +44,13 @@ function daysAgoCairoStart(n: number): string {
 }
 
 /* ── Grouping helpers ── */
-type RevenueRow = { created_at: string; total: number };
+type RevenueRow = { created_at: string; delivery_fee: number };
 
 function groupByDay(rows: RevenueRow[]): ChartPoint[] {
   const map = new Map<string, number>();
   for (const r of rows) {
     const day = r.created_at.slice(0, 10);
-    map.set(day, (map.get(day) || 0) + (r.total || 0));
+    map.set(day, (map.get(day) || 0) + (r.delivery_fee || 0));
   }
   return [...map.entries()]
     .sort(([a], [b]) => a.localeCompare(b))
@@ -72,7 +72,7 @@ function groupForAllTime(rows: RevenueRow[]): ChartPoint[] {
       const mon  = new Date(d);
       mon.setDate(d.getDate() - diff);
       const key = mon.toISOString().slice(0, 10);
-      map.set(key, (map.get(key) || 0) + (r.total || 0));
+      map.set(key, (map.get(key) || 0) + (r.delivery_fee || 0));
     }
     return [...map.entries()]
       .sort(([a], [b]) => a.localeCompare(b))
@@ -84,7 +84,7 @@ function groupForAllTime(rows: RevenueRow[]): ChartPoint[] {
   const map = new Map<string, number>();
   for (const r of rows) {
     const key = r.created_at.slice(0, 7);
-    map.set(key, (map.get(key) || 0) + (r.total || 0));
+    map.set(key, (map.get(key) || 0) + (r.delivery_fee || 0));
   }
   return [...map.entries()]
     .sort(([a], [b]) => a.localeCompare(b))
@@ -411,19 +411,19 @@ export default function AdminDashboardPage() {
             .in("status", ["confirmed", "in_progress", "picked_up"])
             .gte("created_at", statsFrom).lte("created_at", statsTo),
 
-          supabase.from("orders").select("total")
+          supabase.from("orders").select("delivery_fee")
             .eq("status", "delivered")
             .gte("created_at", statsFrom).lte("created_at", statsTo),
 
           supabase.from("users").select("*", { count: "exact", head: true })
             .gte("created_at", statsFrom).lte("created_at", statsTo),
 
-          supabase.from("orders").select("created_at, total")
+          supabase.from("orders").select("created_at, delivery_fee")
             .eq("status", "delivered")
             .gte("created_at", chartFrom).lte("created_at", chartTo)
             .order("created_at", { ascending: true }),
 
-          supabase.from("orders").select("created_at, total")
+          supabase.from("orders").select("created_at, delivery_fee")
             .eq("status", "delivered")
             .gte("created_at", allTimeFrom).lte("created_at", allTimeTo)
             .order("created_at", { ascending: true }),
@@ -461,7 +461,7 @@ export default function AdminDashboardPage() {
 
         setOrdersCount(ordersRes.count ?? 0);
         setInProgressCount(inProgressRes.count ?? 0);
-        setRevenue((revenueRes.data ?? []).reduce((s, r) => s + (r.total || 0), 0));
+        setRevenue((revenueRes.data ?? []).reduce((s, r) => s + (r.delivery_fee || 0), 0));
         setNewUsersCount(newUsersRes.count ?? 0);
         setWeeklyChart(groupByDay((chartRes.data ?? []) as RevenueRow[]));
         setAllTimeChart(groupForAllTime((allTimeRes.data ?? []) as RevenueRow[]));

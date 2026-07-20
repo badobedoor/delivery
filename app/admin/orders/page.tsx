@@ -132,6 +132,8 @@ export default function AdminOrdersPage() {
   const [noShiftModal,     setNoShiftModal]     = useState<{ message: string } | null>(null);
   const [shiftTimeModal,   setShiftTimeModal]   = useState<{ message: string } | null>(null);
   const [activeShiftLabel, setActiveShiftLabel] = useState<string | null>(null);
+  const [currentPage, setCurrentPage] = useState(0);
+  const PAGE_SIZE = 20;
   const router = useRouter();
   const [selectedOrderModal, setSelectedOrderModal] = useState<{
     id: string;
@@ -462,30 +464,21 @@ export default function AdminOrdersPage() {
       order_items: itemsMap[o.id] ?? [],
     }));
 
-    // 4. الجدول — فلتر بـ shift_id في الورديات النشطة لليوم
-    let allOrdersQuery = supabase
+    // 4. الجدول — جميع الطلبات (آخر 60 أوردر بغض النظر عن الوردية)
+    const { data: allOrdersData, error: e2 } = await supabase
       .from("orders")
       .select(`
         id, total, status, order_type, created_at, user_order_number, user_id, delivery_id,
         restaurants!restaurant_id (name),
         addresses!address_id (areas(name)),
-        users (name, phone),
+        users (name, phone)
       `)
       .neq("status", "new")
-      .order("created_at", { ascending: false });
+      .order("created_at", { ascending: false })
+      .limit(60);
 
-    if (activeShiftIds.length > 0) {
-      allOrdersQuery = allOrdersQuery
-        .gte("created_at", cairoDayStart)
-        .or(`shift_id.in.(${activeShiftIds.join(",")}),shift_id.is.null`);
-    } else {
-      /* لو مفيش ورديات نشطة — اعرض كل طلبات اليوم */
-      allOrdersQuery = allOrdersQuery
-        .gte("created_at", cairoDayStart)
-        .lte("created_at", cairoDayEnd);
-    }
-
-    const { data: allOrdersData, error: e2 } = await allOrdersQuery;
+    console.log("[DEBUG] allOrdersData count:", allOrdersData?.length);
+    console.log("[DEBUG] allOrdersData sample:", allOrdersData?.slice(0, 3));
 
     console.log("All Orders Error:", e2);
     console.log("All Orders:", allOrdersData);
@@ -602,6 +595,11 @@ export default function AdminOrdersPage() {
       navigator.serviceWorker.register("/sw.js").catch(() => {});
     }
   }, []);
+
+  /* ── Reset page when filters change ── */
+  useEffect(() => {
+    setCurrentPage(0);
+  }, [activeTab, search]);
 
   /* ── إعادة تشغيل الصوت بعد تفاعل المستخدم ── */
   useEffect(() => {
@@ -864,6 +862,10 @@ export default function AdminOrdersPage() {
   const countByStatus = (s: string) => {
     if (s === "الكل") return allOrdersList.length;
     const enStatus = Object.entries(STATUS_AR).find(([, ar]) => ar === s)?.[0];
+    if (enStatus === "pending") {
+      /* قيد التنفيذ = accepted + pending */
+      return allOrdersList.filter((o) => o.status === "pending" || o.status === "accepted").length;
+    }
     return allOrdersList.filter((o) => o.status === enStatus).length;
   };
 
@@ -878,6 +880,9 @@ export default function AdminOrdersPage() {
       (o.restaurants?.name ?? "").toLowerCase().includes(q);
     return matchTab && matchSearch;
   });
+
+  const totalPages = Math.min(Math.ceil(filtered.length / PAGE_SIZE), 3);
+  const paginatedOrders = filtered.slice(currentPage * PAGE_SIZE, (currentPage + 1) * PAGE_SIZE);
 
   const arabicDate = new Date().toLocaleDateString("ar-EG", {
     timeZone: "Africa/Cairo",
@@ -1213,14 +1218,14 @@ export default function AdminOrdersPage() {
               </tr>
             </thead>
             <tbody>
-              {filtered.length === 0 ? (
+              {paginatedOrders.length === 0 ? (
                 <tr>
                   <td colSpan={9} className="px-4 py-12 text-center text-sm" style={{ color: C.muted }}>
                     لا توجد طلبات مطابقة
                   </td>
                 </tr>
               ) : (
-                filtered.map((order, i) => {
+                paginatedOrders.map((order, i) => {
                   const sc = statusColor(order.status);
                   return (
                     <tr key={order.id}
@@ -1276,9 +1281,24 @@ export default function AdminOrdersPage() {
           </table>
         </div>
 
-        {/* ── Footer ── */}
-        <div className="px-4 py-3 border-t text-xs" style={{ borderColor: C.border, color: C.muted }}>
-          عرض {filtered.length} من {allOrdersList.length} طلب
+        {/* ── Footer with pagination ── */}
+        <div className="px-4 py-3 border-t text-xs flex items-center justify-between" style={{ borderColor: C.border, color: C.muted }}>
+          <span>إجمالي {allOrdersList.length} طلب</span>
+          <div className="flex items-center gap-1">
+            {Array.from({ length: totalPages }, (_, i) => (
+              <button
+                key={i}
+                onClick={() => setCurrentPage(i)}
+                className="px-2.5 py-1 rounded-md text-xs font-bold transition-colors"
+                style={{
+                  background: currentPage === i ? C.teal : "transparent",
+                  color:      currentPage === i ? "#fff" : C.muted,
+                }}
+              >
+                {i + 1}
+              </button>
+            ))}
+          </div>
         </div>
       </div>
 
