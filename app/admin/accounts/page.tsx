@@ -2465,8 +2465,8 @@ export default function AdminAccountsPage() {
 
       // Step 10: أغلق الوردية
       await supabase.from("delivery_shifts")
-        .update({ is_active: false })
-        .eq("delivery_id", req.deliveryId).eq("is_active", true);
+        .update({ status: "closed" })
+        .eq("delivery_id", req.deliveryId).eq("status", "pending_close");
 
       await loadData();
     } catch (err) {

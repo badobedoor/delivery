@@ -738,13 +738,13 @@ export default function DriverOrdersPage() {
       setDriverId(did);
       setDriverName(authUser?.name ?? "");
 
-      /* Get the driver's most recent delivery_shift — is_active=true means driver is working */
+      /* Get the driver's most recent delivery_shift — status="open" means financial shift is active */
       const { data: dsRows, error: dsError } = await supabase
         .from("delivery_shifts")
-        .select("id, shift_id, is_active")
+        .select("id, shift_id, status")
         .eq("delivery_id", did)
-        .eq("is_active", true)
-        .order("id", { ascending: false })
+        .eq("status", "open")
+        .order("started_at", { ascending: false })
         .limit(1);
 
       console.log("[driver/orders] did:", did, "delivery_shifts rows:", dsRows, "error:", dsError);
@@ -762,7 +762,7 @@ export default function DriverOrdersPage() {
       const sid = ds.shift_id as string;
       setShiftId(sid);
 
-      if (!ds.is_active) {
+      if (ds.status !== "open") {
         /* Driver assigned but hasn't started yet — show "بدء العمل" */
         setCanStartShift(true);
         setAssignmentId(ds.id);
@@ -783,7 +783,7 @@ export default function DriverOrdersPage() {
     try {
       const { error } = await supabase
         .from("delivery_shifts")
-        .update({ is_active: true })
+        .update({ is_active: true, status: "open" })
         .eq("delivery_id", driverId)
         .eq("shift_id", shiftId);
       if (error) throw error;

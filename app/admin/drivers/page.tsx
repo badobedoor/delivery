@@ -468,12 +468,28 @@ function DriversTab({ staffList, motos, shifts, currentRole }: {
     setSaving(true);
     setSaveErr(null);
     try {
+      /* Prevent creating a second active shift for a driver who already has one */
+      if (form.is_active) {
+        const { data: existingActive } = await supabase
+          .from("delivery_shifts")
+          .select("id")
+          .eq("delivery_id", form.driver_id)
+          .eq("is_active", true)
+          .limit(1);
+        if (existingActive && existingActive.length > 0) {
+          setSaveErr("هذا السائق لديه وردية نشطة بالفعل. أوقفها أولاً قبل تفعيل وردية جديدة.");
+          setSaving(false);
+          return;
+        }
+      }
+
       const { error } = await supabase.from("delivery_shifts").insert(
         form.shift_ids.map((sid) => ({
           delivery_id:   form.driver_id,
           motorcycle_id: form.motorcycle_id,
           shift_id:      sid,
           is_active:     form.is_active,
+          status:        "open",
         }))
       );
       if (error) throw error;

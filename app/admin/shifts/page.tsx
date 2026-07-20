@@ -145,6 +145,18 @@ export default function AdminShiftsPage() {
     if (next) {
       const conflict = rows.find((r) => r.id !== s.id && r.isActive && shiftsOverlap(s.startTime, s.endTime, r.startTime, r.endTime));
       if (conflict) { setToggleErr("لا يمكن تشغيل وردية متداخلة مع وردية نشطة"); return; }
+
+      /* Safety guard: only one shift may be active at any time */
+      const { count: otherActive } = await supabase
+        .from("shifts")
+        .select("*", { count: "exact", head: true })
+        .eq("is_active", true)
+        .neq("id", s.id);
+      if (otherActive && otherActive > 0) {
+        setToggleErr("يوجد بالفعل وردية نشطة. يجب إغلاقها أولاً قبل فتح وردية جديدة.");
+        return;
+      }
+
       await doToggle(s, true);
       return;
     }
@@ -186,7 +198,7 @@ export default function AdminShiftsPage() {
     if (error) {
       setRows((p) => p.map((r) => r.id === s.id ? { ...r, isActive: s.isActive } : r));
     } else if (!next) {
-      await supabase.from("delivery_shifts").update({ is_active: false }).eq("shift_id", s.id);
+      await supabase.from("delivery_shifts").update({ status: "pending_close" }).eq("shift_id", s.id).eq("status", "open");
     } else {
       await supabase.from("delivery_shifts").update({ shift_id: s.id }).eq("is_active", true);
     }

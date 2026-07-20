@@ -454,25 +454,16 @@ export default function DriverAccountsPage() {
     setTotalCustody(custodyTotal);
 
 
-    /* ── Check if current delivery_shift has approved settlement ── */
+    /* ── Check if current delivery_shift is closed ── */
     const { data: currentDS } = await supabase
       .from("delivery_shifts")
-      .select("id")
+      .select("status")
       .eq("delivery_id", did)
-      .order("id", { ascending: false })
+      .order("started_at", { ascending: false })
       .limit(1)
       .maybeSingle();
 
-    if (currentDS) {
-      const { data: approvedReq } = await supabase
-        .from("advance_requests")
-        .select("id")
-        .eq("delivery_shift_id", currentDS.id)
-        .eq("status", "approved")
-        .maybeSingle();
-
-      if (approvedReq) setShiftClosed(true);
-    }
+    if (currentDS?.status === "closed") setShiftClosed(true);
   }, []);
 
   /* ── Load archive (lazy) ── */
@@ -519,16 +510,17 @@ export default function DriverAccountsPage() {
       setDriverInitial((authUser?.name ?? "م")[0] ?? "م");
       setDriverName(authUser?.name ?? "");
 
-      /* Get the driver's current delivery_shift PK */
+      /* Get the driver's current delivery_shift PK and status */
       const { data: shiftData } = await supabase
         .from("delivery_shifts")
-        .select("id")
+        .select("id, status")
         .eq("delivery_id", did)
-        .order("id", { ascending: false })
+        .order("started_at", { ascending: false })
         .limit(1)
         .maybeSingle();
       if (shiftData) {
         setShiftId(shiftData.id);
+        if (shiftData.status === "closed") setShiftClosed(true);
 
         /* Check if a close request already exists for this delivery_shift */
         const { data: existingClose } = await supabase
