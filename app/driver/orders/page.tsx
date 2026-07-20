@@ -743,7 +743,7 @@ export default function DriverOrdersPage() {
         .from("delivery_shifts")
         .select("id, shift_id, status")
         .eq("delivery_id", did)
-        .eq("status", "open")
+        .in("status", ["open", "pending_close"])
         .order("started_at", { ascending: false })
         .limit(1);
 
@@ -762,7 +762,11 @@ export default function DriverOrdersPage() {
       const sid = ds.shift_id as string;
       setShiftId(sid);
 
-      if (ds.status !== "open") {
+      if (ds.status === "pending_close") {
+        /* Shift ended — no new orders, keep shiftId for accounts page */
+        setShiftStopped(true);
+        await loadData(did, null);
+      } else if (ds.status !== "open") {
         /* Driver assigned but hasn't started yet — show "بدء العمل" */
         setCanStartShift(true);
         setAssignmentId(ds.id);

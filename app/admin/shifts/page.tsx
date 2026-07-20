@@ -147,12 +147,13 @@ export default function AdminShiftsPage() {
       if (conflict) { setToggleErr("لا يمكن تشغيل وردية متداخلة مع وردية نشطة"); return; }
 
       /* Safety guard: only one shift may be active at any time */
-      const { count: otherActive } = await supabase
+      const { data: otherActive } = await supabase
         .from("shifts")
-        .select("*", { count: "exact", head: true })
+        .select("id")
         .eq("is_active", true)
-        .neq("id", s.id);
-      if (otherActive && otherActive > 0) {
+        .neq("id", s.id)
+        .limit(1);
+      if (otherActive && otherActive.length > 0) {
         setToggleErr("يوجد بالفعل وردية نشطة. يجب إغلاقها أولاً قبل فتح وردية جديدة.");
         return;
       }

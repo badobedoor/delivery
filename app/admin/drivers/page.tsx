@@ -237,6 +237,21 @@ function ShiftsSection({ assignments }: { assignments: Assignment[] }) {
     const next     = !s.is_active;
     const snapshot = shifts;
     setOpErr(null);
+
+    /* If activating, check no other shift is already active */
+    if (next) {
+      const { data: otherActive } = await supabase
+        .from("shifts")
+        .select("id")
+        .eq("is_active", true)
+        .neq("id", s.id)
+        .limit(1);
+      if (otherActive && otherActive.length > 0) {
+        setOpErr("يوجد بالفعل وردية نشطة. يجب إغلاقها أولاً قبل فتح وردية جديدة.");
+        return;
+      }
+    }
+
     setShifts((p) => p.map((x) => x.id === s.id ? { ...x, is_active: next } : x));
     try {
       const today = todayCairoDate();
@@ -512,7 +527,7 @@ function DriversTab({ staffList, motos, shifts, currentRole }: {
     try {
       const { error } = await supabase
         .from("delivery_shifts")
-        .update({ is_active: next })
+        .update({ is_active: next, status: next ? "open" : "pending_close" })
         .eq("id", a.id);
       if (error) throw error;
     } catch (err) {
