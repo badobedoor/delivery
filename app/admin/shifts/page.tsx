@@ -197,6 +197,10 @@ export default function AdminShiftsPage() {
     }).eq("id", s.id);
     if (error) {
       setRows((p) => p.map((r) => r.id === s.id ? { ...r, isActive: s.isActive } : r));
+      if (next && error.code === "23505") {
+        /* unique_violation — another shift is already active */
+        setToggleErr("يوجد بالفعل وردية نشطة. يجب إغلاقها أولاً قبل فتح وردية جديدة.");
+      }
     } else if (!next) {
       await supabase.from("delivery_shifts").update({ status: "pending_close" }).eq("shift_id", s.id).eq("status", "open");
     } else {
