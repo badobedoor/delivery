@@ -14,23 +14,15 @@ const PROTECTED = ["/admin", "/driver"];
 
 /* ── Customer routes that require Supabase session ── */
 const CUSTOMER_PATHS = [
-  "/about",
   "/account",
   "/address",
   "/cart",
   "/checkout",
   "/coupons",
   "/favorites",
-  "/help",
   "/notifications",
-  "/offers",
   "/orders",
-  "/privacy",
   "/profile",
-  "/restaurant",
-  "/restaurants",
-  "/search",
-  "/terms",
 ];
 
 function isCustomerPath(pathname: string): boolean {
@@ -241,11 +233,9 @@ export const config = {
     "/cart/:path*", "/checkout/:path*", "/coupons/:path*",
     "/favorites/:path*", "/help/:path*", "/notifications/:path*",
     "/offers/:path*", "/orders/:path*", "/privacy/:path*",
-    "/profile/:path*", "/restaurant/:path*", "/restaurants/:path*",
-    "/search/:path*", "/terms/:path*",
+    "/profile/:path*",
     "/about", "/account", "/address", "/cart", "/checkout",
     "/coupons", "/favorites", "/help", "/notifications", "/offers",
-    "/orders", "/privacy", "/profile", "/restaurant", "/restaurants",
-    "/search", "/terms",
+    "/orders", "/privacy", "/profile",
   ],
 };

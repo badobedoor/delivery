@@ -186,7 +186,7 @@ export default function SearchPage() {
                         className="bg-white rounded-2xl p-3 flex items-center gap-3 text-right w-full"
                       >
                         <div className="relative w-12 h-12 flex-shrink-0 rounded-xl overflow-hidden">
-                          <Image src={m.image_url ?? FALLBACK} alt={m.name} fill className="object-cover" />
+                          <Image src={m.image_url ?? FALLBACK} alt={m.name} fill sizes="48px" className="object-cover" />
                         </div>
                         <div className="flex-1 min-w-0">
                           <p className="text-sm font-bold text-[var(--color-secondary)] truncate">{m.name}</p>
@@ -213,7 +213,7 @@ export default function SearchPage() {
                       className="bg-white rounded-2xl p-3 flex items-center gap-3 text-right w-full"
                     >
                       <div className="relative w-12 h-12 flex-shrink-0 rounded-xl overflow-hidden">
-                        <Image src={r.image_url ?? FALLBACK} alt={r.name} fill className="object-cover" />
+                        <Image src={r.image_url ?? FALLBACK} alt={r.name} fill sizes="48px" className="object-cover" />
                       </div>
                       <div className="flex-1 min-w-0">
                         <p className="text-sm font-bold text-[var(--color-secondary)] truncate">{r.name}</p>

@@ -196,7 +196,7 @@ function CartPageContent() {
 
                     {/* القسم 1 — الصورة (يمين في RTL) */}
                     <div className="relative flex-shrink-0 w-20 h-20 ml-3 rounded-xl overflow-hidden">
-                      <Image src={item.image_url ?? FALLBACK} alt={item.name} fill className="object-cover" />
+                      <Image src={item.image_url ?? FALLBACK} alt={item.name} fill sizes="80px" className="object-cover" />
                       {unavailableIds.has(item.id) && (
                         <div className="absolute inset-0 bg-black/50 flex items-center justify-center">
                           <span className="text-white text-[9px] font-black bg-red-500 px-1.5 py-0.5 rounded-full leading-none">غير متوفر</span>

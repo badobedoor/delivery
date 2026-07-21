@@ -212,6 +212,7 @@ export default function InstallPage() {
                 src="/images/landing/hero-home.webp"
                 alt="واجهة تطبيق حالا دلفري"
                 fill
+                sizes="(max-width: 900px) 100vw, 900px"
                 className="object-contain drop-shadow-2xl"
                 priority
               />
@@ -298,6 +299,7 @@ export default function InstallPage() {
                   src="/images/landing/discover-restaurants.webp"
                   alt="تصفّح المطاعم بسهولة"
                   fill
+                  sizes="(max-width: 768px) 100vw, 384px"
                   className="object-contain"
                   loading="lazy"
                 />
@@ -330,6 +332,7 @@ export default function InstallPage() {
                     src="/images/landing/order-food.webp"
                     alt="تخصيص الطلب بسهولة"
                     fill
+                    sizes="(max-width: 768px) 100vw, 384px"
                     className="object-contain"
                     loading="lazy"
                   />
@@ -362,6 +365,7 @@ export default function InstallPage() {
                   src="/images/landing/order-tracking.webp"
                   alt="تتبع الطلب لحظة بلحظة"
                   fill
+                  sizes="(max-width: 768px) 100vw, 384px"
                   className="object-contain"
                   loading="lazy"
                 />
@@ -394,6 +398,7 @@ export default function InstallPage() {
                     src="/images/landing/install-now.webp"
                     alt="ثبت تطبيق حالا دلفري الآن"
                     fill
+                    sizes="(max-width: 768px) 100vw, 384px"
                     className="object-contain"
                     loading="lazy"
                   />

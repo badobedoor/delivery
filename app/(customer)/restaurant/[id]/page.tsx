@@ -36,11 +36,18 @@ interface QtyProps {
 }
 
 function QuantityCounter({ itemId, name, price, description, imageUrl, restaurantId, restaurantName }: QtyProps) {
+  const router = useRouter();
   const [qty,         setQty]         = useState(() => getCart()?.items.find((i) => i.id === itemId)?.qty ?? 0);
   const [conflictMsg, setConflictMsg] = useState<string | null>(null);
   const pendingItem = useRef<CartItem | null>(null);
 
-  function handleAdd() {
+  async function handleAdd() {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) {
+      document.cookie = `hala_return_to=${encodeURIComponent(JSON.stringify({ path: window.location.pathname + window.location.search, scrollY: window.scrollY }))}; path=/; max-age=600; SameSite=Lax`;
+      router.push("/login");
+      return;
+    }
     const cartItem: CartItem = { id: itemId, name, price, qty: 1, image_url: imageUrl, description };
     const result = addToCart(restaurantId, restaurantName, cartItem);
     if (result.conflict) {
@@ -100,7 +107,13 @@ function QuantityCounter({ itemId, name, price, description, imageUrl, restauran
       <ConfirmModal
         isOpen={conflictMsg !== null}
         message={conflictMsg ?? ""}
-        onConfirm={() => {
+        onConfirm={async () => {
+          const { data: { user } } = await supabase.auth.getUser();
+          if (!user) {
+            document.cookie = `hala_return_to=${encodeURIComponent(JSON.stringify({ path: window.location.pathname + window.location.search, scrollY: window.scrollY }))}; path=/; max-age=600; SameSite=Lax`;
+            router.push("/login");
+            return;
+          }
           if (pendingItem.current) {
             clearCart();
             addToCart(restaurantId, restaurantName, pendingItem.current);
@@ -133,6 +146,7 @@ function RestaurantPageContent() {
   /* ── Section refs for scroll-spy and scroll-to navigation ── */
   const sectionRefs = useRef<Map<string, HTMLElement>>(new Map());
   const STICKY_BAR_HEIGHT = 56;
+  const HEADER_OFFSET = STICKY_BAR_HEIGHT;
   const activeCategory = useScrollSpy(sectionRefs, STICKY_BAR_HEIGHT, [categories]);
   /* ── Back-button handling for MealBottomSheet ── */
   const hasHistoryEntry    = useRef(false);
@@ -226,8 +240,31 @@ function RestaurantPageContent() {
     const target = categories.find((c) => c.name === categoryParam);
     if (!target) return;
     const el = sectionRefs.current.get(String(target.id));
-    if (el) el.scrollIntoView({ behavior: "instant", block: "start" });
+    if (el) {
+      const y = el.getBoundingClientRect().top + window.scrollY - HEADER_OFFSET;
+      window.scrollTo({ top: y, behavior: "instant" });
+    }
   }, [categoryParam, categories]);
+
+  /* ── Restore scroll position from ?restoreScroll=... after login return ── */
+  const restoreScrollParam = searchParams.get("restoreScroll");
+  const scrollRestored = useRef(false);
+  useEffect(() => {
+    if (categories.length === 0) return;
+    if (!restoreScrollParam || scrollRestored.current) return;
+    const y = parseInt(restoreScrollParam, 10);
+    if (!isNaN(y) && y > 0) {
+      /* small delay to let layout settle after images start loading */
+      requestAnimationFrame(() => {
+        window.scrollTo({ top: y, behavior: "instant" });
+      });
+    }
+    scrollRestored.current = true;
+    /* remove restoreScroll from URL without reload */
+    const url = new URL(window.location.href);
+    url.searchParams.delete("restoreScroll");
+    router.replace(url.pathname + url.search, { scroll: false });
+  }, [categories.length, restoreScrollParam]);
 
   const coverSrc = restaurant?.cover_image_url ?? restaurant?.image_url
     ?? "https://images.unsplash.com/photo-1552566626-52f8b828add9?w=800&h=300&fit=crop";
@@ -261,6 +298,7 @@ function RestaurantPageContent() {
             src={coverSrc}
             alt={restaurant.name}
             fill
+            sizes="100vw"
             className="object-cover"
             priority
             onError={(e) => { (e.target as HTMLImageElement).src = '/images/placeholder.png'; }}
@@ -332,7 +370,10 @@ function RestaurantPageContent() {
                     key={cat.id}
                     onClick={() => {
                       const el = sectionRefs.current.get(String(cat.id));
-                      if (el) el.scrollIntoView({ behavior: "smooth", block: "start" });
+                      if (el) {
+                        const y = el.getBoundingClientRect().top + window.scrollY - HEADER_OFFSET;
+                        window.scrollTo({ top: y, behavior: "smooth" });
+                      }
                     }}
                     className={`flex-shrink-0 px-4 py-1.5 rounded-full text-sm font-medium transition-colors ${
                       activeCategory === String(cat.id)
@@ -354,7 +395,7 @@ function RestaurantPageContent() {
                 key={cat.id}
                 data-category-id={cat.id}
                 ref={(el) => { if (el) sectionRefs.current.set(String(cat.id), el); }}
-                style={{ scrollMarginTop: STICKY_BAR_HEIGHT + 8 }}
+                style={{ scrollMarginTop: HEADER_OFFSET }}
               >
                 {/* عنوان القسم */}
                 <h2 className="text-base font-bold text-[var(--color-secondary)] pt-2 pb-3">

@@ -32,9 +32,41 @@ export async function GET(request: NextRequest) {
     return NextResponse.redirect(`${origin}/?error=missing_code`);
   }
 
-  /* Build the redirect response first so we can attach cookies to it */
-  const redirectTo = `${origin}/`;
-  const response   = NextResponse.redirect(redirectTo);
+  /* Read hala_return_to cookie before building the redirect */
+  const halaReturnToRaw = request.cookies.get("hala_return_to")?.value;
+  let redirectPath: string | null = null;
+  let restoreScroll: number | null = null;
+  if (halaReturnToRaw) {
+    try {
+      const decoded = decodeURIComponent(halaReturnToRaw);
+      /* Try JSON format first, fall back to plain path */
+      if (decoded.startsWith("{")) {
+        const parsed = JSON.parse(decoded);
+        if (parsed.path && typeof parsed.path === "string" && parsed.path.startsWith("/")) {
+          redirectPath = parsed.path;
+          if (typeof parsed.scrollY === "number" && parsed.scrollY > 0) {
+            restoreScroll = parsed.scrollY;
+          }
+        }
+      } else if (decoded.startsWith("/") && decoded.length > 1) {
+        redirectPath = decoded;
+      }
+    } catch { /* ignore invalid value */ }
+  }
+
+  /* Build redirect URL — append restoreScroll if we have it */
+  let redirectTo: string;
+  if (redirectPath) {
+    redirectTo = restoreScroll != null
+      ? `${origin}${redirectPath}${redirectPath.includes("?") ? "&" : "?"}restoreScroll=${restoreScroll}`
+      : `${origin}${redirectPath}`;
+  } else {
+    redirectTo = `${origin}/`;
+  }
+  const response = NextResponse.redirect(redirectTo);
+
+  /* Delete hala_return_to cookie immediately */
+  response.cookies.set("hala_return_to", "", { path: "/", maxAge: 0 });
 
   /* Build the Supabase client wired to the *response* cookies */
   const supabase = createServerClient(

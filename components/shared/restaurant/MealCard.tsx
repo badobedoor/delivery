@@ -60,6 +60,7 @@ export default function MealCard({
           src={imageUrl}
           alt={name}
           fill
+          sizes="96px"
           className="object-cover"
           onError={(e) => {
             (e.target as HTMLImageElement).src = "/images/placeholder.png";

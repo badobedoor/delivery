@@ -87,6 +87,7 @@ export default function HomePage() {
 
       /* جيب العنوان الافتراضي */
       const { data: { user } } = await supabase.auth.getUser();
+
       if (!user) return;
       const { data } = await supabase
         .from("addresses")

@@ -42,7 +42,13 @@ export default function FavoritesPage() {
     });
   }, []);
 
-  function handleReorder(fav: FavoriteOrder) {
+  async function handleReorder(fav: FavoriteOrder) {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) {
+      document.cookie = `hala_return_to=${encodeURIComponent(JSON.stringify({ path: window.location.pathname + window.location.search, scrollY: window.scrollY }))}; path=/; max-age=600; SameSite=Lax`;
+      router.push("/login");
+      return;
+    }
     clearCart();
     fav.items.forEach((item) => {
       addToCart(fav.restaurant_id, fav.restaurant_name, {

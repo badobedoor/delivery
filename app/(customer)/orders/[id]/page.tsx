@@ -144,6 +144,12 @@ export default function OrderDetailPage() {
 
   async function handleReorder() {
     if (!order) return;
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) {
+      document.cookie = `hala_return_to=${encodeURIComponent(JSON.stringify({ path: window.location.pathname + window.location.search, scrollY: window.scrollY }))}; path=/; max-age=600; SameSite=Lax`;
+      router.push("/login");
+      return;
+    }
     setReordering(true);
 
     const itemIds = order.order_items.map((i) => i.menu_item_id);
@@ -378,6 +384,7 @@ export default function OrderDetailPage() {
                       src={item.menu_items?.image_url ?? FALLBACK_IMG}
                       alt={item.menu_items?.name ?? ""}
                       fill
+                      sizes="48px"
                       className="object-cover"
                     />
                   </div>

@@ -2,6 +2,8 @@
 
 import Image from "next/image";
 import { useState, useRef } from "react";
+import { useRouter } from "next/navigation";
+import { supabase } from "@/lib/supabase";
 import { addToCart, clearCart, CartItem } from "@/lib/cart";
 import ConfirmModal from "@/components/customer/ConfirmModal";
 import { ItemExtra as Extra, Size, ExtraGroupSheet, SheetMeal as Meal } from "@/lib/restaurant/types";
@@ -37,13 +39,20 @@ export const sampleMeal: Meal = {
 
 /* ── Component ── */
 export default function MealBottomSheet({ meal, onClose, restaurantId, restaurantName }: Props) {
+  const router = useRouter();
   const config = useMealConfigurator(meal);
 
   const [conflictMsg,    setConflictMsg]    = useState<string | null>(null);
   const pendingItem = useRef<CartItem | null>(null);
 
   /* ── Add-to-cart (couples the config to the customer cart system) ── */
-  function handleAddToCart() {
+  async function handleAddToCart() {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) {
+      document.cookie = `hala_return_to=${encodeURIComponent(JSON.stringify({ path: window.location.pathname + window.location.search, scrollY: window.scrollY }))}; path=/; max-age=600; SameSite=Lax`;
+      router.push("/login");
+      return;
+    }
     const sizeObj = meal.sizes?.find((s) => s.id === config.selectedSize);
     const cartItem = {
       id: String(meal.id),
@@ -97,6 +106,7 @@ export default function MealBottomSheet({ meal, onClose, restaurantId, restauran
             src={meal.img}
             alt={meal.name}
             fill
+            sizes="100vw"
             className="object-cover"
             priority
           />
@@ -177,7 +187,13 @@ export default function MealBottomSheet({ meal, onClose, restaurantId, restauran
       <ConfirmModal
         isOpen={conflictMsg !== null}
         message={conflictMsg ?? ""}
-        onConfirm={() => {
+        onConfirm={async () => {
+          const { data: { user } } = await supabase.auth.getUser();
+          if (!user) {
+            document.cookie = `hala_return_to=${encodeURIComponent(JSON.stringify({ path: window.location.pathname + window.location.search, scrollY: window.scrollY }))}; path=/; max-age=600; SameSite=Lax`;
+            router.push("/login");
+            return;
+          }
           if (pendingItem.current) {
             clearCart();
             addToCart(restaurantId, restaurantName, pendingItem.current);

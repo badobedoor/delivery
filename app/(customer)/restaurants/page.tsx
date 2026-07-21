@@ -328,7 +328,7 @@ export default function RestaurantsPage() {
                     <div key={r.id}>
                       <Link href={`/restaurant/${r.id}`} className="flex items-center gap-3 py-3">
                         <div className="relative w-[72px] h-[72px] flex-shrink-0 rounded-xl overflow-hidden">
-                          <Image src={r.image_url ?? FALLBACK_IMG} alt={r.name} fill className="object-cover" onError={(e) => { (e.target as HTMLImageElement).src = '/images/placeholder.png'; }} />
+                          <Image src={r.image_url ?? FALLBACK_IMG} alt={r.name} fill sizes="72px" className="object-cover" onError={(e) => { (e.target as HTMLImageElement).src = '/images/placeholder.png'; }} />
                         </div>
                         <div className="flex-1 min-w-0">
                           <p className="text-base font-bold text-[var(--color-secondary)] truncate">{r.name}</p>
@@ -409,7 +409,7 @@ export default function RestaurantsPage() {
                     {featuredItems.map((item) => (
                       <div key={item.id} className="flex-shrink-0 w-44 bg-white rounded-2xl overflow-hidden border border-[#F3F4F6]">
                         <div className="relative w-full h-28">
-                          <Image src={item.image_url ?? FALLBACK_IMG} alt={item.name} fill className="object-cover" onError={(e) => { (e.target as HTMLImageElement).src = '/images/placeholder.png'; }} />
+                          <Image src={item.image_url ?? FALLBACK_IMG} alt={item.name} fill sizes="176px" className="object-cover" onError={(e) => { (e.target as HTMLImageElement).src = '/images/placeholder.png'; }} />
                         </div>
                         <div className="p-2.5">
                           <p className="text-sm font-semibold text-[var(--color-secondary)] truncate">{item.name}</p>
@@ -459,7 +459,7 @@ export default function RestaurantsPage() {
                           className={`relative flex items-center gap-3 py-3 ${isOpen ? "cursor-pointer" : "cursor-not-allowed"}`}
                         >
                           <div className="relative w-[72px] h-[72px] flex-shrink-0 rounded-xl overflow-hidden">
-                            <Image src={r.image_url ?? FALLBACK_IMG} alt={r.name} fill className="object-cover" onError={(e) => { (e.target as HTMLImageElement).src = '/images/placeholder.png'; }} />
+                            <Image src={r.image_url ?? FALLBACK_IMG} alt={r.name} fill sizes="72px" className="object-cover" onError={(e) => { (e.target as HTMLImageElement).src = '/images/placeholder.png'; }} />
                             {!isOpen && (
                               <div className="absolute inset-0 flex items-center justify-center rounded-xl"
                                 style={{ background: "rgba(0,0,0,0.6)" }}>

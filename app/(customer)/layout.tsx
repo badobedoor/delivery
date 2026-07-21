@@ -20,16 +20,9 @@ export default function CustomerLayout({ children }: { children: React.ReactNode
   }, []);
 
   useEffect(() => {
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      if (!session) router.replace("/login");
-      else setChecking(false);
+    supabase.auth.getSession().then(() => {
+      setChecking(false);
     });
-
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_, session) => {
-      if (!session) router.replace("/login");
-    });
-
-    return () => subscription.unsubscribe();
   }, []);
 
   if (checking) return (
