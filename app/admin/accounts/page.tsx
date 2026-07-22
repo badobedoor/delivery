@@ -2141,7 +2141,6 @@ export default function AdminAccountsPage() {
     setSubmitting(true);
     try {
       const roundedAmount  = roundEGP(amount);
-      const currentBalance = getManageBalance();
 
       if (wallet === "custody" && manageTarget.type === "driver") {
         const { data: lastCustody } = await supabase
@@ -2186,6 +2185,8 @@ export default function AdminAccountsPage() {
               operation: "increment",
               amount: personDelta,
             }),
+          }).then(async (res) => {
+            if (!res.ok) { const body = await res.json().catch(() => ({})); throw new Error(body.error ?? `HTTP ${res.status}`); }
           });
         } else {
           const { data: lastMoto } = await supabase
@@ -2200,10 +2201,11 @@ export default function AdminAccountsPage() {
             reason:        [note, manageTarget.name, "من خزنة الموتسكلات"].filter(Boolean).join(" — "),
             balance:       roundEGP(lastMotoBal + personDelta),
           });
-          await supabase
-            .from("motorcycles")
-            .update({ wallet_balance: roundEGP(currentBalance + personDelta) })
-            .eq("id", manageTarget.id);
+          await supabase.rpc("adjust_motorcycle_wallet", {
+            p_motorcycle_id: manageTarget.id,
+            p_operation:     "increment",
+            p_amount:        personDelta,
+          });
         }
 
         if (wallet === "office") {
@@ -2404,9 +2406,11 @@ export default function AdminAccountsPage() {
           operation: "increment",
           amount: driverShare,
         }),
+      }).then(async (res) => {
+        if (!res.ok) { const body = await res.json().catch(() => ({})); throw new Error(body.error ?? `HTTP ${res.status}`); }
       });
 
-      // Step 3: إذا فيه موتسكل — INSERT motorcycle_accounts + UPDATE motorcycles
+      // Step 3: إذا فيه موتسكل — INSERT motorcycle_accounts + UPDATE motorcycles (atomic RPC)
       if (motorcycleId) {
         const { data: lastMotoRow } = await supabase
           .from("motorcycle_accounts").select("balance")
@@ -2420,12 +2424,11 @@ export default function AdminAccountsPage() {
           reason:        `حصة موتسكل — ${req.driverName}`,
           balance:       roundEGP(lastMotoBal + motoShare),
         });
-        const { data: motoRow } = await supabase
-          .from("motorcycles").select("wallet_balance").eq("id", motorcycleId).single();
-        await supabase
-          .from("motorcycles")
-          .update({ wallet_balance: roundEGP(((motoRow as any)?.wallet_balance ?? 0) + motoShare) })
-          .eq("id", motorcycleId);
+        await supabase.rpc("adjust_motorcycle_wallet", {
+          p_motorcycle_id: motorcycleId,
+          p_operation:     "increment",
+          p_amount:        motoShare,
+        });
       }
 
       // Step 4: INSERT main_wallet — حصة المكتب من رسوم التوصيل
@@ -2527,18 +2530,17 @@ export default function AdminAccountsPage() {
           operation: "increment",
           amount: share,
         }),
+      }).then(async (res) => {
+        if (!res.ok) { const body = await res.json().catch(() => ({})); throw new Error(body.error ?? `HTTP ${res.status}`); }
       });
 
-      /* 3. UPDATE motorcycle wallet += share */
+      /* 3. UPDATE motorcycle wallet += share (atomic RPC) */
       if (motoId) {
-        const { data: moto } = await supabase
-          .from("motorcycles").select("wallet_balance").eq("id", motoId).single();
-        if (moto) {
-          await supabase
-            .from("motorcycles")
-            .update({ wallet_balance: roundEGP(((moto as any).wallet_balance ?? 0) + share) })
-            .eq("id", motoId);
-        }
+        await supabase.rpc("adjust_motorcycle_wallet", {
+          p_motorcycle_id: motoId,
+          p_operation:     "increment",
+          p_amount:        share,
+        });
       }
 
       /* 4. INSERT main_wallet — حصة المكتب */

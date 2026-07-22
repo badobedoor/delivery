@@ -54,7 +54,7 @@ export async function PATCH(
 
   /* ── Atomic RPC — runs inside a single PostgreSQL transaction ── */
   const { data, error } = await admin().rpc("adjust_driver_wallet", {
-    p_driver_id: Number(id),
+    p_driver_id: id,
     p_operation: operation,
     p_amount:    roundedAmount,
   });
