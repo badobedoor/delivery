@@ -518,7 +518,7 @@ export default function AdminOrdersPage() {
 
             const { data: itemsData } = await supabase
               .from("order_items")
-              .select("order_id, quantity, price_at_order, extras, notes, menu_items (name, categories (name))")
+              .select("order_id, quantity, price_at_order, extras, notes, size_name, menu_items (name, categories (name))")
               .eq("order_id", inserted.id);
 
             const fullOrder: DBNewOrder = {
@@ -530,6 +530,7 @@ export default function AdminOrdersPage() {
                 menu_items:     row.menu_items ?? null,
                 notes:          row.notes ?? null,
                 category_name:  row.menu_items?.categories?.name ?? null,
+                size_name:      row.size_name ?? null,
               })),
             };
 

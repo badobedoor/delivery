@@ -39,7 +39,11 @@
       "Bash(dir /s /b \"D:\\\\coding Project\\\\delivery-deepseek\\\\app\\\\*order*\")",
       "Bash(npx next *)",
       "Bash(xargs grep -l -i \"shift\")",
-      "Bash(xargs grep -l \"today\\\\|daily\\\\|stat\\\\|count\\\\|revenue\\\\|dashboard\" -i)"
+      "Bash(xargs grep -l \"today\\\\|daily\\\\|stat\\\\|count\\\\|revenue\\\\|dashboard\" -i)",
+      "Bash(xargs grep -l \"wa.me\\\\|whatsapp\\\\|sendTo\")",
+      "Bash(xargs grep -l \"delivery_shift\\\\|delivery_shifts\\\\|started_at\\\\|ended_at\")",
+      "Bash(xargs grep -l \"wallet\\\\|settlement\\\\|settle\")",
+      "Bash(xargs grep -l \"delivery_shifts\\\\|delivery_shift\")"
     ]
   }
 }
