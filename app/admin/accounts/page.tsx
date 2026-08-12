@@ -3,6 +3,7 @@
 import { useState, useMemo, useEffect, useCallback } from "react";
 import { useAutoRefresh } from "@/hooks/useAutoRefresh";
 import { supabase } from "@/lib/supabase";
+import { formatCairoDate, formatCairoDateTime } from "@/lib/cairoTime";
 
 /* ── Palette ── */
 const C = {
@@ -90,14 +91,7 @@ function fmtAmt(n: number) {
 
 function fmtDateAr(iso: string): string {
   if (!iso) return "";
-  try {
-    const d = new Date(iso);
-    const date = d.toLocaleDateString("ar-EG", { day: "numeric", month: "long", year: "numeric" });
-    const time = d.toLocaleTimeString("ar-EG", { hour: "2-digit", minute: "2-digit" });
-    return `${date} — ${time}`;
-  } catch {
-    return iso;
-  }
+  return formatCairoDateTime(iso);
 }
 
 const WALLET_OPTIONS: { value: WalletCat; label: string; icon: string }[] = [
@@ -1639,7 +1633,7 @@ function CustodyWalletTab({ balance, active, transactions }: {
                 <div className="flex-1 min-w-0">
                   <p className="text-sm font-semibold" style={{ color: C.text }}>{r.driverName}</p>
                   <p className="text-[10px] mt-0.5" style={{ color: `${C.muted}99` }}>
-                    {r.createdAt ? new Date(r.createdAt).toLocaleDateString("ar-EG", { day: "numeric", month: "long", year: "numeric" }) : ""}
+                    {r.createdAt ? formatCairoDate(r.createdAt) : ""}
                   </p>
                 </div>
                 <span className="text-sm font-black flex-shrink-0" style={{ color: C.orange }}>

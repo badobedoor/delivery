@@ -6,6 +6,7 @@ import Cropper from "react-easy-crop";
 import type { Area } from "react-easy-crop";
 import imageCompression from "browser-image-compression";
 import { supabase } from "@/lib/supabase";
+import { parseTimestamp, startOfCairoDate } from "@/lib/cairoTime";
 import {
   DndContext,
   closestCenter,
@@ -80,6 +81,32 @@ type MenuItem = {
 function safeMinPrice(extras: { price: number }[] | undefined): number | null {
   const prices = (extras ?? []).map((e) => e.price).filter((p) => typeof p === "number" && isFinite(p));
   return prices.length > 0 ? Math.min(...prices) : null;
+}
+
+/* ── تحويل أوقات العروض بين توقيت القاهرة و UTC ──
+   حقل datetime-local يعطي "YYYY-MM-DDTHH:MM" بتوقيت القاهرة المحلي،
+   بينما عمود offer_starts_at/offer_ends_at من نوع timestamptz (UTC).
+   نعتمد على startOfCairoDate (يحسب إزاحة القاهرة من Intl) و parseTimestamp
+   (يلحق "Z" لطوابع Supabase بدون لاحقة) — بدون أي إضافة يدوية لـ +3. */
+
+/** "YYYY-MM-DDTHH:MM" (قاهرة) → UTC ISO */
+function cairoLocalToUtc(dateTimeLocal: string): string | null {
+  if (!dateTimeLocal) return null;
+  const [datePart, timePart] = dateTimeLocal.split("T");
+  if (!timePart) return null;
+  const [h, m] = timePart.split(":").map(Number);
+  if (Number.isNaN(h) || Number.isNaN(m)) return null;
+  const cairoMidnightUtc = new Date(startOfCairoDate(datePart)).getTime();
+  return new Date(cairoMidnightUtc + h * 3_600_000 + m * 60_000).toISOString();
+}
+
+/** UTC ISO → "YYYY-MM-DDTHH:MM" (قاهرة) — لعرضها في حقل datetime-local */
+function utcToCairoLocal(iso: string): string {
+  const d = parseTimestamp(iso);
+  if (!d) return "";
+  const c = new Date(d.toLocaleString("en-US", { timeZone: "Africa/Cairo" }));
+  const p = (n: number) => String(n).padStart(2, "0");
+  return `${c.getFullYear()}-${p(c.getMonth() + 1)}-${p(c.getDate())}T${p(c.getHours())}:${p(c.getMinutes())}`;
 }
 
 function displayPrice(basePrice: number, groups: { type: string; item_extras: { price: number }[] }[]): string {
@@ -1107,8 +1134,8 @@ export default function AdminRestaurantsPage() {
         setItemMode("offer");
         setOfferPrice(String(item.offer_price));
         setOfferImagePreview(item.offer_image_url ?? null);
-        setOfferStartsAt(item.offer_starts_at ?? "");
-        setOfferEndsAt(item.offer_ends_at ?? "");
+        setOfferStartsAt(item.offer_starts_at ? utcToCairoLocal(item.offer_starts_at) : "");
+        setOfferEndsAt(item.offer_ends_at ? utcToCairoLocal(item.offer_ends_at) : "");
       } else {
         setItemMode("item");
         setOfferPrice(""); setOfferStartsAt(""); setOfferEndsAt("");
@@ -1204,8 +1231,8 @@ export default function AdminRestaurantsPage() {
       ...(isOffer && {
         offer_price:     offerPrice ? Number(offerPrice) : null,
         offer_image_url,
-        offer_starts_at: offerStartsAt || null,
-        offer_ends_at:   offerEndsAt   || null,
+        offer_starts_at: cairoLocalToUtc(offerStartsAt),
+        offer_ends_at:   cairoLocalToUtc(offerEndsAt),
       }),
     };
 

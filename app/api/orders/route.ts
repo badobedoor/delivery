@@ -73,31 +73,42 @@ export async function POST(request: Request) {
       const [restRes, usrRes, addrRes, itemsRes] = await Promise.all([
         db.from("restaurants").select("name").eq("id", bodyOrder["restaurant_id"]).single(),
         db.from("users").select("name, phone").eq("id", user.id).single(),
-        db.from("addresses").select("full_address, latitude, longitude").eq("id", bodyOrder["address_id"]).single(),
-        db.from("menu_items").select("id, name").in("id", bodyItems.map((i) => String(i["menu_item_id"]))),
+        db.from("addresses").select("full_address, areas (name)").eq("id", bodyOrder["address_id"]).single(),
+        db.from("menu_items").select("id, name, categories (name)").in("id", bodyItems.map((i) => String(i["menu_item_id"]))),
       ]);
 
       const restName = String((restRes.data as Record<string, unknown>)?.name ?? "—");
       const usrName  = String((usrRes.data as Record<string, unknown>)?.name ?? "—");
       const usrPhone = String((usrRes.data as Record<string, unknown>)?.phone ?? "—");
       const addrFull = String((addrRes.data as Record<string, unknown>)?.full_address ?? "—");
-      const lat      = (addrRes.data as Record<string, unknown>)?.latitude;
-      const lng      = (addrRes.data as Record<string, unknown>)?.longitude;
+      const addrArea = (addrRes.data as Record<string, unknown>)?.areas;
+      const areaName = addrArea
+        ? String((addrArea as Record<string, unknown>).name ?? "").trim()
+        : "";
 
       const menuArr  = (itemsRes.data ?? []) as Record<string, unknown>[];
-      const menuMap  = new Map(menuArr.map((m) => [String(m.id), String(m.name)]));
+      const menuMap  = new Map(menuArr.map((m) => [
+        String(m.id),
+        {
+          name:     String(m.name),
+          category: (m.categories as Record<string, unknown> | null)?.name
+            ? String((m.categories as Record<string, unknown>).name)
+            : null,
+        },
+      ]));
 
       const itemLines = bodyItems.map((item) => {
         const extrasArr = (item["extras"] as Record<string, unknown>[] | null) ?? [];
-        const name      = menuMap.get(String(item["menu_item_id"])) ?? `#${String(item["menu_item_id"])}`;
+        const menuInfo  = menuMap.get(String(item["menu_item_id"]));
+        const name      = menuInfo?.name ?? `#${String(item["menu_item_id"])}`;
+        const category  = menuInfo?.category ? `${menuInfo.category} | ` : "";
         const size      = item["size_name"] ? ` (${String(item["size_name"])})` : "";
         const extras    = extrasArr.length
           ? `\n     ➕ ${extrasArr.map((e) => String(e["name"])).join("، ")}`
           : "";
-        return `• ${name}${size} ×${String(item["quantity"])}${extras}`;
+        const itemNote  = item["notes"] ? `\n     📝 ملاحظة المطعم: ${String(item["notes"])}` : "";
+        return `• ${category}${name}${size} ×${String(item["quantity"])}${extras}${itemNote}`;
       });
-
-      const mapsLink = lat && lng ? `\n🗺️ https://maps.google.com/?q=${String(lat)},${String(lng)}` : "";
 
       const createdAt = new Date(order.created_at).toLocaleString("ar-EG", {
         timeZone: "Africa/Cairo",
@@ -114,7 +125,8 @@ export async function POST(request: Request) {
         `🏪 المطعم: ${restName}`,
         `👤 اسم العميل: ${usrName}`,
         `📞 رقم الهاتف: ${usrPhone}`,
-        `📍 العنوان: ${addrFull}${mapsLink}`,
+        ...(areaName ? [`📍 المنطقة: ${areaName}`] : []),
+        `📍 العنوان: ${addrFull}`,
         "",
         "🍔 <b>الطلب:</b>",
         ...itemLines,
@@ -124,7 +136,7 @@ export async function POST(request: Request) {
         `   رسوم التوصيل: ${String(orderRecord.delivery_fee ?? 0)} ج.م`,
         `   ─────────────`,
         `   🟰 الإجمالي: ${String(orderRecord.total ?? 0)} ج.م`,
-        ...(orderRecord.notes ? [`\n📝 ${String(orderRecord.notes)}`] : []),
+        ...(orderRecord.notes ? [`\n🛵 <b>ملاحظات الدليفري:</b>\n📝 ${String(orderRecord.notes)}`] : []),
         "",
         `🕒 ${createdAt}`,
       ].join("\n");

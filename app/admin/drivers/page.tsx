@@ -121,15 +121,15 @@ function Modal({ open, title, onClose, onSave, saving = false, children }: {
       style={{ background: "rgba(0,0,0,0.7)" }}
       onClick={(e) => { if (!saving && e.target === e.currentTarget) onClose(); }}
     >
-      <div className="w-full max-w-sm rounded-2xl flex flex-col"
+      <div className="w-full max-w-sm rounded-2xl flex flex-col max-h-[90vh]"
         style={{ background: C.card, border: `1px solid ${C.border}` }}>
-        <div className="flex items-center justify-between px-5 py-4 border-b" style={{ borderColor: C.border }}>
+        <div className="flex items-center justify-between px-5 py-4 border-b flex-shrink-0" style={{ borderColor: C.border }}>
           <h2 className="text-base font-black" style={{ color: C.text }}>{title}</h2>
           <button onClick={onClose} disabled={saving}
             className="w-8 h-8 rounded-full flex items-center justify-center text-sm hover:opacity-70 disabled:opacity-40"
             style={{ background: C.bg, color: C.muted }}>✕</button>
         </div>
-        <div className="px-5 py-4 flex flex-col gap-4">{children}</div>
+        <div className="flex-1 overflow-y-auto px-5 py-4 flex flex-col gap-4 min-h-0">{children}</div>
         <div className="flex gap-3 px-5 py-4 border-t" style={{ borderColor: C.border }}>
           <button onClick={onSave} disabled={saving}
             className="flex-1 py-2.5 rounded-xl text-sm font-bold hover:opacity-90 transition-opacity disabled:opacity-60"

@@ -22,7 +22,7 @@ const C = {
 type PayMethod = "cash" | "vodafone" | "mixed";
 
 type Extra  = { name: string; price: number };
-type Meal   = { name: string; qty: number; price: number; extras: Extra[]; notes?: string; category?: string };
+type Meal   = { name: string; qty: number; price: number; extras: Extra[]; notes?: string; category?: string; size_name?: string };
 type Order  = {
   id:              string;
   num:             string;
@@ -72,6 +72,7 @@ function toOrder(o: DBOrder): Order {
       extras:   Array.isArray(item.extras) ? item.extras : [],
       notes:    item.notes ?? "",
       category: item.menu_items?.categories?.name ?? undefined,
+      size_name: item.size_name ?? "",
     })),
     note: o.notes ?? "",
   };
@@ -82,7 +83,7 @@ const ORDER_SELECT = `
   restaurant_paid, restaurant_debt, payment_method, cash_amount, vodafone_amount,
   restaurants!restaurant_id (name, address),
   addresses!address_id (full_address, areas (name)),
-  order_items (quantity, price_at_order, extras, notes, menu_items (name, categories (name))),
+  order_items (quantity, price_at_order, extras, notes, size_name, menu_items (name, categories (name))),
   users!user_id (phone)
 `;
 
@@ -182,7 +183,7 @@ function AvailableCard({ order, onAccept }: { order: Order; onAccept: () => void
               return (
                 <div key={i} className="flex flex-col gap-1">
                   <div className="flex items-center justify-between">
-                    <span className="text-sm" style={{ color: C.text }}>{m.category ? `${m.category} - ` : ""}{m.name} ×{m.qty}</span>
+                    <span className="text-sm" style={{ color: C.text }}>{m.category && <span style={{ color: C.blue }}>{m.category} - </span>}{m.name}{m.size_name && <span style={{ color: C.blue }}> ({m.size_name})</span>} ×{m.qty}</span>
                     <span className="text-xs" style={{ color: C.muted }}>السعر الأساسي: {basePrice}ج</span>
                   </div>
                   {m.extras.length > 0 && (
@@ -492,7 +493,7 @@ function ActiveCard({
               return (
                 <div key={i} className="flex flex-col gap-1">
                   <div className="flex items-center justify-between">
-                    <span className="text-sm" style={{ color: C.text }}>{m.category ? `${m.category} - ` : ""}{m.name} ×{m.qty}</span>
+                    <span className="text-sm" style={{ color: C.text }}>{m.category && <span style={{ color: C.blue }}>{m.category} - </span>}{m.name}{m.size_name && <span style={{ color: C.blue }}> ({m.size_name})</span>} ×{m.qty}</span>
                     <span className="text-xs" style={{ color: C.muted }}>السعر الأساسي: {basePrice}ج</span>
                   </div>
                   {m.extras.length > 0 && (
@@ -718,7 +719,7 @@ export default function DriverOrdersPage() {
           id, total, subtotal, delivery_fee, discount_amount, notes, user_order_number,
           restaurants!restaurant_id (name, address),
           addresses!address_id (full_address, areas (name)),
-          order_items (quantity, price_at_order, extras, notes, menu_items (name, categories (name)))
+          order_items (quantity, price_at_order, extras, notes, size_name, menu_items (name, categories (name)))
         `)
         .eq("status", "pending")
         .eq("shift_id", sid);
@@ -950,7 +951,7 @@ export default function DriverOrdersPage() {
                 id, total, subtotal, delivery_fee, discount_amount, notes, user_order_number,
                 restaurants!restaurant_id (name, address),
                 addresses!address_id (full_address, areas (name)),
-                order_items (quantity, price_at_order, extras, notes, menu_items (name, categories (name)))
+                order_items (quantity, price_at_order, extras, notes, size_name, menu_items (name, categories (name)))
               `)
               .eq("id", inserted.id as string)
               .single();

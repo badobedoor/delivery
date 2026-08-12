@@ -731,7 +731,7 @@ export default function AdminAdvertisementsPage() {
                   <td className="px-4 py-3">
                     <span className="text-sm font-semibold" style={{ color: C.text }}>{ad.page}</span>
                     {ad.link && (
-                      <p className="text-xs mt-0.5 truncate max-w-[140px]" style={{ color: C.muted }}>
+                      <p className="text-xs mt-0.5 max-w-[140px]" style={{ color: C.muted }}>
                         🔗 {ad.link}
                       </p>
                     )}

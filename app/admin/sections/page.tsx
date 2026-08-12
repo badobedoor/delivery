@@ -85,12 +85,12 @@ function MainModal({
 
   return (
     <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4" style={{ background: "rgba(0,0,0,0.6)" }}>
-      <div className="w-full sm:max-w-md rounded-t-3xl sm:rounded-2xl flex flex-col" style={{ background: C.card, border: `1px solid ${C.border}` }}>
-        <div className="flex items-center justify-between px-5 pt-5 pb-4 border-b" style={{ borderColor: C.border }}>
+      <div className="w-full sm:max-w-md rounded-t-3xl sm:rounded-2xl flex flex-col max-h-[90vh]" style={{ background: C.card, border: `1px solid ${C.border}` }}>
+        <div className="flex items-center justify-between px-5 pt-5 pb-4 border-b flex-shrink-0" style={{ borderColor: C.border }}>
           <p className="text-base font-black" style={{ color: C.text }}>{title}</p>
           <button onClick={onClose} className="text-xl leading-none" style={{ color: C.muted }}>✕</button>
         </div>
-        <div className="flex flex-col gap-4 px-5 py-4">
+        <div className="flex-1 overflow-y-auto min-h-0 flex flex-col gap-4 px-5 py-4">
           {formErr && (
             <p className="text-xs font-semibold text-center py-1.5 rounded-lg"
               style={{ background: `${C.red}22`, color: C.red }}>{formErr}</p>
@@ -145,12 +145,12 @@ function QuickModal({
 
   return (
     <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4" style={{ background: "rgba(0,0,0,0.6)" }}>
-      <div className="w-full sm:max-w-md rounded-t-3xl sm:rounded-2xl flex flex-col" style={{ background: C.card, border: `1px solid ${C.border}` }}>
-        <div className="flex items-center justify-between px-5 pt-5 pb-4 border-b" style={{ borderColor: C.border }}>
+      <div className="w-full sm:max-w-md rounded-t-3xl sm:rounded-2xl flex flex-col max-h-[90vh]" style={{ background: C.card, border: `1px solid ${C.border}` }}>
+        <div className="flex items-center justify-between px-5 pt-5 pb-4 border-b flex-shrink-0" style={{ borderColor: C.border }}>
           <p className="text-base font-black" style={{ color: C.text }}>{title}</p>
           <button onClick={onClose} className="text-xl leading-none" style={{ color: C.muted }}>✕</button>
         </div>
-        <div className="flex flex-col gap-4 px-5 py-4">
+        <div className="flex-1 overflow-y-auto min-h-0 flex flex-col gap-4 px-5 py-4">
           {formErr && (
             <p className="text-xs font-semibold text-center py-1.5 rounded-lg"
               style={{ background: `${C.red}22`, color: C.red }}>{formErr}</p>

@@ -170,8 +170,8 @@ export default function DeliveryRequestsPage() {
                       )}
                     </td>
                     <td className="px-3 py-3 text-xs max-w-[180px]" style={{ color: C.muted }}>
-                      <p className="truncate">{r.delivery_address}</p>
-                      {r.notes && <p className="text-[10px] mt-0.5 opacity-70 truncate">📝 {r.notes}</p>}
+                      <p>{r.delivery_address}</p>
+                      {r.notes && <p className="text-[10px] mt-0.5 opacity-70">📝 {r.notes}</p>}
                     </td>
                     <td className="px-3 py-3 text-xs whitespace-nowrap" style={{ color: C.muted }}>
                       {r.driver_name ?? "—"}

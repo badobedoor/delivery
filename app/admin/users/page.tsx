@@ -148,7 +148,7 @@ export default function AdminUsersPage() {
 
       {/* ── Date range ── */}
       <div className="flex flex-col gap-2">
-        <div className="flex items-end gap-3">
+        <div className="flex flex-wrap items-end gap-3">
           <div className="flex-1 flex flex-col gap-1">
             <label className="text-xs font-semibold" style={{ color: C.muted }}>من</label>
             <input

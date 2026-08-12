@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase";
 import { useCurrentUser } from "@/hooks/useCurrentUser";
+import { formatCairoDate } from "@/lib/cairoTime";
 
 const C = {
   bg:     "#0F172A",
@@ -23,11 +24,7 @@ function fmtAmt(n: number) {
 }
 
 function fmtDateAr(iso: string) {
-  try {
-    return new Date(iso).toLocaleDateString("ar-EG", {
-      day: "numeric", month: "long", year: "numeric",
-    });
-  } catch { return iso; }
+  return formatCairoDate(iso);
 }
 
 /*

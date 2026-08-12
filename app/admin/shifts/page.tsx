@@ -429,17 +429,17 @@ export default function AdminShiftsPage() {
           style={{ background: "rgba(0,0,0,0.7)" }}
           onClick={(e) => { if (e.target === e.currentTarget) setModal(false); }}
         >
-          <div className="w-full max-w-sm rounded-2xl flex flex-col"
+          <div className="w-full max-w-sm rounded-2xl flex flex-col max-h-[90vh]"
             style={{ background: C.card, border: `1px solid ${C.border}` }}>
 
-            <div className="flex items-center justify-between px-5 py-4 border-b" style={{ borderColor: C.border }}>
+            <div className="flex items-center justify-between px-5 py-4 border-b flex-shrink-0" style={{ borderColor: C.border }}>
               <h2 className="text-base font-black" style={{ color: C.text }}>إضافة وردية جديدة</h2>
               <button onClick={() => setModal(false)}
                 className="w-8 h-8 rounded-full flex items-center justify-center text-sm hover:opacity-70"
                 style={{ background: C.bg, color: C.muted }}>✕</button>
             </div>
 
-            <div className="px-5 py-4 flex flex-col gap-4">
+            <div className="flex-1 overflow-y-auto min-h-0 px-5 py-4 flex flex-col gap-4">
 
               {formErr && (
                 <p className="text-xs font-semibold text-center py-1.5 rounded-lg"
@@ -523,17 +523,17 @@ export default function AdminShiftsPage() {
           style={{ background: "rgba(0,0,0,0.7)" }}
           onClick={(e) => { if (e.target === e.currentTarget) { setEditModal(false); setEditShift(null); } }}
         >
-          <div className="w-full max-w-sm rounded-2xl flex flex-col"
+          <div className="w-full max-w-sm rounded-2xl flex flex-col max-h-[90vh]"
             style={{ background: C.card, border: `1px solid ${C.border}` }}>
 
-            <div className="flex items-center justify-between px-5 py-4 border-b" style={{ borderColor: C.border }}>
+            <div className="flex items-center justify-between px-5 py-4 border-b flex-shrink-0" style={{ borderColor: C.border }}>
               <h2 className="text-base font-black" style={{ color: C.text }}>تعديل وردية {editShift.num}</h2>
               <button onClick={() => { setEditModal(false); setEditShift(null); }}
                 className="w-8 h-8 rounded-full flex items-center justify-center text-sm hover:opacity-70"
                 style={{ background: C.bg, color: C.muted }}>✕</button>
             </div>
 
-            <div className="px-5 py-4 flex flex-col gap-4">
+            <div className="flex-1 overflow-y-auto min-h-0 px-5 py-4 flex flex-col gap-4">
 
               {editErr && (
                 <p className="text-xs font-semibold text-center py-1.5 rounded-lg"

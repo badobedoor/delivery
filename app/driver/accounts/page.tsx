@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase";
 import { useCurrentUser } from "@/hooks/useCurrentUser";
+import { formatCairoDate, parseTimestamp, startOfTodayCairo } from "@/lib/cairoTime";
 
 const C = {
   bg:     "#0F172A",
@@ -63,20 +64,13 @@ function fmtAmt(n: number) {
   return `${n.toLocaleString("ar-EG")} ج.م`;
 }
 
-function fmtDateAr(iso: string) {
-  try {
-    const d = new Date(iso);
-    return d.toLocaleDateString("ar-EG", { day: "numeric", month: "long", year: "numeric" });
-  } catch { return iso; }
+function isoDateStr(iso: string) {
+  /* تاريخ القاهرة (YYYY-MM-DD) بدل قصّ جزء UTC الخام — لتجميع الأرشيف حسب يوم القاهرة */
+  const d = parseTimestamp(iso);
+  if (!d) return iso.slice(0, 10);
+  const c = new Date(d.toLocaleString("en-US", { timeZone: "Africa/Cairo" }));
+  return `${c.getFullYear()}-${String(c.getMonth() + 1).padStart(2, "0")}-${String(c.getDate()).padStart(2, "0")}`;
 }
-
-function todayStartISO() {
-  const d = new Date();
-  d.setHours(0, 0, 0, 0);
-  return d.toISOString();
-}
-
-function isoDateStr(iso: string) { return iso.slice(0, 10); }
 
 
 /* ── Chevron ── */
@@ -375,7 +369,6 @@ export default function DriverAccountsPage() {
   const [settlementSent,        setSettlementSent]        = useState(false);
   const [showSettlementConfirm, setShowSettlementConfirm] = useState(false);
   const [pageError,             setPageError]             = useState("");
-  const [shiftClosed,           setShiftClosed]           = useState(false);
 
   /* ── Load today's data ── */
   const loadData = useCallback(async (did: string) => {
@@ -452,18 +445,6 @@ export default function DriverAccountsPage() {
 
     const custodyTotal = Math.round((custodyData ?? []).reduce((s: number, c: any) => s + (c.amount ?? 0), 0));
     setTotalCustody(custodyTotal);
-
-
-    /* ── Check if current delivery_shift is closed ── */
-    const { data: currentDS } = await supabase
-      .from("delivery_shifts")
-      .select("status")
-      .eq("delivery_id", did)
-      .order("started_at", { ascending: false })
-      .limit(1)
-      .maybeSingle();
-
-    if (currentDS?.status === "closed") setShiftClosed(true);
   }, []);
 
   /* ── Load archive (lazy) ── */
@@ -477,7 +458,7 @@ export default function DriverAccountsPage() {
       .eq("delivery_id", did)
       .eq("status", "delivered")
       .not("payment_method", "is", null)
-      .lt("created_at", todayStartISO())
+      .lt("created_at", startOfTodayCairo())
       .order("created_at", { ascending: false })
       .limit(100);
 
@@ -520,7 +501,6 @@ export default function DriverAccountsPage() {
         .maybeSingle();
       if (shiftData) {
         setShiftId(shiftData.id);
-        if (shiftData.status === "closed") setShiftClosed(true);
 
         /* Check if a close request already exists for this delivery_shift */
         const { data: existingClose } = await supabase
@@ -615,7 +595,19 @@ export default function DriverAccountsPage() {
       });
       setSettlementSent(true);
       setShowSettlementConfirm(false);
-    } catch { setPageError("خطأ في إرسال طلب التقفيل، حاول مرة أخرى"); }
+    } catch (err) {
+      /* فهرس الـ unique constraint idx_advance_requests_one_pending_close_per_shift
+         يرفض إدراج طلب تقفيل ثانٍ لنفس الوردية (جهاز آخر أو ضغط متكرر).
+         لا نعرض خطأً تقنيًا — نعامل الطلب كأنه أُرسل بالفعل ونحدّث حالة الصفحة
+         فيظهر شريط "تم إرسال طلب التقفيل" ويختفي الزر. */
+      const dbCode = (err as { code?: string } | null)?.code;
+      if (dbCode === "23505") {
+        setSettlementSent(true);
+        setShowSettlementConfirm(false);
+        return;
+      }
+      setPageError("خطأ في إرسال طلب التقفيل، حاول مرة أخرى");
+    }
     finally   { setSettlementSubmitting(false); }
   }
 
@@ -631,7 +623,7 @@ export default function DriverAccountsPage() {
       .sort(([a], [b]) => b.localeCompare(a))
       .map(([iso, orders]) => ({
         isoDate:   iso,
-        dateLabel: fmtDateAr(iso + "T00:00:00"),
+        dateLabel: formatCairoDate(iso),
         orders,
       }));
   }, [archiveOrders]);
@@ -747,18 +739,6 @@ export default function DriverAccountsPage() {
 
       <div className="flex-1 flex flex-col gap-4 p-4 pb-28">
 
-        {/* ── Shift closed ── */}
-        {shiftClosed ? (
-          <div className="flex flex-col items-center justify-center gap-3 py-16 text-center">
-            <span style={{ fontSize: 48 }}>✅</span>
-            <p className="font-bold text-lg" style={{ color: C.teal }}>
-              تم تقفيل الوردية بنجاح
-            </p>
-            <p className="text-sm" style={{ color: C.muted }}>
-              تم تحديث حساباتك، يمكنك مراجعة الأرشيف المالي
-            </p>
-          </div>
-        ) : (
         <>
 
         {/* ── TAB: الوردية الحالية ── */}
@@ -892,8 +872,7 @@ export default function DriverAccountsPage() {
           </>
         )}
 
-        </> /* end !shiftClosed */
-        )}
+        </>
       </div>
 
       {/* Fixed bottom buttons */}
