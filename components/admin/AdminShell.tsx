@@ -2,7 +2,7 @@
 
 import Link              from "next/link";
 import { usePathname }   from "next/navigation";
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { supabase }      from "@/lib/supabase";
 import { useAutoRefresh } from "@/hooks/useAutoRefresh";
 import {
@@ -22,7 +22,7 @@ import {
 import { CSS } from "@dnd-kit/utilities";
 
 /* Pages staff role is allowed to visit */
-const STAFF_ALLOWED = ["/admin/orders", "/admin/restaurants", "/admin/drivers"];
+const STAFF_ALLOWED = ["/admin/orders", "/admin/restaurants", "/admin/drivers", "/admin/delivery-requests"];
 
 const C = {
   bg:     "#0F172A",
@@ -108,6 +108,7 @@ function SidebarContent({
   onLogout,
   onReorder,
   newOrdersCount = 0,
+  newEntityCount = 0,
 }: {
   collapsed?: boolean;
   navLinks: typeof allNavLinks;
@@ -115,6 +116,7 @@ function SidebarContent({
   onLogout: () => void;
   onReorder?: (newLinks: typeof allNavLinks) => void;
   newOrdersCount?: number;
+  newEntityCount?: number;
 }) {
   const pathname = usePathname();
   const sensors  = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 5 } }));
@@ -158,7 +160,14 @@ function SidebarContent({
         <SortableContext items={navLinks.map((l) => l.href)} strategy={verticalListSortingStrategy}>
         {navLinks.map((link) => {
           const active      = pathname.startsWith(link.href);
-          const hasNewBadge = newOrdersCount > 0 && link.href === "/admin/orders";
+          /* Badge count: each menu item shows ONLY its own table's unread count.
+             "الطلبات" → newOrdersCount (orders status="new") فقط.
+             "طلبات دليفري" → newEntityCount (delivery_requests status="new") فقط.
+             مستقلة تمامًا — تغيير حالة delivery_request لا يمس بادج orders والعكس. */
+          const badgeCount  = link.href === "/admin/orders"
+            ? newOrdersCount
+            : link.href === "/admin/delivery-requests" ? newEntityCount : 0;
+          const hasNewBadge = badgeCount > 0;
           return (
             <SortableNavItem key={link.href} id={link.href}>
             {(handleProps) => (
@@ -215,7 +224,7 @@ function SidebarContent({
                         className="mr-1 flex-shrink-0 min-w-[18px] h-[18px] flex items-center justify-center rounded-full text-[10px] font-black"
                         style={{ background: C.red, color: "#fff" }}
                       >
-                        {newOrdersCount}
+                        {badgeCount}
                       </span>
                     )}
                   </div>
@@ -276,6 +285,9 @@ export default function AdminShell({ children }: { children: React.ReactNode }) 
   const [collapsed,      setCollapsed]      = useState(false);
   const [mobileOpen,     setMobileOpen]     = useState(false);
   const [newOrdersCount, setNewOrdersCount] = useState(0);
+  const [entityNewCount,    setEntityNewCount]    = useState(0);
+  const entityNewIdsRef = useRef<Set<string>>(new Set());
+  const deliveryInitializedRef = useRef(false);
   const [savedOrder,     setSavedOrder]     = useState<string[]>(() => {
     if (typeof window === "undefined") return [];
     try {
@@ -296,7 +308,10 @@ export default function AdminShell({ children }: { children: React.ReactNode }) 
     setNewOrdersCount(count ?? 0);
   }, [user, isLoginPage]);
 
-  useEffect(() => { fetchNewOrdersCount(); }, [fetchNewOrdersCount]);
+  useEffect(() => {
+    const t = setTimeout(() => { fetchNewOrdersCount(); }, 0);
+    return () => clearTimeout(t);
+  }, [fetchNewOrdersCount]);
   useAutoRefresh(fetchNewOrdersCount);
 
   /* ── Realtime: تحديث العداد فور وصول طلب جديد أو تغيير حالة ── */
@@ -306,7 +321,7 @@ export default function AdminShell({ children }: { children: React.ReactNode }) 
       .channel("layout-orders-count")
       .on("postgres_changes", { event: "INSERT", schema: "public", table: "orders" }, (payload) => {
         fetchNewOrdersCount();
-        if ((payload.new as any)?.status !== "new") return;
+        if ((payload.new as { status?: string } | null)?.status !== "new") return;
         try {
           const src = localStorage.getItem("notification_sound") ?? "/sounds/new-order.mp3";
           new Audio(src).play().catch(() => {});
@@ -320,9 +335,53 @@ export default function AdminShell({ children }: { children: React.ReactNode }) 
     return () => { supabase.removeChannel(channel); };
   }, [user, isLoginPage, fetchNewOrdersCount]);
 
+  /* ── Delivery-requests unread count + notification.
+        Realtime on delivery_requests is RLS-blocked for browser clients, so the
+        SAME sound / Notification / badge logic as the orders realtime handler
+        above is driven by a 10s poll through the guarded admin API instead.
+        Real N→N+1 trigger: the first poll is a silent prime (so pre-existing
+        requests never replay sound); every poll after that fires when a
+        previously-unseen "new" delivery_request id appears — including the
+        0→1 first arrival, exactly like an orders INSERT. ── */
+  const pollDeliveryRequests = useCallback(async () => {
+    if (!user || isLoginPage) { setEntityNewCount(0); return; }
+    try {
+      const res = await fetch("/api/admin/delivery-requests", { credentials: "include" });
+      if (!res.ok) { setEntityNewCount(0); return; }
+      const data: unknown = await res.json();
+      if (!Array.isArray(data)) { setEntityNewCount(0); return; }
+      const newList = (data as { id: string; status: string }[]).filter((r) => r.status === "new");
+      const newIds  = new Set(newList.map((r) => r.id));
+      const appeared = [...newIds].filter((id) => !entityNewIdsRef.current.has(id));
+      const isInitialPrime = !deliveryInitializedRef.current;
+      deliveryInitializedRef.current = true;
+      entityNewIdsRef.current = newIds;
+      setEntityNewCount(newIds.size);
+      if (!isInitialPrime && appeared.length > 0) {
+        try {
+          const src = localStorage.getItem("notification_sound") ?? "/sounds/new-order.mp3";
+          new Audio(src).play().catch(() => {});
+        } catch { /* ignore */ }
+        if (Notification.permission === "granted") {
+          new Notification("🔔 طلب جديد وصل!", { body: "يوجد طلب جديد يحتاج مراجعة", icon: "/icon.png" });
+        }
+      }
+    } catch { /* ignore */ }
+  }, [user, isLoginPage]);
+
+  useEffect(() => {
+    if (!user || isLoginPage) return;
+    const t = setTimeout(() => { pollDeliveryRequests(); }, 0);
+    const id = setInterval(pollDeliveryRequests, 10_000);
+    return () => { clearTimeout(t); clearInterval(id); };
+  }, [user, isLoginPage, pollDeliveryRequests]);
+
   /* ── Fetch current user from secure cookie ── */
   useEffect(() => {
-    if (isLoginPage) { setChecked(true); return; }
+    if (isLoginPage) {
+      const t = setTimeout(() => setChecked(true), 0);
+      return () => clearTimeout(t);
+    }
 
     fetch("/api/auth/me", { credentials: "include" })
       .then((r) => r.json())
@@ -414,6 +473,7 @@ const navLinks =
           onLogout={handleLogout}
           onReorder={handleNavReorder}
           newOrdersCount={newOrdersCount}
+          newEntityCount={entityNewCount}
         />
       </div>
 
@@ -465,6 +525,7 @@ const navLinks =
               onLogout={handleLogout}
               onReorder={handleNavReorder}
               newOrdersCount={newOrdersCount}
+              newEntityCount={entityNewCount}
             />
           </div>
         </div>
