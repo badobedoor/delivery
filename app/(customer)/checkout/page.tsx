@@ -267,6 +267,7 @@ export default function CheckoutPage() {
             subtotal,
             delivery_fee:    deliveryFee,
             discount_amount: couponDiscount || null,
+            coupon_id:       appliedCoupon?.id ?? null,
             total,
             notes:           orderNote.trim() || null,
           },

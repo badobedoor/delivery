@@ -29,6 +29,8 @@ type TodayOrder = {
   area:           string;
   subtotal:       number;
   deliveryFee:    number;
+  discountAmount: number;
+  couponApplies:  string | null;
   total:          number;
   status:         "accepted" | "on_the_way" | "delivered";
   restaurantPaid: boolean | null;
@@ -51,12 +53,36 @@ type ArchiveOrder = {
   isoDate:        string;
 };
 
+/* ── Entity (منشأة) delivery request in the current-shift view.
+     Only its delivery_fee enters the driver's settlement (never price), and
+     no restaurant_paid/restaurant_debt — those don't exist on the table and
+     must not be used here. ── */
+type EntityToday = {
+  id:          string;
+  name:        string;
+  area:        string;
+  price:       number | null;
+  deliveryFee: number | null;
+  status:      "accepted" | "on_the_way" | "delivered";
+};
+
 type AccountTx = {
   id:        number;
   type:      string;
   amount:    number;
   reason:    string | null;
   createdAt: string;
+};
+
+/* ── Shape of a delivery_requests row (only the fields used in accounts).
+     supabase returns the joined `areas` relation as an array. ── */
+type EntityReqRow = {
+  id:              string;
+  restaurant_name: string | null;
+  delivery_fee:    number | null;
+  price:           number | null;
+  status:          string;
+  areas:           { name: string | null }[] | null;
 };
 
 /* ── Helpers ── */
@@ -155,22 +181,71 @@ function ReadOnlyOrderCard({ order }: { order: TodayOrder }) {
 }
 
 /* ─────────────────────────────────────────────
+   EntityReadOnlyCard — delivered entity request card.
+   Shows price (قيمة الطلب) + delivery_fee (أجرة التوصيل), but ONLY the
+   delivery_fee is settled to the driver (never price, never restaurant_paid).
+───────────────────────────────────────────── */
+function EntityReadOnlyCard({ req }: { req: EntityToday }) {
+  const statusLabel = req.status === "accepted" ? "مع السائق" : req.status === "on_the_way" ? "في الطريق" : "تم التسليم";
+  const statusColor = req.status === "accepted" ? C.yellow : req.status === "on_the_way" ? C.blue : C.green;
+
+  return (
+    <div className="rounded-2xl overflow-hidden"
+      style={{ background: C.card, border: `1px solid ${C.border}` }}>
+      <div className="px-4 py-3 flex flex-col gap-1.5">
+        {/* Row 1: badge + name | total (price + fee) */}
+        <div className="flex items-center justify-between gap-2">
+          <div className="flex items-center gap-1.5 min-w-0">
+            <span className="text-[10px] font-bold px-2 py-0.5 rounded-full flex-shrink-0"
+              style={{ background: `${C.blue}22`, color: C.blue }}>🏢 منشأة</span>
+            <span className="text-sm font-semibold truncate" style={{ color: C.text }}>{req.name}</span>
+          </div>
+          <span className="text-lg font-black flex-shrink-0" style={{ color: C.green }}>
+            {fmtAmt((req.price ?? 0) + (req.deliveryFee ?? 0))}
+          </span>
+        </div>
+        {/* Row 2: area | status */}
+        <div className="flex items-center justify-between gap-2">
+          <span className="text-xs truncate" style={{ color: C.muted }}>📍 {req.area}</span>
+          <span className="text-xs font-semibold flex-shrink-0" style={{ color: statusColor }}>{statusLabel}</span>
+        </div>
+        {/* Row 3: fee breakdown */}
+        <div className="flex items-center gap-2 text-[11px] flex-wrap" style={{ color: C.muted }}>
+          <span>💵 السعر {req.price ?? 0} ج</span>
+          <span>🚚 أجرة التوصيل {req.deliveryFee ?? 0} ج</span>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ─────────────────────────────────────────────
    ShiftSummary
 ───────────────────────────────────────────── */
 function ShiftSummary({
-  totalCash, totalVodafone, totalCustody,
+  totalCash, totalVodafone, grossDeliveryFees, deliveryDiscounts, discountedCount, netDeliveryFees,
+  totalCustody, totalEntityFees,
 }: {
-  totalCash:    number;
-  totalVodafone: number;
-  totalCustody: number;
+  totalCash:           number;
+  totalVodafone:       number;
+  grossDeliveryFees:   number;
+  deliveryDiscounts:   number;
+  discountedCount:     number;
+  netDeliveryFees:     number;
+  totalCustody:        number;
+  totalEntityFees:     number;
 }) {
-  const toHandOver = Math.round(totalCash + totalVodafone + totalCustody);
+  const toHandOver = Math.round(netDeliveryFees + totalCustody + totalEntityFees);
 
   const rows = [
-    { icon: "💰", label: "نقدي معاك",      value: totalCash,     color: C.green  },
-    { icon: "📱", label: "فودافون",         value: totalVodafone, color: C.blue   },
-    { icon: "🔐", label: "عهدة",            value: totalCustody,  color: C.purple },
-    { icon: "🏢", label: "هتسلم للمكتب",   value: toHandOver,    color: toHandOver >= 0 ? C.teal : C.red },
+    { icon: "💰", label: "نقدي معاك",        value: totalCash,          color: C.green  },
+    { icon: "📱", label: "فودافون",           value: totalVodafone,      color: C.blue   },
+    { icon: "📦", label: "إجمالي أجور التوصيل", value: grossDeliveryFees, color: C.text   },
+    { icon: "🎟️", label: `خصومات التوصيل (${discountedCount})`, value: -deliveryDiscounts, color: C.red },
+    { icon: "🧾", label: "صافي أجور التوصيل", value: netDeliveryFees,    color: C.teal   },
+    { icon: "🚚", label: "أجرة طلبات منشآت", value: totalEntityFees,   color: C.blue   },
+    { icon: "🔐", label: "عهدة",              value: totalCustody,       color: C.purple },
+    { icon: "🏢", label: "هتسلم للمكتب",     value: toHandOver,         color: toHandOver >= 0 ? C.teal : C.red },
   ];
 
   return (
@@ -356,8 +431,12 @@ export default function DriverAccountsPage() {
   const [driverName,    setDriverName]    = useState("");
   const { user: authUser, loading: authLoading } = useCurrentUser();
   const [shiftId,       setShiftId]       = useState<string | null>(null);
+  /* الوردية التشغيلية المقابلة للوردية المالية الحالية (delivery_shifts.shift_id).
+     تُستخدم لنطاق استعلام orders داخل حساب الوردية الحالية فقط. */
+  const currentShiftShiftIdRef = useRef<number | null>(null);
 
   const [todayOrders,   setTodayOrders]   = useState<TodayOrder[]>([]);
+  const [entityToday,   setEntityToday]   = useState<EntityToday[]>([]);
   const [archiveOrders, setArchiveOrders] = useState<ArchiveOrder[]>([]);
   const [archiveLoaded, setArchiveLoaded] = useState(false);
   const [walletBalance, setWalletBalance] = useState(0);
@@ -370,25 +449,48 @@ export default function DriverAccountsPage() {
   const [showSettlementConfirm, setShowSettlementConfirm] = useState(false);
   const [pageError,             setPageError]             = useState("");
 
-  /* ── Load today's data ── */
-  const loadData = useCallback(async (did: string) => {
+  /* ── Load today's data ──
+     operationalShiftId = delivery_shifts.shift_id للوردية المالية الحالية.
+     orders تنتمي إلى حساب الوردية الحالية فقط إذا:
+       delivery_id = did
+       و shift_id = الوردية التشغيلية للوردية المالية الحالية (العلاقة الموجودة)
+       و settled = false (فلتر مساعد فقط، وليس تعريف الوردية).
+     لا وردية حالية (open / pending_close) → لا تُعرض أي طلبات. */
+  const loadData = useCallback(async (did: string, operationalShiftId: number | null) => {
+    /* Entity delivery requests are RLS-blocked for the browser client, so they
+       are loaded through the guarded server API (current = current financial shift). */
+    const entityRes = await fetch("/api/driver/delivery-requests/accounts", { credentials: "include" })
+      .then(async (res) => {
+        if (!res.ok) return { current: [] };
+        const d = await res.json();
+        return { current: (d.current ?? []) as EntityReqRow[] };
+      })
+      .catch((err) => {
+        console.error("delivery-requests/accounts fetch:", err);
+        return { current: [] };
+      });
+
     const [
       { data: ordersData, error: ordersErr },
       { data: driverData },
       { data: txData },
       { data: custodyData },
     ] = await Promise.all([
-      supabase
-        .from("orders")
-        .select(
-          "id, status, total, subtotal, delivery_fee, user_order_number, restaurant_paid, restaurant_debt, " +
-          "payment_method, cash_amount, vodafone_amount, restaurants!restaurant_id(name), " +
-          "addresses!address_id(areas(name))",
-        )
-        .eq("delivery_id", did)
-        .in("status", ["accepted", "on_the_way", "delivered"])
-        .eq("settled", false)
-        .order("created_at", { ascending: true }),
+      /* لا وردية حالية → لا طلبات عادية في حساب الوردية الحالية */
+      operationalShiftId
+        ? supabase
+            .from("orders")
+            .select(
+              "id, status, total, subtotal, delivery_fee, discount_amount, coupon_id, user_order_number, restaurant_paid, restaurant_debt, " +
+              "payment_method, cash_amount, vodafone_amount, restaurants!restaurant_id(name), " +
+              "addresses!address_id(areas(name)), coupons!coupon_id(applies_to)",
+            )
+            .eq("delivery_id", did)
+            .in("status", ["accepted", "on_the_way", "delivered"])
+            .eq("shift_id", operationalShiftId)
+            .eq("settled", false)
+            .order("created_at", { ascending: true })
+        : Promise.resolve({ data: [] as never[], error: null }),
       fetch("/api/driver/me/wallet", { credentials: "include" })
         .then(async (res) => {
           if (!res.ok) { const body = await res.json().catch(() => ({})); throw new Error(body.error ?? res.statusText); }
@@ -421,6 +523,8 @@ export default function DriverAccountsPage() {
         area:           (o.addresses as any)?.areas?.name ?? "—",
         subtotal:       o.subtotal         ?? 0,
         deliveryFee:    o.delivery_fee     ?? 0,
+        discountAmount: o.discount_amount  ?? 0,
+        couponApplies:  (o.coupons as { applies_to?: string } | null)?.applies_to ?? null,
         total:          o.total            ?? 0,
         status:         o.status,
         restaurantPaid: o.restaurant_paid  ?? null,
@@ -428,6 +532,17 @@ export default function DriverAccountsPage() {
         paymentMethod:  o.payment_method   ?? null,
         cashAmount:     o.cash_amount      ?? 0,
         vodafoneAmount: o.vodafone_amount  ?? 0,
+      })),
+    );
+
+    setEntityToday(
+      entityRes.current.map((r) => ({
+        id:          r.id,
+        name:        r.restaurant_name ?? "—",
+        area:        r.areas?.[0]?.name ?? "—",
+        price:       r.price ?? null,
+        deliveryFee: r.delivery_fee ?? null,
+        status:      r.status as EntityToday["status"],
       })),
     );
 
@@ -491,16 +606,21 @@ export default function DriverAccountsPage() {
       setDriverInitial((authUser?.name ?? "م")[0] ?? "م");
       setDriverName(authUser?.name ?? "");
 
-      /* Get the driver's current delivery_shift PK and status */
+      /* الوردية المالية الحالية = أحدث delivery_shifts بحالة open أو pending_close فقط.
+         الوردية closed (قديمة) لا تدخل في حساب الوردية الحالية أبدًا.
+         shift_id (التشغيلية) يُستخدم لنطاق استعلام orders عبر العلاقة الموجودة:
+         delivery_shifts.shift_id = orders.shift_id */
       const { data: shiftData } = await supabase
         .from("delivery_shifts")
-        .select("id, status")
+        .select("id, shift_id, status")
         .eq("delivery_id", did)
+        .in("status", ["open", "pending_close"])
         .order("started_at", { ascending: false })
         .limit(1)
         .maybeSingle();
       if (shiftData) {
         setShiftId(shiftData.id);
+        currentShiftShiftIdRef.current = (shiftData.shift_id as number | null) ?? null;
 
         /* Check if a close request already exists for this delivery_shift */
         const { data: existingClose } = await supabase
@@ -510,9 +630,11 @@ export default function DriverAccountsPage() {
           .eq("status", "pending_close")
           .maybeSingle();
         if (existingClose) setSettlementSent(true);
+      } else {
+        currentShiftShiftIdRef.current = null;
       }
 
-      await loadData(did);
+      await loadData(did, currentShiftShiftIdRef.current);
       setLoading(false);
     }
     init();
@@ -536,7 +658,7 @@ export default function DriverAccountsPage() {
         schema: "public",
         table:  "delivery_accounts",
       }, () => {
-        loadData(driverId);
+        loadData(driverId, currentShiftShiftIdRef.current);
       })
       .subscribe();
 
@@ -557,6 +679,12 @@ export default function DriverAccountsPage() {
 
     if (activeOrdersData && activeOrdersData.length > 0) {
       setPageError("وصّل الأوردرات الأول قبل تقفيل الوردية");
+      return;
+    }
+
+    /* Also block while entity delivery requests are still active */
+    if (entityActiveToday.length > 0) {
+      setPageError("وصّل طلبات المنشآت الأول قبل تقفيل الوردية");
       return;
     }
 
@@ -638,7 +766,7 @@ export default function DriverAccountsPage() {
   const lastRefreshRef = useRef(0);
 
   useEffect(() => {
-    refreshFnRef.current = () => { if (driverId) loadData(driverId); };
+    refreshFnRef.current = () => { if (driverId) loadData(driverId, currentShiftShiftIdRef.current); };
   }, [driverId, loadData]);
 
   useEffect(() => {
@@ -661,10 +789,37 @@ export default function DriverAccountsPage() {
   const deliveredOrders = todayOrders.filter((o) => o.status === "delivered");
   const activeOrders    = todayOrders.filter((o) => o.status === "accepted" || o.status === "on_the_way");
   const collectedOrders = deliveredOrders.filter((o) => o.paymentMethod !== null);
-  const totalCash     = Math.round(deliveredOrders.filter((o) => o.paymentMethod === "cash" || o.paymentMethod === "mixed").reduce((s, o) => s + o.deliveryFee, 0));
-  const totalVodafone = Math.round(deliveredOrders.filter((o) => o.paymentMethod === "vodafone").reduce((s, o) => s + o.deliveryFee, 0));
 
-  const settlementAmount = Math.round(totalCash + totalVodafone + totalCustody);
+  /* خصومات التوصيل فقط: coupons.applies_to === "توصيل". الطلبات القديمة
+     (coupon_id NULL) لا تُحتسب — لا تخمين ولا Backfill. */
+  const grossDeliveryFees = Math.round(deliveredOrders.reduce((s, o) => s + o.deliveryFee, 0));
+  const deliveryDiscountedOrders = deliveredOrders.filter(
+    (o) => o.couponApplies === "توصيل" && o.discountAmount > 0,
+  );
+  const deliveryDiscounts = Math.round(deliveryDiscountedOrders.reduce((s, o) => s + o.discountAmount, 0));
+  const discountedCount   = deliveryDiscountedOrders.length;
+  const netDeliveryFees   = Math.round(grossDeliveryFees - deliveryDiscounts);
+
+  /* الحصة من كل أوردر مُسلَّم بعد خصم توصيله = delivery_fee − خصم التوصيل.
+     يُوزَّع على طريقة الدفع كما في السلوك الحالي (cash/mixed → نقدي، vodafone → فودافون). */
+  let totalCash = 0;
+  let totalVodafone = 0;
+  for (const o of deliveredOrders) {
+    if (!o.paymentMethod) continue;
+    const portion = o.deliveryFee - (o.couponApplies === "توصيل" ? o.discountAmount : 0);
+    if (o.paymentMethod === "cash" || o.paymentMethod === "mixed") totalCash += portion;
+    else if (o.paymentMethod === "vodafone") totalVodafone += portion;
+  }
+  totalCash     = Math.round(totalCash);
+  totalVodafone = Math.round(totalVodafone);
+
+  /* Entity requests — only delivery_fee enters the settlement (never price) */
+  const entityActiveToday = entityToday.filter((r) => r.status === "accepted" || r.status === "on_the_way");
+  const entityDelivered   = entityToday.filter((r) => r.status === "delivered");
+  const entityFees        = Math.round(entityDelivered.reduce((s, r) => s + (r.deliveryFee ?? 0), 0));
+
+  /* التسليم النهائي = صافي أجور التوصيل + أجور المنشآت + العهدة */
+  const settlementAmount = Math.round(totalCash + totalVodafone + totalCustody + entityFees);
 
   /* ── Loading ── */
   if (loading) {
@@ -785,7 +940,12 @@ export default function DriverAccountsPage() {
               <ShiftSummary
                 totalCash={totalCash}
                 totalVodafone={totalVodafone}
+                grossDeliveryFees={grossDeliveryFees}
+                deliveryDiscounts={deliveryDiscounts}
+                discountedCount={discountedCount}
+                netDeliveryFees={netDeliveryFees}
                 totalCustody={totalCustody}
+                totalEntityFees={entityFees}
               />
             )}
 
@@ -797,6 +957,14 @@ export default function DriverAccountsPage() {
               </div>
             )}
 
+            {/* Active entity requests — read-only */}
+            {(shiftId || settlementSent) && entityActiveToday.length > 0 && (
+              <div className="flex flex-col gap-3">
+                <p className="text-xs font-semibold px-1" style={{ color: C.muted }}>طلبات المنشآت الجارية</p>
+                {entityActiveToday.map((r) => <EntityReadOnlyCard key={r.id} req={r} />)}
+              </div>
+            )}
+
             {/* Delivered orders — read-only */}
             {(shiftId || settlementSent) && deliveredOrders.length > 0 && (
               <div className="flex flex-col gap-3">
@@ -805,8 +973,16 @@ export default function DriverAccountsPage() {
               </div>
             )}
 
-            {/* Empty state (on shift but no orders yet) */}
-            {(shiftId || settlementSent) && todayOrders.length === 0 && (
+            {/* Delivered entity requests — read-only (fee enters settlement) */}
+            {(shiftId || settlementSent) && entityDelivered.length > 0 && (
+              <div className="flex flex-col gap-3">
+                <p className="text-xs font-semibold px-1" style={{ color: C.muted }}>تم تسليم طلبات المنشآت</p>
+                {entityDelivered.map((r) => <EntityReadOnlyCard key={r.id} req={r} />)}
+              </div>
+            )}
+
+            {/* Empty state (on shift but no orders/requests yet) */}
+            {(shiftId || settlementSent) && todayOrders.length === 0 && entityToday.length === 0 && (
               <div className="flex flex-col items-center justify-center gap-4 py-16">
                 <span style={{ fontSize: 48 }}>📭</span>
                 <p className="text-sm font-semibold" style={{ color: C.muted }}>لا توجد أوردرات اليوم</p>

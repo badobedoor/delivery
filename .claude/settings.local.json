@@ -43,7 +43,17 @@
       "Bash(xargs grep -l \"wa.me\\\\|whatsapp\\\\|sendTo\")",
       "Bash(xargs grep -l \"delivery_shift\\\\|delivery_shifts\\\\|started_at\\\\|ended_at\")",
       "Bash(xargs grep -l \"wallet\\\\|settlement\\\\|settle\")",
-      "Bash(xargs grep -l \"delivery_shifts\\\\|delivery_shift\")"
+      "Bash(xargs grep -l \"delivery_shifts\\\\|delivery_shift\")",
+      "Bash(echo \"exit: $?\")",
+      "Bash(grep -E \"max-w-\\\\[|min-w-\\\\[|w-\\\\[[0-9]{3,}|flex-nowrap\")",
+      "PowerShell(Get-Content *)",
+      "Bash(echo \"=== eslint exit: $? ===\")",
+      "Bash(sed 's/\\\\\\(SERVICE_ROLE_KEY\\\\\\)=.*/\\\\1=<redacted>/')",
+      "Bash(sed 's/\\\\\\(JWT_SECRET\\\\\\)=.*/\\\\1=<redacted>/')",
+      "Bash(echo \"EXIT: $?\")",
+      "Bash(echo \"---LIB-EXIT=$?---\")",
+      "Bash(echo \"---MODS-EXIT=$?---\")",
+      "Bash(npx supabase *)"
     ]
   }
 }

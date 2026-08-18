@@ -87,11 +87,45 @@ const ORDER_SELECT = `
   users!user_id (phone)
 `;
 
+/* ── Entity (منشأة) delivery requests — served by /api/driver/delivery-requests.
+     Only columns that exist on delivery_requests are used (no picked_up /
+     restaurant_paid / payment fields — they don't exist on that table). ── */
+type EntityReq = {
+  id:               string;
+  restaurant_name:  string;
+  delivery_address: string | null;
+  notes:            string | null;
+  status:           string;
+  customer_phone:   string | null;
+  price:            number | null;
+  delivery_fee:     number | null;
+  area:             string | null;
+  area_id:          string | null;
+  created_at:       string;
+};
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function toEntityReq(r: Record<string, any>): EntityReq {
+  return {
+    id:               r.id ?? "",
+    restaurant_name:  r.restaurant_name ?? "منشأة",
+    delivery_address: r.delivery_address ?? null,
+    notes:            r.notes ?? null,
+    status:           r.status ?? "",
+    customer_phone:   r.customer_phone ?? null,
+    price:            r.price ?? null,
+    delivery_fee:     r.delivery_fee ?? (r.areas?.delivery_fee ?? null),
+    area:             r.areas?.name ?? null,
+    area_id:          r.area_id ?? null,
+    created_at:       r.created_at ?? "",
+  };
+}
+
 function fmtAmt(n: number) { return `${n.toLocaleString("ar-EG")} ج.م`; }
 
 /* ── Accept sound (Web Audio API) ── */
 function playAcceptSound() {
-  const ctx = new (window.AudioContext || (window as any).webkitAudioContext)();
+  const ctx = new (window.AudioContext || (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext)();
   const oscillator = ctx.createOscillator();
   const gainNode   = ctx.createGain();
   oscillator.connect(gainNode);
@@ -244,6 +278,110 @@ function AvailableCard({ order, onAccept }: { order: Order; onAccept: () => void
             style={{ background: C.teal, color: "#fff" }}
           >
             قبول الطلب
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* ── Available entity request card — same visual language as AvailableCard,
+     with a clear "🏢 طلب منشأة" badge. Only real fields, no fake values. ── */
+function EntityAvailableCard({
+  req, onAccept, busy,
+}: {
+  req: EntityReq;
+  onAccept: () => void;
+  busy: boolean;
+}) {
+  const [open, setOpen] = useState(false);
+
+  return (
+    <div
+      className="rounded-2xl overflow-hidden transition-all"
+      style={{ background: C.card, border: `1px solid ${C.border}` }}
+    >
+      {/* ── Collapsed header ── */}
+      <div
+        className="w-full flex items-center gap-3 px-4 py-3.5 text-right cursor-pointer"
+        onClick={() => setOpen((v) => !v)}
+      >
+        <div className="flex-1 flex flex-col gap-1">
+          <div className="flex items-center gap-2 flex-wrap">
+            <span className="text-[10px] font-bold px-2 py-0.5 rounded-full"
+              style={{ background: `${C.blue}22`, color: C.blue }}>
+              🏢 طلب منشأة
+            </span>
+            <span className="text-sm font-semibold" style={{ color: C.text }}>{req.restaurant_name}</span>
+          </div>
+          <span className="text-[11px] truncate" style={{ color: C.muted }}>📍 {req.area ?? "—"}</span>
+          {req.price != null && (
+            <span className="text-base font-black" style={{ color: C.green }}>{req.price} ج.م</span>
+          )}
+          <div className="flex items-center gap-1.5 text-xs" style={{ color: C.muted }}>
+            <span>🚚 {req.delivery_fee ?? 0}ج</span>
+            {req.customer_phone && (
+              <>
+                <span style={{ color: C.border }}>|</span>
+                <span>☎ {req.customer_phone}</span>
+              </>
+            )}
+          </div>
+        </div>
+        <div className="flex items-center gap-2 flex-shrink-0">
+          {!open && (
+            <button
+              onClick={(e) => { e.stopPropagation(); onAccept(); }}
+              disabled={busy}
+              className="px-3 py-1.5 rounded-xl text-xs font-bold transition-opacity hover:opacity-80 disabled:opacity-50"
+              style={{ background: C.teal, color: "#fff" }}
+            >
+              {busy ? "جاري..." : "قبول"}
+            </button>
+          )}
+          <span style={{ color: C.muted }}><ChevronIcon open={open} /></span>
+        </div>
+      </div>
+
+      {/* ── Expanded details ── */}
+      {open && (
+        <div className="px-4 pb-4 flex flex-col gap-3 border-t" style={{ borderColor: C.border }}>
+
+          {/* Address */}
+          <div className="pt-3 flex flex-col gap-0.5">
+            <p className="text-xs font-semibold" style={{ color: C.muted }}>عنوان التوصيل</p>
+            <p className="text-sm" style={{ color: C.muted }}>🏠 {req.delivery_address || "—"}</p>
+          </div>
+
+          {/* Notes */}
+          {req.notes && (
+            <div className="rounded-xl px-3 py-2" style={{ background: `${C.yellow}15`, border: `1px solid ${C.yellow}30` }}>
+              <p className="text-xs font-semibold mb-0.5" style={{ color: C.yellow }}>ملاحظات</p>
+              <p className="text-sm" style={{ color: C.text }}>{req.notes}</p>
+            </div>
+          )}
+
+          {/* Pricing */}
+          <div className="rounded-xl p-3 flex flex-col gap-2" style={{ background: C.bg }}>
+            {req.price != null && (
+              <div className="flex items-center justify-between text-xs">
+                <span style={{ color: C.muted }}>💵 سعر الطلب</span>
+                <span className="font-semibold" style={{ color: C.text }}>{req.price} ج.م</span>
+              </div>
+            )}
+            <div className="flex items-center justify-between text-xs">
+              <span style={{ color: C.muted }}>🚚 التوصيل</span>
+              <span className="font-semibold" style={{ color: C.blue }}>{req.delivery_fee ?? 0} ج.م</span>
+            </div>
+          </div>
+
+          <button
+            onClick={onAccept}
+            disabled={busy}
+            className="w-full py-3 rounded-xl text-sm font-black transition-opacity hover:opacity-90 disabled:opacity-50"
+            style={{ background: C.teal, color: "#fff" }}
+          >
+            {busy ? "جاري القبول..." : "قبول الطلب"}
           </button>
         </div>
       )}
@@ -631,6 +769,228 @@ function ActiveCard({
   );
 }
 
+/* ── Active entity request card — driver completes it in the same cycle:
+       استلمت الطلب (accepted → on_the_way)  →  تم التسليم (on_the_way → delivered).
+     Uses ONLY on_the_way_at / delivered_at / customer_phone that exist on the table. ── */
+function EntityActiveCard({
+  req, areas, onPickup, onDeliver, busy,
+}: {
+  req: EntityReq;
+  areas: { id: string; name: string }[];
+  onPickup: (areaId: string, phone: string, price: string, notes: string) => void;
+  onDeliver: () => void;
+  busy: boolean;
+}) {
+  const [open,   setOpen]   = useState(false);
+  const [copied, setCopied] = useState(false);
+  const [areaId, setAreaId] = useState(req.area_id ?? "");
+  const [phone,  setPhone]  = useState(req.customer_phone ?? "");
+  const [price,  setPrice]  = useState(req.price != null ? String(req.price) : "");
+  const [notes,  setNotes]  = useState(req.notes ?? "");
+  const pickedUp = req.status === "on_the_way";
+  const phoneValid = /^01[0125][0-9]{8}$/.test(phone.trim().replace(/[\s-]/g, ""));
+  const canPickup  = areaId !== "" && phoneValid;
+
+  function copyPhone() {
+    if (req.customer_phone) navigator.clipboard.writeText(req.customer_phone).catch(() => {});
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  }
+
+  return (
+    <div
+      className="rounded-2xl overflow-hidden"
+      style={{ background: C.card, border: `1px solid ${C.border}` }}
+    >
+      {/* ── Collapsed header ── */}
+      <button
+        className="w-full flex items-center gap-3 px-4 py-3.5 text-right"
+        onClick={() => setOpen((v) => !v)}
+      >
+        <div className="flex-1 flex flex-col gap-1">
+          <div className="flex items-center gap-2 flex-wrap">
+            <span className="text-[10px] font-bold px-2 py-0.5 rounded-full"
+              style={{ background: `${C.blue}22`, color: C.blue }}>
+              🏢 طلب منشأة
+            </span>
+            <span className="text-sm font-semibold" style={{ color: C.text }}>{req.restaurant_name}</span>
+            <span
+              className="text-[10px] font-bold px-2 py-0.5 rounded-full"
+              style={{
+                background: pickedUp ? `${C.green}20` : `${C.yellow}20`,
+                color:      pickedUp ? C.green          : C.yellow,
+              }}
+            >
+              {pickedUp ? "✓ تم الاستلام" : "لم يُستلم بعد"}
+            </span>
+          </div>
+          <span className="text-[11px] truncate" style={{ color: C.muted }}>📍 {req.area ?? "—"}</span>
+          {req.price != null && (
+            <span className="text-base font-black" style={{ color: C.green }}>{req.price} ج.م</span>
+          )}
+          <div className="flex items-center gap-1.5 text-xs" style={{ color: C.muted }}>
+            <span>🚚 {req.delivery_fee ?? 0}ج</span>
+            {req.customer_phone && (
+              <>
+                <span style={{ color: C.border }}>|</span>
+                <span>☎ {req.customer_phone}</span>
+              </>
+            )}
+          </div>
+        </div>
+        <span style={{ color: C.muted, flexShrink: 0 }}><ChevronIcon open={open} /></span>
+      </button>
+
+      {/* ── Expanded details ── */}
+      {open && (
+        <div className="px-4 pb-4 flex flex-col gap-3 border-t" style={{ borderColor: C.border }}>
+
+          {/* Address */}
+          <div className="pt-3 flex flex-col gap-0.5">
+            <p className="text-xs font-semibold" style={{ color: C.muted }}>عنوان التوصيل</p>
+            <p className="text-sm" style={{ color: C.muted }}>🏠 {req.delivery_address || "—"}</p>
+          </div>
+
+          {/* Notes */}
+          {req.notes && (
+            <div className="rounded-xl px-3 py-2" style={{ background: `${C.yellow}15`, border: `1px solid ${C.yellow}30` }}>
+              <p className="text-xs font-semibold mb-0.5" style={{ color: C.yellow }}>ملاحظات</p>
+              <p className="text-sm" style={{ color: C.text }}>{req.notes}</p>
+            </div>
+          )}
+
+          {/* Pricing */}
+          <div className="rounded-xl p-3 flex flex-col gap-2" style={{ background: C.bg }}>
+            {req.price != null && (
+              <div className="flex items-center justify-between text-xs">
+                <span style={{ color: C.muted }}>💵 سعر الطلب</span>
+                <span className="font-semibold" style={{ color: C.text }}>{req.price} ج.م</span>
+              </div>
+            )}
+            <div className="flex items-center justify-between text-xs">
+              <span style={{ color: C.muted }}>🚚 التوصيل</span>
+              <span className="font-semibold" style={{ color: C.blue }}>{req.delivery_fee ?? 0} ج.م</span>
+            </div>
+          </div>
+
+          {/* ── Steps Flow ── */}
+          <div className="flex flex-col gap-2 mt-1">
+            {!pickedUp && (
+              <>
+                <div className="flex flex-col gap-2 p-3 rounded-xl"
+                  style={{ background: C.bg, border: `1px solid ${C.border}` }}>
+                  <div className="flex flex-col gap-1">
+                    <label className="text-[11px] font-semibold" style={{ color: C.muted }}>
+                      المنطقة <span style={{ color: C.red }}>(مطلوب)</span>
+                    </label>
+                    <select
+                      value={areaId}
+                      onChange={(e) => setAreaId(e.target.value)}
+                      className="rounded-xl px-3 py-2 text-sm outline-none"
+                      style={{ background: C.card, border: `1px solid ${C.border}`, color: C.text }}
+                    >
+                      <option value="">اختر المنطقة</option>
+                      {areas.map((a) => (
+                        <option key={a.id} value={a.id}>{a.name}</option>
+                      ))}
+                    </select>
+                  </div>
+                  <div className="flex flex-col gap-1">
+                    <label className="text-[11px] font-semibold" style={{ color: C.muted }}>
+                      رقم هاتف العميل <span style={{ color: C.red }}>(مطلوب)</span>
+                    </label>
+                    <input
+                      type="tel"
+                      value={phone}
+                      onChange={(e) => setPhone(e.target.value)}
+                      dir="ltr"
+                      placeholder="01xxxxxxxxx"
+                      className="rounded-xl px-3 py-2 text-sm outline-none"
+                      style={{ background: C.card, border: `1px solid ${C.border}`, color: C.text }}
+                    />
+                  </div>
+                  <div className="flex flex-col gap-1">
+                    <label className="text-[11px] font-semibold" style={{ color: C.muted }}>
+                      سعر الطلب (ج.م) <span style={{ color: C.muted }}>(اختياري)</span>
+                    </label>
+                    <input
+                      type="number"
+                      value={price}
+                      onChange={(e) => setPrice(e.target.value)}
+                      placeholder="0"
+                      className="rounded-xl px-3 py-2 text-sm outline-none"
+                      style={{ background: C.card, border: `1px solid ${C.border}`, color: C.text }}
+                    />
+                  </div>
+                  <div className="flex flex-col gap-1">
+                    <label className="text-[11px] font-semibold" style={{ color: C.muted }}>
+                      تفاصيل الطلب <span style={{ color: C.muted }}>(اختياري)</span>
+                    </label>
+                    <textarea
+                      value={notes}
+                      onChange={(e) => setNotes(e.target.value)}
+                      placeholder="اكتب تفاصيل الطلب إن وجدت"
+                      rows={3}
+                      className="rounded-xl px-3 py-2 text-sm outline-none resize-none"
+                      style={{ background: C.card, border: `1px solid ${C.border}`, color: C.text }}
+                    />
+                  </div>
+                </div>
+                {!canPickup && (
+                  <p className="text-[11px] font-semibold text-center" style={{ color: C.red }}>
+                    أكمل المنطقة ورقم الهاتف لتفعيل الاستلام
+                  </p>
+                )}
+                <button
+                  onClick={() => onPickup(areaId, phone.trim(), price.trim(), notes.trim())}
+                  disabled={busy || !canPickup}
+                  className="w-full py-2.5 rounded-xl text-sm font-bold transition-opacity hover:opacity-90 disabled:opacity-50"
+                  style={{ background: C.yellow, color: "#0F172A" }}
+                >
+                  {busy ? "جاري..." : "استلمت الطلب"}
+                </button>
+              </>
+            )}
+
+            {pickedUp && (
+              <>
+                {req.customer_phone ? (
+                  <div className="rounded-xl px-3 py-2.5 flex items-center justify-between gap-3"
+                    style={{ background: `${C.teal}12`, border: `1px solid ${C.teal}30` }}>
+                    <div className="flex flex-col gap-0.5">
+                      <p className="text-xs font-semibold" style={{ color: C.teal }}>رقم هاتف العميل</p>
+                      <p className="text-sm font-bold tracking-wide" style={{ color: C.text }}>{req.customer_phone}</p>
+                    </div>
+                    <button onClick={copyPhone}
+                      className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-opacity hover:opacity-80 flex-shrink-0"
+                      style={{ background: C.teal, color: "#fff" }}>
+                      <CopyIcon />
+                      {copied ? "✓ نُسخ" : "نسخ"}
+                    </button>
+                  </div>
+                ) : (
+                  <div className="rounded-xl px-3 py-2 text-center text-sm font-bold"
+                    style={{ background: `${C.yellow}15`, color: C.yellow }}>
+                    ⚠ لا يوجد رقم للعميل
+                  </div>
+                )}
+                <button
+                  onClick={onDeliver}
+                  disabled={busy}
+                  className="w-full py-2.5 rounded-xl text-sm font-black transition-opacity hover:opacity-90 disabled:opacity-50"
+                  style={{ background: C.green, color: "#fff" }}
+                >
+                  {busy ? "جاري..." : "تم التسليم"}
+                </button>
+              </>
+            )}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 /* ── Main page ── */
 type TabId = "available" | "active";
 
@@ -654,6 +1014,33 @@ export default function DriverOrdersPage() {
   const [collectTarget, setCollectTarget] = useState<ActiveOrder | null>(null);
   const [collecting,    setCollecting]    = useState(false);
   const [usingCache,    setUsingCache]    = useState(false);
+
+  /* ── Entity (منشأة) delivery requests state ── */
+  const [entityAvailable,  setEntityAvailable]  = useState<EntityReq[]>([]);
+  const [entityActive,     setEntityActive]     = useState<EntityReq[]>([]);
+  const [acceptingEntityId, setAcceptingEntityId] = useState<string | null>(null);
+  const [entityBusyId,     setEntityBusyId]     = useState<string | null>(null);
+  /* IDs already seen — used to sound the "new request" chime on polling
+     (realtime is RLS-blocked on delivery_requests, so polling detects it). */
+  const entitySeenRef = useRef<Set<string>>(new Set());
+
+  /* ── Areas list — the driver completes entity request delivery data
+        (area + customer phone) before pickup. Loaded from the public
+        areas table, same as the entity page. ── */
+  const [areas, setAreas] = useState<{ id: string; name: string }[]>([]);
+
+  useEffect(() => {
+    let mounted = true;
+    (async () => {
+      const { data } = await supabase
+        .from("areas")
+        .select("id, name")
+        .eq("is_active", true)
+        .order("name", { ascending: true });
+      if (mounted && data) setAreas(data);
+    })().catch(() => {});
+    return () => { mounted = false; };
+  }, []);
 
   const CACHE_KEY = "driver_orders_cache";
 
@@ -710,6 +1097,35 @@ export default function DriverOrdersPage() {
       locked = false;
     }
     setOrdersLocked(locked);
+
+    /* 2b. Entity (منشأة) delivery requests — via guarded server API.
+         Active: always (driver must finish what it already owns).
+         Available: only in an open shift AND unlocked (same rule as orders).
+         Sound on a newly-seen pending request — polling stands in for realtime,
+         which is RLS-blocked for browser clients on delivery_requests. */
+    try {
+      const eres = await fetch("/api/driver/delivery-requests", { credentials: "include" });
+      if (eres.ok) {
+        const edata = await eres.json();
+        const eAvail = ((edata.available ?? []) as DBOrder[]).map(toEntityReq);
+        setEntityActive(((edata.active ?? []) as DBOrder[]).map(toEntityReq));
+        const visible = sid && !locked ? eAvail : [];
+        setEntityAvailable(visible);
+
+        /* Same sound file as regular orders — new request chime */
+        if (visible.length > 0 && entitySeenRef.current.size > 0) {
+          for (const r of visible) {
+            if (!entitySeenRef.current.has(r.id)) {
+              try { new Audio("/sounds/driver_new_order.mp3").play().catch(() => {}); } catch { /* ignore */ }
+              break;
+            }
+          }
+        }
+        entitySeenRef.current = new Set(visible.map((r) => r.id));
+      }
+    } catch (err) {
+      console.error("fetchEntityDeliveryRequests:", err);
+    }
 
     /* 3. Fetch available orders only when unlocked and in a shift */
     if (sid && !locked) {
@@ -815,6 +1231,70 @@ export default function DriverOrdersPage() {
     await loadData(driverId, shiftId);
     setTab("active");
   }, [driverId, shiftId, ordersLocked, loadData]);
+
+  /* ── Accept entity request — server-side ATOMIC (pending → accepted).
+         Binds delivery_id + delivery_shift_id + accepted_at on the server. ── */
+  const acceptEntity = useCallback(async (req: EntityReq) => {
+    if (!driverId || !shiftId || ordersLocked || acceptingEntityId) return;
+    setAcceptingEntityId(req.id);
+    try {
+      const res = await fetch(`/api/driver/delivery-requests/${req.id}/accept`, {
+        method: "POST",
+        credentials: "include",
+      });
+      if (res.ok) {
+        playAcceptSound();
+        if (driverId && shiftId) await loadData(driverId, shiftId);
+        setTab("active");
+      } else {
+        /* Already taken by another driver / state changed — refresh to reflect it */
+        if (driverId && shiftId) await loadData(driverId, shiftId);
+      }
+    } catch (err) {
+      console.error("acceptEntity:", err);
+    } finally {
+      setAcceptingEntityId(null);
+    }
+  }, [driverId, shiftId, ordersLocked, acceptingEntityId, loadData]);
+
+  /* ── Entity pickup / deliver — server-side status transitions
+         (accepted → on_the_way → delivered). At pickup the driver completes
+         area_id + customer_phone (required before pickup) and may provide
+         price and notes (both optional — the entity may already have set
+         them); they are sent to the guarded API and stored server-side. ── */
+  const entityTransition = useCallback(async (
+    req: EntityReq,
+    action: "pickup" | "deliver",
+    areaId?: string,
+    phone?: string,
+    price?: string,
+    notes?: string,
+  ) => {
+    if (!driverId || entityBusyId) return;
+    setEntityBusyId(req.id);
+    try {
+      const body: Record<string, unknown> = { action };
+      if (action === "pickup") {
+        if (areaId !== undefined) body.area_id = areaId;
+        if (phone !== undefined) body.customer_phone = phone;
+        if (price !== undefined) body.price = price;
+        if (notes !== undefined) body.notes = notes;
+      }
+      const res = await fetch(`/api/driver/delivery-requests/${req.id}/status`, {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      if (res.ok && driverId) {
+        await loadData(driverId, shiftId);
+      }
+    } catch (err) {
+      console.error("entityTransition:", err);
+    } finally {
+      setEntityBusyId(null);
+    }
+  }, [driverId, shiftId, entityBusyId, loadData]);
 
   /* ── Restaurant payment decision ── */
   const handleRestaurantPaid = useCallback(async (orderId: string, paid: boolean) => {
@@ -1007,7 +1487,8 @@ export default function DriverOrdersPage() {
 
   const canTakeNewOrders = !ordersLocked;
 
-  const availCount = available.length;
+  const availCount  = available.length + entityAvailable.length;
+  const activeCount = active.length + entityActive.length;
 
   /* ── Loading ── */
   if (loading) {
@@ -1047,7 +1528,7 @@ export default function DriverOrdersPage() {
           const label = t === "available"
             ? (availCount > 0 ? `الطلبات المتاحة (${availCount})` : "الطلبات المتاحة")
             : "قيد التنفيذ";
-          const count = t === "available" ? availCount : active.length;
+          const count = t === "available" ? availCount : activeCount;
           return (
             <button
               key={t}
@@ -1136,33 +1617,79 @@ export default function DriverOrdersPage() {
                   أنهِ جميع الطلبات الحالية لاستقبال طلبات جديدة
                 </p>
               </div>
-            ) : available.length === 0 ? (
+            ) : available.length === 0 && entityAvailable.length === 0 ? (
               <div className="flex-1 flex flex-col items-center justify-center gap-3 py-16">
                 <span className="text-4xl">📭</span>
                 <p className="text-sm" style={{ color: C.muted }}>لا توجد طلبات متاحة حالياً</p>
               </div>
-            ) : available.map((o) => (
-              <AvailableCard key={o.id} order={o} onAccept={() => accept(o)} />
-            ))}
+            ) : (
+              <>
+                {available.length > 0 && (
+                  <div className="flex flex-col gap-2">
+                    <p className="text-xs font-black" style={{ color: C.muted }}>طلبات العملاء</p>
+                    {available.map((o) => (
+                      <AvailableCard key={o.id} order={o} onAccept={() => accept(o)} />
+                    ))}
+                  </div>
+                )}
+                {entityAvailable.length > 0 && (
+                  <div className="flex flex-col gap-2">
+                    <p className="text-xs font-black" style={{ color: C.muted }}>طلبات المنشآت</p>
+                    {entityAvailable.map((r) => (
+                      <EntityAvailableCard
+                        key={r.id}
+                        req={r}
+                        onAccept={() => acceptEntity(r)}
+                        busy={acceptingEntityId === r.id}
+                      />
+                    ))}
+                  </div>
+                )}
+              </>
+            )}
           </>
         )}
 
         {tab === "active" && (
           <>
-            {active.length === 0 ? (
+            {active.length === 0 && entityActive.length === 0 ? (
               <div className="flex-1 flex flex-col items-center justify-center gap-3 py-16">
                 <span className="text-4xl">🛵</span>
                 <p className="text-sm" style={{ color: C.muted }}>لا توجد طلبات قيد التنفيذ</p>
               </div>
-            ) : active.map((o) => (
-              <ActiveCard
-                key={o.id}
-                order={o}
-                onDeliver={deliver}
-                onPickup={pickup}
-                onRestaurantPaid={handleRestaurantPaid}
-              />
-            ))}
+            ) : (
+              <>
+                {active.length > 0 && (
+                  <div className="flex flex-col gap-2">
+                    <p className="text-xs font-black" style={{ color: C.muted }}>طلبات العملاء</p>
+                    {active.map((o) => (
+                      <ActiveCard
+                        key={o.id}
+                        order={o}
+                        onDeliver={deliver}
+                        onPickup={pickup}
+                        onRestaurantPaid={handleRestaurantPaid}
+                      />
+                    ))}
+                  </div>
+                )}
+                {entityActive.length > 0 && (
+                  <div className="flex flex-col gap-2">
+                    <p className="text-xs font-black" style={{ color: C.muted }}>طلبات المنشآت</p>
+                    {entityActive.map((r) => (
+                      <EntityActiveCard
+                        key={r.id}
+                        req={r}
+                        areas={areas}
+                        onPickup={(areaId, phone, price, notes) => entityTransition(r, "pickup", areaId, phone, price, notes)}
+                        onDeliver={() => entityTransition(r, "deliver")}
+                        busy={entityBusyId === r.id}
+                      />
+                    ))}
+                  </div>
+                )}
+              </>
+            )}
           </>
         )}
       </div>

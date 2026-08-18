@@ -33,7 +33,14 @@ export type DriverPayload = {
   name: string;
 };
 
-export type JwtPayload = StaffPayload | DriverPayload;
+export type EntityPayload = {
+  id:   string;
+  role: "entity";
+  type: "entity";
+  name: string;
+};
+
+export type JwtPayload = StaffPayload | DriverPayload | EntityPayload;
 
 /* ─────────────────────────────────────────────
    Password helpers

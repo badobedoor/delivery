@@ -76,8 +76,20 @@ type CloseRequest = {
   driverName:        string;
   amount:            number;
   totalAdvance:      number;
-  totalDeliveryFees: number;
+  grossDeliveryFees: number;
+  deliveryDiscounts: number;
+  discountedCount:   number;
+  netDeliveryFees:   number;
+  totalEntityFees:   number;
   createdAt:         string;
+};
+
+/* سطر أوردر خاص بحساب خصومات التوصيل — نفس حقول الاستعلام أدناه */
+type OrderDiscountRow = {
+  delivery_fee?:   number;
+  discount_amount?: number;
+  coupon_id?:       string | null;
+  coupons?:         { applies_to?: string } | null;
 };
 
 /* ── Helpers ── */
@@ -682,13 +694,29 @@ function SummaryTab({
                         <span className="text-xs font-semibold" style={{ color: C.text }}>{fmtAmt(req.totalAdvance)}</span>
                       </div>
                       <div className="flex justify-between items-center py-0.5">
-                        <span className="text-xs" style={{ color: C.muted }}>💰 أرباح الوردية</span>
-                        <span className="text-xs font-semibold" style={{ color: C.text }}>{fmtAmt(req.totalDeliveryFees)}</span>
+                        <span className="text-xs" style={{ color: C.muted }}>📦 إجمالي أجور التوصيل</span>
+                        <span className="text-xs font-semibold" style={{ color: C.text }}>{fmtAmt(req.grossDeliveryFees)}</span>
+                      </div>
+                      <div className="flex justify-between items-center py-0.5">
+                        <span className="text-xs" style={{ color: C.muted }}>🎟️ خصومات التوصيل ({req.discountedCount})</span>
+                        <span className="text-xs font-semibold" style={{ color: C.red }}>− {fmtAmt(req.deliveryDiscounts)}</span>
+                      </div>
+                      <div className="flex justify-between items-center py-0.5">
+                        <span className="text-xs" style={{ color: C.muted }}>🧾 صافي أجور التوصيل</span>
+                        <span className="text-xs font-semibold" style={{ color: C.text }}>{fmtAmt(req.netDeliveryFees)}</span>
+                      </div>
+                      <div className="flex justify-between items-center py-0.5">
+                        <span className="text-xs" style={{ color: C.muted }}>🏢 طلبات منشآت</span>
+                        <span className="text-xs font-semibold" style={{ color: C.blue }}>{fmtAmt(req.totalEntityFees)}</span>
                       </div>
                       <div className="h-px" style={{ background: C.border }} />
                       <div className="flex justify-between items-center py-0.5">
-                        <span className="text-xs" style={{ color: C.muted }}>📦 الإجمالي</span>
-                        <span className="text-xs font-black" style={{ color: C.teal }}>{fmtAmt(req.totalAdvance + req.totalDeliveryFees)}</span>
+                        <span className="text-xs" style={{ color: C.muted }}>📤 المبلغ المُرسل من السائق</span>
+                        <span className="text-xs font-semibold" style={{ color: C.text }}>{fmtAmt(req.amount ?? 0)}</span>
+                      </div>
+                      <div className="flex justify-between items-center py-0.5">
+                        <span className="text-xs" style={{ color: C.muted }}>💵 الإجمالي المتوقع تسليمه</span>
+                        <span className="text-xs font-black" style={{ color: C.teal }}>{fmtAmt(req.totalAdvance + req.netDeliveryFees + req.totalEntityFees)}</span>
                       </div>
                     </div>
                     <p className="text-[10px] mt-1.5" style={{ color: `${C.muted}99` }}>
@@ -1951,23 +1979,63 @@ export default function AdminAccountsPage() {
       }, 0)
     ));
     if (closeData && (closeData as any[]).length > 0) {
+      /* الوردية التشغيلية (delivery_shifts.shift_id) لكل وردية مالية في طلبات
+         التقفيل — لنقتصر حساب الطلبات العادية على الوردية التي يتم تقفيلها فقط
+         (وردية قديمة / وردية أخرى للدليفري لا تدخل). */
+      const dsIds = (closeData as any[]).map((r: any) => r.delivery_shift_id).filter(Boolean);
+      const shiftByDs = new Map<string, number | null>();
+      if (dsIds.length > 0) {
+        const { data: dsRows } = await supabase
+          .from("delivery_shifts")
+          .select("id, shift_id")
+          .in("id", dsIds);
+        (dsRows ?? []).forEach((d: any) => shiftByDs.set(d.id, d.shift_id ?? null));
+      }
+
+      /* أجور طلبات المنشآت: delivery_requests عليها RLS ON فلا تُقرأ من المتصفح؛
+         نستخدم API محروس (service role) يرجع delivery_fee فقط لكل وردية مالية.
+         price لا يدخل أبدًا في الحساب المالي للدليفري. */
+      const driverIds = Array.from(new Set((closeData as any[]).map((r: any) => r.delivery_id)));
+      const entityByDriver = new Map<string, Map<string, number>>();
+      await Promise.all(driverIds.map(async (did: string) => {
+        const res = await fetch(`/api/admin/delivery-requests/accounts?delivery_id=${encodeURIComponent(did)}`, { credentials: "include" })
+          .then(async (r) => (r.ok ? r.json() : { shifts: [] }))
+          .catch(() => ({ shifts: [] }));
+        const m = new Map<string, number>();
+        (res.shifts ?? []).forEach((s: any) => m.set(s.delivery_shift_id, s.delivery_fee ?? 0));
+        entityByDriver.set(did, m);
+      }));
+
       const enriched = await Promise.all(
         (closeData as any[]).map(async (r) => {
+          const shiftId = shiftByDs.get(r.delivery_shift_id) ?? null;
           const [{ data: custodyData }, { data: ordersData }] = await Promise.all([
             supabase
               .from("custody_records")
               .select("amount")
               .eq("delivery_id", r.delivery_id)
               .eq("status", "active"),
-            supabase
-              .from("orders")
-              .select("delivery_fee")
-              .eq("delivery_id", r.delivery_id)
-              .eq("status", "delivered")
-              .eq("settled", false),
+            shiftId != null
+              ? supabase
+                  .from("orders")
+                  .select("delivery_fee, discount_amount, coupon_id, coupons!coupon_id(applies_to)")
+                  .eq("delivery_id", r.delivery_id)
+                  .eq("shift_id", shiftId)
+                  .eq("status", "delivered")
+                  .eq("settled", false)
+              : Promise.resolve({ data: [] as never[], error: null }),
           ]);
           const totalCustody      = roundEGP((custodyData ?? []).reduce((s: number, c: any) => s + (c.amount ?? 0), 0));
-          const totalDeliveryFees = roundEGP((ordersData ?? []).reduce((s: number, o: any) => s + (o.delivery_fee ?? 0), 0));
+          const orderRows         = (ordersData ?? []) as OrderDiscountRow[];
+          const grossDeliveryFees = roundEGP(orderRows.reduce((s: number, o) => s + (o.delivery_fee ?? 0), 0));
+          /* خصومات التوصيل فقط (coupons.applies_to === "توصيل") — القديمة NULL لا تُحتسب */
+          const discOrders = orderRows.filter(
+            (o) => (o.coupons as { applies_to?: string } | null)?.applies_to === "توصيل" && (o.discount_amount ?? 0) > 0,
+          );
+          const deliveryDiscounts = roundEGP(discOrders.reduce((s: number, o) => s + (o.discount_amount ?? 0), 0));
+          const discountedCount   = discOrders.length;
+          const netDeliveryFees   = roundEGP(grossDeliveryFees - deliveryDiscounts);
+          const totalEntityFees   = roundEGP(entityByDriver.get(r.delivery_id)?.get(r.delivery_shift_id) ?? 0);
           return {
             id:                r.id,
             deliveryId:        r.delivery_id,
@@ -1975,7 +2043,11 @@ export default function AdminAccountsPage() {
             driverName:        driverNameMap.get(r.delivery_id) ?? "—",
             amount:            r.amount,
             totalAdvance:      totalCustody,
-            totalDeliveryFees,
+            grossDeliveryFees,
+            deliveryDiscounts,
+            discountedCount,
+            netDeliveryFees,
+            totalEntityFees,
             createdAt:         r.created_at,
           };
         })
@@ -2343,23 +2415,34 @@ export default function AdminAccountsPage() {
     setApproveCloseGuard(true);
     setCloseProcessingIds((p) => new Set(p).add(req.id));
     try {
-      // جيب البيانات اللازمة كلها
+      /* الوردية المالية المحددة في طلب التقفيل (deliveryShiftId): نجلب shift_id
+         (التشغيلية) لنقتصر حساب الطلبات العادية على هذه الوردية فقط — وردية قديمة
+         أو وردية أخرى للدليفري لا تدخل، ولا تُغلق إلا الوردية المحددة هنا. */
+      const { data: shiftRow } = await supabase
+        .from("delivery_shifts")
+        .select("shift_id, motorcycle_id")
+        .eq("id", req.deliveryShiftId)
+        .maybeSingle();
+      const shiftId       = (shiftRow as any)?.shift_id ?? null;
+      const motorcycleId  = (shiftRow as any)?.motorcycle_id ?? null;
+
       const [
         { data: orders },
         { data: custodyData },
         { data: settings },
-        { data: shiftData },
         { data: lastMainRow },
         { data: lastDelRow },
         { data: lastCustodyRow },
+        entityRes,
       ] = await Promise.all([
-        supabase.from("orders").select("delivery_fee")
-          .eq("delivery_id", req.deliveryId).eq("status", "delivered").eq("settled", false),
+        shiftId != null
+          ? supabase.from("orders").select("delivery_fee, discount_amount, coupon_id, coupons!coupon_id(applies_to)")
+              .eq("delivery_id", req.deliveryId).eq("shift_id", shiftId)
+              .eq("status", "delivered").eq("settled", false)
+          : Promise.resolve({ data: [] as never[], error: null }),
         supabase.from("custody_records").select("amount")
           .eq("delivery_id", req.deliveryId).eq("status", "active"),
         supabase.from("settings").select("driver_percentage, moto_percentage, office_percentage").single(),
-        supabase.from("delivery_shifts").select("motorcycle_id")
-          .eq("id", req.deliveryShiftId).maybeSingle(),
         supabase.from("main_wallet").select("balance")
           .order("created_at", { ascending: false }).limit(1).maybeSingle(),
         supabase.from("delivery_accounts").select("balance")
@@ -2367,16 +2450,48 @@ export default function AdminAccountsPage() {
           .order("created_at", { ascending: false }).limit(1).maybeSingle(),
         supabase.from("custody_wallet").select("balance")
           .order("created_at", { ascending: false }).limit(1).maybeSingle(),
+        /* أجور طلبات المنشآت: delivery_fee فقط (price لا يدخل) من API محروس */
+        fetch(`/api/admin/delivery-requests/accounts?delivery_id=${encodeURIComponent(req.deliveryId)}&delivery_shift_id=${encodeURIComponent(req.deliveryShiftId)}`, { credentials: "include" })
+          .then(async (res) => (res.ok ? res.json() : { shifts: [] }))
+          .catch(() => ({ shifts: [] })),
       ]);
 
       if (!settings) throw new Error("settings not found");
 
-      const motorcycleId      = (shiftData as any)?.motorcycle_id ?? null;
-      const totalDeliveryFees = roundEGP((orders ?? []).reduce((s: number, o: any) => s + (o.delivery_fee ?? 0), 0));
+      const orderRows      = (orders ?? []) as OrderDiscountRow[];
+      const ordersFees     = roundEGP(orderRows.reduce((s: number, o) => s + (o.delivery_fee ?? 0), 0));
+      /* خصومات التوصيل فقط: coupons.applies_to === "توصيل". الطلبات القديمة
+         (coupon_id NULL) لا تُحتسب — لا تخمين ولا Backfill. */
+      const discOrders = orderRows.filter(
+        (o) => (o.coupons as { applies_to?: string } | null)?.applies_to === "توصيل" && (o.discount_amount ?? 0) > 0,
+      );
+      const deliveryDiscounts = roundEGP(discOrders.reduce((s: number, o) => s + (o.discount_amount ?? 0), 0));
+      const totalEntityFees   = roundEGP(((entityRes as any)?.shifts ?? [])[0]?.delivery_fee ?? 0);
+      /* أساس الحصص = إجمالي الشغل قبل الخصم (أجور عادية خام + أجور منشآت)
+         — نفس الأساس الحالي تمامًا. الحصص تُحسب هنا ثم يُحمَّل عليها خصم التوصيل Waterfall. */
+      const totalDeliveryFees = roundEGP(ordersFees + totalEntityFees);
       const totalCustody      = roundEGP((custodyData ?? []).reduce((s: number, c: any) => s + (c.amount ?? 0), 0));
-      const driverShare       = roundEGP(totalDeliveryFees * ((settings as any).driver_percentage / 100));
-      const motoShare         = roundEGP(totalDeliveryFees * ((settings as any).moto_percentage / 100));
-      const officeShare       = roundEGP(totalDeliveryFees * ((settings as any).office_percentage / 100));
+      let driverShare         = roundEGP(totalDeliveryFees * ((settings as any).driver_percentage / 100));
+      let motoShare           = roundEGP(totalDeliveryFees * ((settings as any).moto_percentage / 100));
+      let officeShare         = roundEGP(totalDeliveryFees * ((settings as any).office_percentage / 100));
+
+      /* Waterfall لخصم التوصيل: المكتب ← الموتوسيكل ← الدليفري.
+         لا حصة سالبة (max(0, …))، ولا إعادة تقسيم بعد ذلك.
+         بدون موتوسيكل: يتخطى الموتوسيكل (office ← driver). */
+      if (deliveryDiscounts > 0) {
+        let remaining = deliveryDiscounts;
+        const officeCut = Math.min(officeShare, remaining);
+        officeShare -= officeCut; remaining -= officeCut;
+        if (motorcycleId && remaining > 0) {
+          const motoCut = Math.min(motoShare, remaining);
+          motoShare -= motoCut; remaining -= motoCut;
+        }
+        if (remaining > 0) {
+          const driverCut = Math.min(driverShare, remaining);
+          driverShare -= driverCut;
+        }
+      }
+
       const lastMainBal       = roundEGP((lastMainRow as any)?.balance ?? 0);
       const lastDelBal        = roundEGP((lastDelRow as any)?.balance ?? 0);
       const lastCustodyBal    = roundEGP((lastCustodyRow as any)?.balance ?? 0);
@@ -2448,10 +2563,14 @@ export default function AdminAccountsPage() {
         .update({ status: "returned" })
         .eq("delivery_id", req.deliveryId).eq("status", "active");
 
-      // Step 8: علّم الأوردرات بـ settled
-      await supabase.from("orders")
-        .update({ settled: true })
-        .eq("delivery_id", req.deliveryId).eq("status", "delivered").eq("settled", false);
+      // Step 8: علّم الأوردرات بـ settled — فقط أوردرات الوردية التشغيلية المرتبطة
+      // بهذه الوردية المالية (لا تختلط بوردة قديمة أو وردية أخرى للدليفري).
+      if (shiftId != null) {
+        await supabase.from("orders")
+          .update({ settled: true })
+          .eq("delivery_id", req.deliveryId).eq("shift_id", shiftId)
+          .eq("status", "delivered").eq("settled", false);
+      }
 
       // Step 9: أغلق طلبات السلفة المعلقة وطلب التقفيل
       await supabase.from("advance_requests")
@@ -2460,10 +2579,11 @@ export default function AdminAccountsPage() {
       await supabase.from("advance_requests")
         .update({ status: "approved" }).eq("id", req.id);
 
-      // Step 10: أغلق الوردية
+      // Step 10: أغلق فقط الوردية المالية المحددة في طلب التقفيل (deliveryShiftId)
+      // — وردية أخرى بنفس الدليفري بحالة pending_close لا تُغلق.
       await supabase.from("delivery_shifts")
         .update({ status: "closed" })
-        .eq("delivery_id", req.deliveryId).eq("status", "pending_close");
+        .eq("id", req.deliveryShiftId);
 
       await loadData();
     } catch (err) {

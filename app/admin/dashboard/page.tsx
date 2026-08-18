@@ -378,6 +378,7 @@ export default function AdminDashboardPage() {
   const [topAreas,       setTopAreas]       = useState<RankItem[]>([]);
   const [topCustomers,   setTopCustomers]   = useState<RankItem[]>([]);
   const [topDrivers,     setTopDrivers]     = useState<RankItem[]>([]);
+  const [topEntities,    setTopEntities]    = useState<RankItem[]>([]);
 
   /* Fetch all data using Promise.all */
   useEffect(() => {
@@ -403,12 +404,13 @@ export default function AdminDashboardPage() {
           ordersRes, inProgressRes, revenueRes, newUsersRes,
           chartRes,  allTimeRes,
           restsRes,  areasRes, custRes, drvRes, driversApiRes,
+          entStatsRes,
         ] = await Promise.all([
           supabase.from("orders").select("*", { count: "exact", head: true })
             .gte("created_at", statsFrom).lte("created_at", statsTo),
 
           supabase.from("orders").select("*", { count: "exact", head: true })
-            .in("status", ["confirmed", "in_progress", "picked_up"])
+            .in("status", ["pending", "accepted", "on_the_way", "confirmed", "in_progress", "picked_up"])
             .gte("created_at", statsFrom).lte("created_at", statsTo),
 
           supabase.from("orders").select("delivery_fee")
@@ -449,6 +451,14 @@ export default function AdminDashboardPage() {
               return { data: await res.json() };
             })
             .catch((err) => { console.error("fetchDrivers:", err); return { data: [] }; }),
+
+          fetch(`/api/admin/delivery-requests/stats?statsFrom=${encodeURIComponent(statsFrom)}&statsTo=${encodeURIComponent(statsTo)}&chartFrom=${encodeURIComponent(chartFrom)}&chartTo=${encodeURIComponent(chartTo)}`, { credentials: "include" })
+            .then(async (res) => {
+              if (!res.ok) { console.error("fetchEntityStats:", res.statusText); return { stats: { total: 0, revenue: 0, inProgress: 0 }, byEntity: [] }; }
+              const body = await res.json();
+              return body as { stats: { total: number; revenue: number; inProgress: number }; byEntity: { name: string; count: number }[] };
+            })
+            .catch((err) => { console.error("fetchEntityStats:", err); return { stats: { total: 0, revenue: 0, inProgress: 0 }, byEntity: [] }; }),
         ]);
 
         if (cancelled) return;
@@ -459,9 +469,11 @@ export default function AdminDashboardPage() {
           driverNameMap.set(String(d.id), d.name ?? "");
         });
 
-        setOrdersCount(ordersRes.count ?? 0);
-        setInProgressCount(inProgressRes.count ?? 0);
-        setRevenue((revenueRes.data ?? []).reduce((s, r) => s + (r.delivery_fee || 0), 0));
+        /* طلبات المنشآت تدخل في الكروت الثلاثة الأولى مع الطلبات العادية */
+        const entStats = entStatsRes.stats ?? { total: 0, revenue: 0, inProgress: 0 };
+        setOrdersCount((ordersRes.count ?? 0) + (entStats.total ?? 0));
+        setInProgressCount((inProgressRes.count ?? 0) + (entStats.inProgress ?? 0));
+        setRevenue((revenueRes.data ?? []).reduce((s, r) => s + (r.delivery_fee || 0), 0) + (entStats.revenue ?? 0));
         setNewUsersCount(newUsersRes.count ?? 0);
         setWeeklyChart(groupByDay((chartRes.data ?? []) as RevenueRow[]));
         setAllTimeChart(groupForAllTime((allTimeRes.data ?? []) as RevenueRow[]));
@@ -473,6 +485,7 @@ export default function AdminDashboardPage() {
         setTopCustomers(groupTopCustomers((custRes.data ?? []) as any[]));
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         setTopDrivers(groupTopDrivers((drvRes.data ?? []) as any[], driverNameMap));
+        setTopEntities(((entStatsRes.byEntity ?? []) as { name: string; count: number }[]).map((x) => ({ name: x.name, orders: x.count })));
       } catch (e) {
         console.error("Dashboard fetch error:", e);
       } finally {
@@ -702,6 +715,29 @@ export default function AdminDashboardPage() {
           </div>
         </SectionCard>
 
+      </div>
+
+      {/* ── 6. إحصائيات المنشآت ── */}
+      <div className="grid grid-cols-1 gap-4">
+        <SectionCard title="إحصائيات المنشآت" emoji="🏢">
+          <p className="text-xs font-bold" style={{ color: C.muted }}>أكثر المنشآت طلبًا</p>
+          <div className="flex flex-col gap-3">
+            {loading
+              ? [0,1,2,3,4].map(i => (
+                <div key={i} className="flex items-center justify-between gap-3">
+                  <div className="flex items-center gap-3 flex-1">
+                    <Skel w={20} h={20} />
+                    <Skel h={14} />
+                  </div>
+                  <Skel w={64} h={26} />
+                </div>
+              ))
+              : topEntities.length
+                ? topEntities.map((e, i) => <RankRow key={e.name + i} rank={i + 1} name={e.name} count={e.orders} />)
+                : <p className="text-sm text-center" style={{ color: C.muted }}>لا توجد بيانات</p>
+            }
+          </div>
+        </SectionCard>
       </div>
 
     </div>

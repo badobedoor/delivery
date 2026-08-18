@@ -64,8 +64,7 @@ type ArchiveEntry = {
   dateLabel:    string;
   label:        string;
   amount:       number;
-  isIncoming:   boolean;
-  isSettlement: boolean;
+  isIncoming: boolean;
 };
 
 /* ─────────────────────────────────────────────
@@ -92,7 +91,6 @@ export default function DriverArchivePage() {
     const [
       { data: staffData },
       { data: txData },
-      { data: settlementData },
       { data: allTxs },
     ] = await Promise.all([
       fetch("/api/driver/me/wallet", { credentials: "include" })
@@ -111,12 +109,6 @@ export default function DriverArchivePage() {
         .eq("delivery_id", did)
         .order("created_at", { ascending: false })
         .limit(150),
-      supabase
-        .from("shift_settlement_requests")
-        .select("id, shift_id, created_at, shifts!shift_id(num)")
-        .eq("delivery_id", did)
-        .eq("status", "completed")
-        .order("created_at", { ascending: false }),
       supabase
         .from("delivery_accounts")
         .select("type, amount")
@@ -155,7 +147,6 @@ export default function DriverArchivePage() {
         label,
         amount:       row.amount ?? 0,
         isIncoming:   incoming,
-        isSettlement: false,
       };
     });
 
@@ -168,43 +159,11 @@ export default function DriverArchivePage() {
     );
     setTotalReceived(received);
 
-    /* ── Settlement entries: fetch delivery fees per shift (display only) ── */
-    // TODO: store driver's exact earnings share per settlement in a DB column when available.
-    // Currently approximated using sum of delivery_fee for orders in that shift.
-    const shiftIds = (settlementData ?? [])
-      .map((s: any) => s.shift_id)
-      .filter(Boolean) as string[];
-
-    const feesByShift: Record<string, number> = {};
-    if (shiftIds.length > 0) {
-      const { data: ordersData } = await supabase
-        .from("orders")
-        .select("shift_id, delivery_fee")
-        .eq("delivery_id", did)
-        .eq("status", "delivered")
-        .in("shift_id", shiftIds);
-      (ordersData ?? []).forEach((o: any) => {
-        if (o.shift_id) {
-          feesByShift[o.shift_id] = (feesByShift[o.shift_id] ?? 0) + (o.delivery_fee ?? 0);
-        }
-      });
-    }
-
-    const settlementEntries: ArchiveEntry[] = (settlementData ?? []).map((s: any) => {
-      const shiftNum = (s.shifts as any)?.num ?? "—";
-      return {
-        id:           `st-${s.id}`,
-        createdAt:    s.created_at,
-        dateLabel:    fmtDateAr(s.created_at),
-        label:        `وردية ${shiftNum}`,
-        amount:       feesByShift[s.shift_id] ?? 0,
-        isIncoming:   true,
-        isSettlement: true,
-      };
-    });
-
-    /* ── Merge and sort chronologically (newest first) ── */
-    const all = [...txEntries, ...settlementEntries].sort(
+    /* المصدر الوحيد لصافي مستحقات الدليفري في الأرشيف هو delivery_accounts:
+       بند commission = نصيب السائق بعد استقطاع نسبة الموتوسيكل والمكتب
+       (يُسجَّل من handleApproveClose ولا يُعرض هنا أي إجمالي خام أو بند
+       منفصل لطلبات المنشآت). */
+    const all = [...txEntries].sort(
       (a, b) => b.createdAt.localeCompare(a.createdAt),
     );
     setEntries(all);
@@ -394,14 +353,6 @@ export default function DriverArchivePage() {
                     <div className="flex flex-col gap-0.5 flex-1 min-w-0">
                       <p className="text-xs" style={{ color: C.muted }}>{entry.dateLabel}</p>
                       <div className="flex items-center gap-1.5">
-                        {entry.isSettlement && (
-                          <span
-                            className="text-[10px] px-1.5 py-0.5 rounded font-bold flex-shrink-0"
-                            style={{ background: `${C.teal}20`, color: C.teal }}
-                          >
-                            وردية
-                          </span>
-                        )}
                         <p className="text-sm font-bold truncate" style={{ color: C.text }}>
                           {entry.label}
                         </p>

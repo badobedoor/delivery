@@ -8,6 +8,7 @@ import {
   cookieOptions,
   type StaffPayload,
   type DriverPayload,
+  type EntityPayload,
 } from "@/lib/server/auth";
 
 /* ── Service-role client — server-only, never sent to browser ── */
@@ -22,7 +23,7 @@ function db() {
 type LoginBody = {
   phone:    string;
   password: string;
-  type:     "staff" | "driver";
+  type:     "staff" | "driver" | "entity";
 };
 
 /* ── 401 factory — never reuse a Response object across requests;
@@ -56,15 +57,15 @@ export async function POST(request: Request) {
   if (!password?.trim()) {
     return NextResponse.json({ error: "password is required" }, { status: 400 });
   }
-  if (type !== "staff" && type !== "driver") {
+  if (type !== "staff" && type !== "driver" && type !== "entity") {
     return NextResponse.json(
-      { error: "type must be 'staff' or 'driver'" },
+      { error: "type must be 'staff', 'driver', or 'entity'" },
       { status: 400 },
     );
   }
 
   /* ── 3. Resolve table ── */
-  const table = type === "staff" ? "staff" : "delivery_staff";
+  const table = type === "staff" ? "staff" : type === "entity" ? "entities" : "delivery_staff";
 
   /* ── 4. Query — delivery_staff has no role column ── */
   console.log(`[login] before query table="${table}" phone="${phone.trim()}"`);
@@ -78,6 +79,15 @@ export async function POST(request: Request) {
     const result = await db()
       .from("staff")
       .select("id, name, role, phone, password, is_active")
+      .eq("phone", phone.trim())
+      .eq("is_active", true)
+      .maybeSingle();
+    user        = result.data as UserRow | null;
+    dbErrorMsg  = result.error?.message ?? null;
+  } else if (type === "entity") {
+    const result = await db()
+      .from("entities")
+      .select("id, name, phone, password, is_active")
       .eq("phone", phone.trim())
       .eq("is_active", true)
       .maybeSingle();
@@ -132,7 +142,7 @@ export async function POST(request: Request) {
   if (!isHashed) {
     try {
       const hashed = await hashPassword(password);
-      const updateTable = type === "staff" ? "staff" : "delivery_staff";
+      const updateTable = type === "staff" ? "staff" : type === "entity" ? "entities" : "delivery_staff";
       await db().from(updateTable).update({ password: hashed }).eq("id", user.id as string);
       console.log(`[login] password auto-migrated to bcrypt id="${user.id}"`);
     } catch (err) {
@@ -141,7 +151,7 @@ export async function POST(request: Request) {
   }
 
   /* ── 6. Build JWT payload ── */
-  const payload: StaffPayload | DriverPayload =
+  const payload: StaffPayload | DriverPayload | EntityPayload =
     type === "staff"
       ? {
           id:   String(user.id),
@@ -149,6 +159,13 @@ export async function POST(request: Request) {
           type: "staff",
           name: user.name ?? "",
         } satisfies StaffPayload
+      : type === "entity"
+      ? {
+          id:   String(user.id),
+          role: "entity",
+          type: "entity",
+          name: user.name ?? "",
+        } satisfies EntityPayload
       : {
           id:   String(user.id),
           role: "driver",
@@ -175,7 +192,7 @@ export async function POST(request: Request) {
       name:  payload.name,
       role:  payload.role,
       type:  payload.type,
-      phone: type === "staff" ? (user.phone ?? null) : null,
+      phone: type === "staff" || type === "entity" ? (user.phone ?? null) : null,
     },
   });
 

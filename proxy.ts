@@ -213,7 +213,7 @@ export async function proxy(request: NextRequest) {
 
   /* ── Within /admin: staff role may only visit allowed pages ── */
   if (pathname.startsWith("/admin") && role === "staff") {
-    const STAFF_ALLOWED = ["/admin/orders", "/admin/restaurants", "/admin/drivers"];
+    const STAFF_ALLOWED = ["/admin/orders", "/admin/restaurants", "/admin/drivers", "/admin/delivery-requests"];
     if (!STAFF_ALLOWED.some((p) => pathname.startsWith(p))) {
       return NextResponse.redirect(new URL("/admin/orders", request.url));
     }

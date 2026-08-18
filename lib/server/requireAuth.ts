@@ -75,3 +75,17 @@ export async function requireDriver(): Promise<AuthResult> {
   }
   return result;
 }
+
+/* ── Entity only (type="entity") ── */
+export async function requireEntity(): Promise<AuthResult> {
+  const result = await getAuth();
+  if (!result.ok) return result;
+
+  if (result.user.type !== "entity") {
+    return {
+      ok: false,
+      response: NextResponse.json({ error: "Forbidden" }, { status: 403 }),
+    };
+  }
+  return result;
+}

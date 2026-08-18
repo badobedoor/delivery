@@ -203,7 +203,14 @@ export default function AdminShiftsPage() {
         setToggleErr("يوجد بالفعل وردية نشطة. يجب إغلاقها أولاً قبل فتح وردية جديدة.");
       }
     } else if (!next) {
-      await supabase.from("delivery_shifts").update({ status: "pending_close" }).eq("shift_id", s.id).eq("status", "open");
+      /* إيقاف الوردية التشغيلية:
+         - لا نغلق وردية الدليفري تلقائيًا — تبقى pending_close حتى يطلب الدليفري تقفيلها
+           بنفسه ويوافق الأدمن (كما هو موجود سابقًا).
+         - نضيف is_active:false حتى لا تُعاد ربط الوردية المالية القديمة بوردة تشغيلية
+           جديدة عند فتحها (تحديث shift_id يشترط is_active=true). بهذا يبقى
+           delivery_shifts.shift_id ثابتًا، فتبقى الطلبات العادية للشغل القديم مرتبطة
+           بها ولا تضيع من حساب التقفيل ولا تختلط بالوردية الجديدة. */
+      await supabase.from("delivery_shifts").update({ is_active: false, status: "pending_close" }).eq("shift_id", s.id).eq("status", "open");
     } else {
       await supabase.from("delivery_shifts").update({ shift_id: s.id }).eq("is_active", true);
     }

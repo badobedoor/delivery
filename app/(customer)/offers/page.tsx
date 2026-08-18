@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase";
 import { getEffectiveMealPrice } from "@/lib/pricing";
 import { formatCairoDate, formatCairoTime } from "@/lib/dateTime";
+import { isRestaurantOpen } from "@/lib/utils";
 import BottomNav from "@/components/customer/BottomNav";
 
 type OfferItem = {
@@ -20,7 +21,13 @@ type OfferItem = {
   offer_ends_at:   string | null;
   restaurant_id:   string | null;
   categories:      { name: string } | null;
-  restaurants:     { name: string } | null;
+  restaurants:     {
+    name:      string;
+    is_active: boolean;
+    opens_at:  string | null;
+    closes_at: string | null;
+    status:    string | null;
+  } | null;
 };
 
 function fmtDate(iso: string | null) {
@@ -32,6 +39,7 @@ export default function OffersPage() {
   const router  = useRouter();
   const [offers,  setOffers]  = useState<OfferItem[]>([]);
   const [loading, setLoading] = useState(true);
+  const [showClosedModal, setShowClosedModal] = useState(false);
 
   useEffect(() => {
     async function load() {
@@ -49,7 +57,7 @@ export default function OffersPage() {
           offer_ends_at,
           restaurant_id,
           categories!inner(name),
-          restaurants!inner(name)
+          restaurants!inner(name, is_active, opens_at, closes_at, status)
         `)
         .eq("categories.name", "عروض")
         .eq("is_active", true)
@@ -63,6 +71,26 @@ export default function OffersPage() {
     }
     load();
   }, []);
+
+  /* عند الضغط على عرض لمطعم مغلق — نفس منطق صفحة المطعم تماماً
+     (status ≠ "نشط" أو خارج أوقات العمل) بدون التحويل إلى /restaurants:
+     نعرض تنبيهاً داخل صفحة العروض فقط */
+  function handleOfferClick(offer: OfferItem) {
+    if (!offer.restaurant_id) return;
+
+    const rest = offer.restaurants;
+    const isClosed =
+      !rest ||
+      rest.status !== "نشط" ||
+      !isRestaurantOpen({ is_active: rest.is_active, opens_at: rest.opens_at, closes_at: rest.closes_at });
+
+    if (isClosed) {
+      setShowClosedModal(true);
+      return;
+    }
+
+    router.push(`/restaurant/${offer.restaurant_id}?category=عروض&returnTo=/offers`);
+  }
 
   return (
     <div className="min-h-screen bg-[var(--color-surface)]">
@@ -108,7 +136,7 @@ export default function OffersPage() {
 
                 return (
                   <div key={offer.id}
-                    onClick={() => offer.restaurant_id && router.push(`/restaurant/${offer.restaurant_id}?category=عروض&returnTo=/offers`)}
+                    onClick={() => handleOfferClick(offer)}
                     className={`bg-white rounded-2xl overflow-hidden shadow-sm border border-[var(--color-border)] ${offer.restaurant_id ? "cursor-pointer active:scale-[0.99] transition-transform" : ""}`}>
 
                     {/* الصورة */}
@@ -176,6 +204,40 @@ export default function OffersPage() {
         </main>
 
         <BottomNav />
+
+        {/* تنبيه: المطعم مغلق حاليًا */}
+        {showClosedModal && (
+          <div
+            className="fixed inset-0 z-50 flex items-center justify-center px-6"
+            style={{ background: "rgba(0,0,0,0.5)" }}
+            onClick={() => setShowClosedModal(false)}
+          >
+            <div
+              className="w-full max-w-xs bg-white rounded-3xl p-6 flex flex-col items-center gap-4 shadow-xl"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <svg width="44" height="44" viewBox="0 0 24 24" fill="#FF6000">
+                <path fillRule="evenodd"
+                  d="M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20zM11 7h2v5.59l3.2 3.2-1.4 1.42-3.8-3.8V7z" />
+              </svg>
+              <div className="flex flex-col items-center gap-2">
+                <p className="text-base font-black text-[#1A1A1A] text-center leading-relaxed">المطعم مغلق حاليًا</p>
+                <p className="text-sm text-[var(--color-muted)] text-center leading-relaxed">
+                  المطعم غير متاح للطلب في الوقت الحالي.
+                  <br />
+                  يمكنك تصفح باقي المطاعم والعروض المتاحة.
+                </p>
+              </div>
+              <button
+                onClick={() => setShowClosedModal(false)}
+                className="w-full py-3 rounded-2xl text-sm font-black text-white active:scale-[0.98] transition-transform"
+                style={{ background: "#FF6000" }}
+              >
+                حسنًا
+              </button>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );
